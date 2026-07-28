@@ -1,0 +1,13 @@
+llama-cpp-python
+groq
+ultralytics
+opencv-python
+faster-whisper
+silero-vad
+sounddevice
+soundfile
+numpy
+sentence-transformers
+sqlite-vec
+sqlean.py
+kokoro
