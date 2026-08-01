@@ -130,7 +130,7 @@ def main():
 
     try:
         # Run vision on the main thread so macOS Cocoa OpenCV window works natively!
-        run_vision(memory, stop_event)
+        run_vision(memory, stop_event, speaking_event)
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:

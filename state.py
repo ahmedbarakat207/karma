@@ -12,6 +12,8 @@ class InternalState:
         self.curiosity = 0.6    # 0.0 (indifferent) to 1.0 (intensely curious)
         self.last_activity = time.time()
         self.mood = "playful"   # playful, curious, attentive, reflective, tired
+        self.current_emotion = None  # momentary emotion from LLM output
+        self.is_playing_audio = False # accurate flag for when TTS is actually outputting sound
 
     def update(self, events):
         now = time.time()
@@ -61,6 +63,53 @@ class InternalState:
             f"Curiosity Level: {curiosity_pct}%"
         )
 
+    def get_expression(self, is_talking=False):
+        """Returns an ASCII face based on current emotion/mood and talking state."""
+        mood = self.current_emotion if self.current_emotion else self.mood
+        if not mood:
+            mood = "neutral"
+        mood = mood.lower()
+
+        if is_talking:
+            # Flap the mouth dynamically based on time (approx 10 frames per sec)
+            mouth_frames = ["o", "-", "O", "_"]
+            mouth = mouth_frames[int(time.time() * 10) % len(mouth_frames)]
+        else:
+            mouth = "_"
+
+        if mood in ("playful", "happy", "warm", "joyful", "delighted", "amused"):
+            return f"(^{mouth}^)"
+        elif mood in ("excited", "amazed", "thrilled", "ecstatic"):
+            return f"(*{mouth}*)"
+        elif mood in ("curious", "inquisitive", "confused", "wondering", "puzzled"):
+            return f"(O{mouth}o)"
+        elif mood in ("surprised", "shocked", "woah", "astonished"):
+            return f"(O{mouth}O)"
+        elif mood in ("tired", "sleepy", "exhausted", "bored", "drowsy"):
+            return f"(-{mouth}-)"
+        elif mood in ("sad", "reflective", "depressed", "melancholy", "heartbroken"):
+            return f"(u{mouth}u)"
+        elif mood in ("attentive", "focused", "serious", "listening"):
+            return f"(ò{mouth}ó)"
+        elif mood in ("angry", "frustrated", "annoyed", "mad", "upset"):
+            return f"(>{mouth}<)"
+        elif mood in ("crying", "emotional", "tears"):
+            return f"(T{mouth}T)"
+        elif mood in ("cool", "smug", "confident", "chill"):
+            return f"(B{mouth}B)"
+        elif mood in ("silly", "goofy", "wacky", "crazy", "derp"):
+            return f"(9{mouth}9)"
+        elif mood in ("love", "affectionate", "caring", "sweet"):
+            return f"(♥{mouth}♥)"
+        elif mood in ("scared", "fearful", "nervous", "anxious", "worried"):
+            return f"(~{mouth}~)"
+        elif mood in ("dizzy", "overwhelmed", "confounded"):
+            return f"(@{mouth}@)"
+        elif mood in ("dead", "offline", "broken", "crashed"):
+            return f"(x{mouth}x)"
+        else:
+            return f"(o{mouth}o)"
 
 # Global internal state instance
+
 internal_state = InternalState()

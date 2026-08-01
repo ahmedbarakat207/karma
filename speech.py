@@ -29,10 +29,14 @@ def clean_for_speech(text):
         return ""
     # Strip stage directions in asterisks, brackets, or parentheses
     text = re.sub(r"\*.*?\*", "", text)
-    text = re.sub(r"\[.*?\]", "", text)
+    if getattr(config, "TTS_BACKEND", "kokoro") != "chatterbox":
+        text = re.sub(r"\[.*?\]", "", text)
     text = re.sub(r"\(.*?\)", "", text)
     # Remove special non-printable symbols & emojis
-    text = re.sub(r"[^\w\s.,!?'\-]", "", text)
+    if getattr(config, "TTS_BACKEND", "kokoro") == "chatterbox":
+        text = re.sub(r"[^\w\s.,!?'\-\[\]]", "", text)
+    else:
+        text = re.sub(r"[^\w\s.,!?'\-]", "", text)
     # Collapse multiple spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -41,10 +45,24 @@ def clean_for_speech(text):
 class TTSEngine:
     def __init__(self, lang_code=config.TTS_LANG_CODE, voice=config.TTS_VOICE,
                  speaking_event=None):
-        self.pipeline = KPipeline(lang_code=lang_code)
+        self.backend = getattr(config, "TTS_BACKEND", "kokoro")
+        if self.backend == "chatterbox":
+            import torch
+            from chatterbox.tts_turbo import ChatterboxTurboTTS
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+            self.chatterbox = ChatterboxTurboTTS.from_pretrained(device=device)
+        else:
+            from kokoro import KPipeline
+            self.pipeline = KPipeline(lang_code=lang_code)
+
         self.voice = voice
         self.speaking_event = speaking_event
-        # Guards concurrent synthesis calls — KPipeline is not thread-safe.
+        # Guards concurrent synthesis calls — models are not thread-safe.
         # prosody.py uses a single synth_thread so this is belt-and-suspenders,
         # but it protects against any future call-site changes.
         self._synth_lock = threading.Lock()
@@ -64,12 +82,19 @@ class TTSEngine:
             return None
         with self._synth_lock:
             try:
-                chunks = []
-                for _, _, audio in self.pipeline(spoken, voice=self.voice, speed=speed):
-                    if audio is not None and len(audio) > 0:
-                        chunks.append(audio)
-                if chunks:
-                    return np.concatenate(chunks)
+                if self.backend == "chatterbox":
+                    out = self.chatterbox.generate(spoken)
+                    audio = out[0] if isinstance(out, tuple) else out
+                    if hasattr(audio, "cpu"):
+                        audio = audio.cpu().numpy()
+                    return audio.squeeze()
+                else:
+                    chunks = []
+                    for _, _, audio in self.pipeline(spoken, voice=self.voice, speed=speed):
+                        if audio is not None and len(audio) > 0:
+                            chunks.append(audio)
+                    if chunks:
+                        return np.concatenate(chunks)
             except Exception as e:
                 print(f"[speech] synthesis error: {e}")
         return None
@@ -86,9 +111,14 @@ class TTSEngine:
             return
         try:
             sd.stop()
+            from state import internal_state
+            internal_state.is_playing_audio = True
             sd.play(audio, config.TTS_SAMPLE_RATE)
             sd.wait()
+            internal_state.is_playing_audio = False
         except Exception as e:
+            from state import internal_state
+            internal_state.is_playing_audio = False
             print(f"[speech] playback error: {e}")
 
     # ------------------------------------------------------------------
@@ -119,18 +149,30 @@ class TTSEngine:
 
         try:
             with self._synth_lock:
-                generator = self.pipeline(spoken_text, voice=self.voice, speed=speed)
-                audio_chunks = []
-                for _, _, audio in generator:
-                    if audio is not None and len(audio) > 0:
-                        audio_chunks.append(audio)
+                if self.backend == "chatterbox":
+                    out = self.chatterbox.generate(spoken_text)
+                    audio = out[0] if isinstance(out, tuple) else out
+                    if hasattr(audio, "cpu"):
+                        audio = audio.cpu().numpy()
+                    audio_chunks = [audio.squeeze()]
+                else:
+                    generator = self.pipeline(spoken_text, voice=self.voice, speed=speed)
+                    audio_chunks = []
+                    for _, _, audio in generator:
+                        if audio is not None and len(audio) > 0:
+                            audio_chunks.append(audio)
 
             if audio_chunks:
                 full_audio = np.concatenate(audio_chunks)
                 sd.stop()
+                from state import internal_state
+                internal_state.is_playing_audio = True
                 sd.play(full_audio, config.TTS_SAMPLE_RATE)
                 sd.wait()
+                internal_state.is_playing_audio = False
         except Exception as e:
+            from state import internal_state
+            internal_state.is_playing_audio = False
             print(f"[speech] tts error: {e}")
         finally:
             if self.speaking_event:

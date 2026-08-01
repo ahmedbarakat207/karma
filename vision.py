@@ -24,7 +24,7 @@ HAND_CONNECTIONS = [
 ]
 
 
-def run_vision(memory, stop_event):
+def run_vision(memory, stop_event, speaking_event=None):
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("[vision] could not open webcam -- check macOS camera permissions "
@@ -334,16 +334,38 @@ def run_vision(memory, stop_event):
                         2,
                     )
                     cv2.imshow("Ambient Agent Vision (YOLO + Face Tracking)", annotated_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        print("[vision] window closed by user")
-                        show_window = False
-                        cv2.destroyAllWindows()
-                except cv2.error:
-                    print("[vision] Note: macOS Cocoa GUI requires main thread for window display. Vision continues headlessly with console logging.")
-                    show_window = False
                 except Exception as e:
-                    print(f"[vision] window display error: {e}")
+                    pass
+
+            # --- AI Face window ---
+            try:
+                from state import internal_state
+                face_img = np.zeros((300, 400, 3), dtype=np.uint8)
+                is_talking = internal_state.is_playing_audio
+                face_str = internal_state.get_expression(is_talking)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 3
+                font_thickness = 4
+                text_size = cv2.getTextSize(face_str, font, font_scale, font_thickness)[0]
+                text_x = (400 - text_size[0]) // 2
+                text_y = (300 + text_size[1]) // 2
+                cv2.putText(face_img, face_str, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+                cv2.imshow("Karma Face", face_img)
+            except Exception as e:
+                pass
+
+            # waitKey handles all active OpenCV windows
+            try:
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    print("[vision] window closed by user")
                     show_window = False
+                    cv2.destroyAllWindows()
+            except cv2.error:
+                print("[vision] Note: macOS Cocoa GUI requires main thread for window display. Vision continues headlessly with console logging.")
+                show_window = False
+            except Exception as e:
+                print(f"[vision] window display error: {e}")
+                show_window = False
 
             if getattr(config, "VISION_POLL_SECONDS", 0.001) > 0:
                 stop_event.wait(config.VISION_POLL_SECONDS)

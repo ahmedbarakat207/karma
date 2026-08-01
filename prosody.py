@@ -245,15 +245,27 @@ def prosody_stream(token_iter, tts, verbose=True):
 
 
     def drain_thread_fn():
-        """Reads synthesised audio in order and plays it."""
-        while True:
-            audio = audio_queue.get()
-            if audio is None:           # poison pill
-                break
-            try:
-                tts._play_audio(audio)
-            except Exception as e:
-                print(f"[prosody] playback error: {e}")
+        """Reads synthesised audio in order and streams it gaplessly."""
+        import sounddevice as sd
+        import config
+        from state import internal_state
+        try:
+            with sd.OutputStream(samplerate=config.TTS_SAMPLE_RATE, channels=1, dtype='float32') as stream:
+                while True:
+                    audio = audio_queue.get()
+                    if audio is None:           # poison pill
+                        break
+                    try:
+                        internal_state.is_playing_audio = True
+                        # stream.write() blocks until the array is fully sent to the audio hardware,
+                        # achieving perfect seamless playback across sentence chunks.
+                        stream.write(audio)
+                        internal_state.is_playing_audio = False
+                    except Exception as e:
+                        internal_state.is_playing_audio = False
+                        print(f"[prosody] playback error: {e}")
+        except Exception as e:
+            print(f"[prosody] stream error: {e}")
 
     synth_t = threading.Thread(target=synth_thread_fn, daemon=True)
     drain_t = threading.Thread(target=drain_thread_fn, daemon=True)
@@ -298,6 +310,8 @@ def prosody_stream(token_iter, tts, verbose=True):
                 if parser._emotion_found or parser._inflection_found:
                     print(f"[prosody] emotion={parser.emotion} inflection={parser.inflection}")
                     emotion_logged = True
+                    from state import internal_state
+                    internal_state.current_emotion = parser.emotion
 
             speed = _resolve_speed(parser.emotion, parser.inflection)
 
@@ -324,6 +338,9 @@ def prosody_stream(token_iter, tts, verbose=True):
             import time
             time.sleep(0.2)
             tts.speaking_event.clear()
+
+        from state import internal_state
+        internal_state.current_emotion = None
 
 
 def _flush_at_boundary(buf: str):

@@ -20,7 +20,7 @@ LOCAL_CTX_SIZE = 8192
 LOCAL_N_GPU_LAYERS = -1
 
 PERSONA_SYSTEM_PROMPT = (
-    "You are a genuine, warm, witty human friend sharing space with someone. "
+    "Your name is Karma. You are a genuine, warm, witty human friend sharing space with someone. "
     "You perceive the room naturally—seeing objects and hearing spoken conversation. "
     "You speak naturally like a close friend, with real emotion, humor, curiosity, and empathy. "
     "Use conversational language with natural contractions (I'm, that's, don't, let's). "
@@ -62,6 +62,7 @@ ARCHIVE_DIR = os.path.join(BASE_DIR, "memory_archive")
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBED_DIM = 384
 
+TTS_BACKEND = "chatterbox"   # "chatterbox" (Resemble AI) or "kokoro"
 TTS_LANG_CODE = "a"          # 'a' = American English, 'b' = British English, etc.
 TTS_VOICE = "af_bella"       # see hexgrad/Kokoro-82M on Hugging Face for all 54 voices
 TTS_SAMPLE_RATE = 24000
