@@ -4,6 +4,41 @@ import config
 from state import internal_state
 from prosody import prosody_stream
 
+
+def retrieve_memories(query: str, store, embedder, k: int = 3, max_dist: float = 0.7) -> str:
+    """
+    Retrieve relevant long-term memories for the current user query.
+
+    Encodes the query with the same embedder used at consolidation time,
+    performs a vector similarity search, and returns a compact formatted
+    string ready for injection into the LLM prompt.
+
+    Returns empty string when store/embedder are unavailable or when no
+    memories are close enough (distance >= max_dist).
+    """
+    if not store or not embedder or not query:
+        return ""
+    try:
+        embedding = embedder.encode(query[:300]).tolist()
+        results = store.query(embedding, k=k)
+        relevant = [r for r in results if r["distance"] < max_dist]
+        if not relevant:
+            return ""
+        lines = []
+        for r in relevant:
+            age = time.time() - r["ts"]
+            if age < 3600:
+                age_str = f"{int(age / 60)}m ago"
+            elif age < 86400:
+                age_str = f"{int(age / 3600)}h ago"
+            else:
+                age_str = f"{int(age / 86400)}d ago"
+            lines.append(f"- ({age_str}) {r['text']}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"[memory] retrieval error: {e}")
+        return ""
+
 _DIRECT_PATTERNS = [
     re.compile(r"^\s*(hi|hey|hello|yo|sup)\b", re.IGNORECASE),
     re.compile(r"^\s*(what|how|why|who|where|when|is|am|are|can|do|does)\b", re.IGNORECASE),
@@ -46,7 +81,17 @@ Split text_chunks at sentence boundaries (periods, question marks, exclamation m
 Do NOT split inside a clause — each chunk should be a complete grammatical thought.
 """
 
-def run_interaction_response(memory, engine, tts):
+def run_interaction_response(memory, engine, tts, store=None, embedder=None):
+    """
+    Handle one turn of user speech.
+
+    Args:
+        memory:   WorkingMemory instance.
+        engine:   LLM engine (must expose stream_chat / chat).
+        tts:      TTSEngine instance, or None to skip speech.
+        store:    MemoryStore for long-term recall (optional).
+        embedder: SentenceTransformer for encoding queries (optional).
+    """
     new_speech = memory.unhandled_speech(0)
     if not new_speech:
         return False
@@ -97,17 +142,33 @@ def run_interaction_response(memory, engine, tts):
     # Build conversation context
     conv_ctx = memory.get_conversation_context(config.CONVERSATION_HISTORY_SIZE)
 
-    # Build prompt
+    # Build prompt — ordered from most-historical to most-immediate context
     prompt_parts = []
+
+    # 1. Long-term memory recall (cross-session continuity)
+    if store and embedder:
+        memory_ctx = retrieve_memories(speech_text, store, embedder)
+        if memory_ctx:
+            print(f"[memory] recalled {len(memory_ctx.splitlines())} item(s) for: '{speech_text[:40]}'")
+            prompt_parts.append(f"Relevant memories from past sessions:\n{memory_ctx}")
+
+    # 2. Recent conversation history (current session)
     if conv_ctx:
         prompt_parts.append(f"Previous conversation:\n{conv_ctx}")
+
+    # 3. Recent self-thoughts
     if thought_ctx:
         prompt_parts.append(thought_ctx)
+
+    # 4. Current environment (vision)
     if vision_ctx:
         prompt_parts.append(vision_ctx)
+
+    # 5. User's current utterance + instruction
     prompt_parts.append(f'Friend said: "{speech_text}"\n\nYour reply (JSON only):')
 
     prompt = "\n".join(prompt_parts)
+
 
     try:
         reply_text = ""  # always bound; prevents UnboundLocalError masking real exceptions

@@ -38,7 +38,7 @@ def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder,
         
         # 2. If user is speaking or there's unhandled speech, switch to Interaction mode
         elif memory.is_user_speaking() or memory.unhandled_speech(0):
-            run_interaction_response(memory, engine, tts)
+            run_interaction_response(memory, engine, tts, store=store, embedder=embedder)
         
         # 3. Background idle thought (the 'hum' of consciousness)
         else:
@@ -47,6 +47,11 @@ def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder,
                 think_quietly(memory, engine, store, embedder)
 
 def main():
+    if "-v" in sys.argv:
+        config.LOG_VISION_TO_CONSOLE = True
+    else:
+        config.LOG_VISION_TO_CONSOLE = False
+
     print("[main] loading LLM...")
     engine = create_engine()
 

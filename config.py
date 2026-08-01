@@ -46,6 +46,8 @@ GROQ_STT_MODEL = "whisper-large-v3-turbo"
 WHISPER_MODEL_SIZE = "base"    # local fallback model
 SAMPLE_RATE = 16000
 MIN_TRANSCRIPT_CHARS = 3       # ignore near-empty transcriptions (silence/noise)
+VAD_POST_SPEECH_GRACE_MS = 300 # grace period to ignore audio after agent finishes speaking
+
 
 # --- Cognition loop ---
 THINK_INTERVAL_SECONDS = 5    # how often it generates an internal "thought"

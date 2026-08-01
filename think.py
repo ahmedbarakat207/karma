@@ -7,7 +7,7 @@ import random
 import config
 from state import internal_state
 from prosody import prosody_stream
-from interaction import _extract_plain_text
+from interaction import _extract_plain_text, retrieve_memories
 
 _THINK_PROMPT = (
     "You are a warm, genuine human friend sharing space with someone in the room. "
@@ -28,24 +28,11 @@ _THINK_PROMPT = (
     "Or just output [silence] if there is nothing to say."
 )
 
-
-def recall_memory_context(store, embedder, triggers_text):
-    if not store or not embedder or not triggers_text:
-        return "none"
-    try:
-        emb = embedder.encode(triggers_text[:300]).tolist()
-        recalled = store.query(emb, k=2)
-        if recalled and recalled[0]["distance"] < 0.75:
-            return recalled[0]["text"]
-    except Exception:
-        pass
-    return "none"
-
 def think_immediately(memory, engine, tts, store, embedder, urgency="HIGH", speaking_event=None):
     workspace = memory.get_workspace()
     urgent_triggers = memory.get_high_salience_events()
     
-    past_ctx = recall_memory_context(store, embedder, urgent_triggers or "room")
+    past_ctx = retrieve_memories(urgent_triggers or "room", store, embedder, k=2) or "none"
     time_of_day = time.strftime('%I:%M %p')
     workspace.self_model['time_of_day'] = time_of_day
     

@@ -118,9 +118,26 @@ def run_audio(memory, stop_event, speaking_event=None):
 def run_audio_loop(memory, stop_event, groq_client=None, local_whisper=None, speaking_event=None):
     q = queue.Queue()
 
-    def callback(indata, frames, time_info, status):
-        q.put(indata.copy())
+    grace_frames_needed = int((getattr(config, "VAD_POST_SPEECH_GRACE_MS", 300) / 1000.0) * SAMPLE_RATE / BLOCK_SIZE)
+    # Use a list/dict to hold mutable state across the closure
+    state = {"grace_frames_remaining": 0, "was_speaking": False}
 
+    def callback(indata, frames, time_info, status):
+        # Hardware-level hard mute when agent is speaking
+        if speaking_event and speaking_event.is_set():
+            state["was_speaking"] = True
+            state["grace_frames_remaining"] = grace_frames_needed
+            return
+
+        if state["was_speaking"]:
+            state["was_speaking"] = False
+
+        # Post-speech grace period to let acoustic echo decay
+        if state["grace_frames_remaining"] > 0:
+            state["grace_frames_remaining"] -= 1
+            return
+
+        q.put(indata.copy())
     print("[audio] ready -- streaming microphone audio continuously with Silero VAD")
 
     # Ultra-fast speech detection parameters
@@ -152,7 +169,13 @@ def run_audio_loop(memory, stop_event, groq_client=None, local_whisper=None, spe
                     is_speaking = False
                     memory.set_user_speaking(False)
                     speech_buffer = []
+                    pre_buffer = np.zeros(0, dtype=np.float32)
                     silence_duration = 0.0
+                    if silero_vad_model is not None:
+                        try:
+                            silero_vad_model.reset_states()
+                        except Exception:
+                            pass
                     stop_event.wait(0.2)
                     continue
 
