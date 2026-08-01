@@ -64,6 +64,8 @@ TTS_LANG_CODE = "a"          # 'a' = American English, 'b' = British English, et
 TTS_VOICE = "af_bella"       # see hexgrad/Kokoro-82M on Hugging Face for all 54 voices
 TTS_SAMPLE_RATE = 24000
 SPEAK_THOUGHTS = False       # set False to keep it silent (text-only, like before)
+TTS_STREAMING = True         # stream LLM tokens → sentence-level parallel TTS synthesis
+PROSODY_SENTENCE_BOUNDARIES = r'[.!?]+'  # regex for flush boundaries in prosody.py
 
 # --- Interaction loop ---
 INTERACTION_FACE_WINDOW = 15 # seconds within which a face and speech event must occur to trigger a reply

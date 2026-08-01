@@ -2,6 +2,7 @@ import re
 import time
 import config
 from state import internal_state
+from prosody import prosody_stream
 
 _DIRECT_PATTERNS = [
     re.compile(r"^\s*(hi|hey|hello|yo|sup)\b", re.IGNORECASE),
@@ -25,6 +26,24 @@ HUMAN CONVERSATION STYLE:
 - Keep responses short and conversational (1-2 sentences) so the dialogue flows naturally back and forth.
 - Never sound like an AI assistant, customer service rep, or formal computer program.
 - Never mention cameras, sensors, vision models, or AI mechanisms.
+
+OUTPUT FORMAT — CRITICAL:
+You MUST respond with ONLY a JSON object in exactly this structure. No other text before or after.
+The key ORDER matters: emotion and inflection MUST come before text_chunks so the speech engine
+can prime its vocal style before the first word is synthesised.
+
+{
+  "emotion": "<one word: curious | playful | warm | excited | tired | sad | surprised | inquisitive | neutral>",
+  "inflection": "<one word: question | excited | whisper | emphatic | flat>",
+  "text_chunks": [
+    "<first clause ending at a natural pause or sentence boundary>",
+    "<second clause>",
+    "..."
+  ]
+}
+
+Split text_chunks at sentence boundaries (periods, question marks, exclamation marks).
+Do NOT split inside a clause — each chunk should be a complete grammatical thought.
 """
 
 def run_interaction_response(memory, engine, tts):
@@ -86,27 +105,76 @@ def run_interaction_response(memory, engine, tts):
         prompt_parts.append(thought_ctx)
     if vision_ctx:
         prompt_parts.append(vision_ctx)
-    prompt_parts.append(f'Friend said: "{speech_text}"\n\nYour reply:')
+    prompt_parts.append(f'Friend said: "{speech_text}"\n\nYour reply (JSON only):')
 
     prompt = "\n".join(prompt_parts)
 
     try:
-        reply = engine.chat(sys_prompt, prompt, max_tokens=70)
-        if reply:
-            # Clean up response prefixes & echoes
-            reply = reply.strip().strip('"').strip("'")
-            reply = re.sub(r"^(friend said:|your reply:|reply:|you:)\s*", "", reply, flags=re.IGNORECASE).strip()
-            if reply.lower().startswith("friend said"):
-                reply = re.sub(r"^friend said.*?:?\s*", "", reply, flags=re.IGNORECASE).strip()
+        reply_text = ""  # always bound; prevents UnboundLocalError masking real exceptions
+        if tts and hasattr(engine, "stream_chat"):
+            # --- Streaming path: prosody-aware, sentence-level parallel synthesis ---
+            token_stream = engine.stream_chat(sys_prompt, prompt, max_tokens=120)
+            # Collect the full reply for memory logging while prosody_stream plays it
+            collected_tokens = []
 
-            if reply and len(reply) > 1:
-                print(f"[reply] ({internal_state.mood}) {reply}")
-                memory.add(kind="reply", text=reply, counts_as_activity=True)
-                memory.add_conversation(speech_text, reply)
-                if tts:
-                    tts.speak(reply)
+            def collecting_stream():
+                for tok in token_stream:
+                    collected_tokens.append(tok)
+                    yield tok
+
+            prosody_stream(collecting_stream(), tts)
+            raw_reply = "".join(collected_tokens).strip()
+
+            # Extract plain text from the JSON for memory logging
+            reply_text = _extract_plain_text(raw_reply)
+        else:
+            # --- Legacy blocking path (no TTS or no streaming support) ---
+            raw_reply = engine.chat(sys_prompt, prompt, max_tokens=120)
+            raw_reply = raw_reply.strip().strip('"').strip("'")
+            raw_reply = re.sub(r"^(friend said:|your reply:|reply:|you:)\s*", "", raw_reply, flags=re.IGNORECASE).strip()
+            reply_text = raw_reply
+            if tts and reply_text and len(reply_text) > 1:
+                tts.speak(reply_text)
+
+        if reply_text and len(reply_text) > 1:
+            print(f"[reply] ({internal_state.mood}) {reply_text}")
+            memory.add(kind="reply", text=reply_text, counts_as_activity=True)
+            memory.add_conversation(speech_text, reply_text)
+
     except Exception as e:
         print(f"[interaction] generation error: {e}")
     finally:
         memory.mark_handled(latest_ts)
-        return True
+    return True
+
+
+def _extract_plain_text(raw: str) -> str:
+    """
+    Extract a plain-text summary of the reply from the JSON envelope for memory logging.
+    Falls back gracefully if the JSON is malformed or absent.
+    """
+    import json
+    # Try parsing as JSON first
+    try:
+        # Find the JSON object in the raw string
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start != -1 and end > start:
+            obj = json.loads(raw[start:end])
+            chunks = obj.get("text_chunks", [])
+            if chunks:
+                return " ".join(chunks).strip()
+    except Exception:
+        pass
+
+    # Fallback: extract text_chunks array content with regex
+    chunks_match = re.search(r'"text_chunks"\s*:\s*\[(.*?)\]', raw, re.DOTALL)
+    if chunks_match:
+        strings = re.findall(r'"((?:[^"\\]|\\.)*)"', chunks_match.group(1))
+        if strings:
+            return " ".join(strings).strip()
+
+    # Last resort: strip all JSON syntax and return plain text
+    plain = re.sub(r'[{}\[\]"]', "", raw)
+    plain = re.sub(r'"?(emotion|inflection|text_chunks)"\s*:\s*"?[^,\n]*"?,?\n?', "", plain)
+    return plain.strip()

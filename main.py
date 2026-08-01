@@ -9,6 +9,7 @@ Usage:
     (while running) type "quit" + Enter to shut down cleanly
 """
 import sys
+import signal
 import threading
 import time
 import random
@@ -74,6 +75,31 @@ def main():
             finally:
                 consolidation_lock.release()
 
+    def shutdown(signum=None, frame=None):
+        """Signal handler: request clean shutdown and give threads 2s to drain."""
+        if not stop_event.is_set():
+            print("\n[main] shutting down...")
+            stop_event.set()
+            speaking_event.clear()      # unblock any waiting mic thread
+            # Give daemon-ish threads a moment to notice stop_event
+            time.sleep(0.5)
+            # Release audio hardware before Python tears down sd internals
+            try:
+                import sounddevice as _sd
+                _sd.stop()
+            except Exception:
+                pass
+            # Release OpenCV windows before MediaPipe/YOLO GPU contexts are torn down
+            try:
+                import cv2 as _cv2
+                _cv2.destroyAllWindows()
+            except Exception:
+                pass
+
+    # Register shutdown for Ctrl+C and SIGTERM (e.g. kill from the shell)
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
     def listen_stdin():
         try:
             for line in sys.stdin:
@@ -81,16 +107,16 @@ def main():
                 if cmd in ("sleep", "sleep now"):
                     threading.Thread(target=do_sleep, daemon=True).start()
                 elif cmd in ("quit", "exit"):
-                    stop_event.set()
+                    shutdown()
                     break
         except Exception:
             pass
 
     threads = [
-        threading.Thread(target=run_audio, args=(memory, stop_event, speaking_event), daemon=True),
-        threading.Thread(target=consciousness_orchestrator, args=(memory, engine, stop_event, tts, store, embedder, speaking_event), daemon=True),
-        threading.Thread(target=run_idle_watcher, args=(memory, stop_event, do_sleep), daemon=True),
-        threading.Thread(target=listen_stdin, daemon=True),
+        threading.Thread(target=run_audio, args=(memory, stop_event, speaking_event), daemon=True, name="audio"),
+        threading.Thread(target=consciousness_orchestrator, args=(memory, engine, stop_event, tts, store, embedder, speaking_event), daemon=True, name="consciousness"),
+        threading.Thread(target=run_idle_watcher, args=(memory, stop_event, do_sleep), daemon=True, name="idle_watcher"),
+        threading.Thread(target=listen_stdin, daemon=True, name="stdin"),
     ]
     for t in threads:
         t.start()
@@ -100,11 +126,13 @@ def main():
     try:
         # Run vision on the main thread so macOS Cocoa OpenCV window works natively!
         run_vision(memory, stop_event)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        print("[main] shutting down...")
-        stop_event.set()
+        shutdown()
+        # Wait briefly for threads to notice stop_event before interpreter exits
+        for t in threads:
+            t.join(timeout=2.0)
 
 
 if __name__ == "__main__":

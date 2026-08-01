@@ -1,8 +1,22 @@
 """
 Fully local text-to-speech via Kokoro-82M (Apache-2.0, hexgrad/Kokoro-82M).
-Optimized audio stream buffer management to prevent PortAudio creaking and silence.
+
+Public interface:
+  speak(text)            — legacy blocking call (synthesise + play, full reply)
+  speak_chunk(text)      — synthesise + play a single sentence (convenience)
+  _synthesize(text)      — synthesise → numpy array only (used by prosody.py)
+  _play_audio(audio)     — play a pre-synthesised array (used by prosody.py)
+
+Thread-safety notes:
+  - _synthesize is guarded by _synth_lock: Kokoro's KPipeline / PyTorch
+    forward passes are not safe to call from multiple threads concurrently.
+  - _play_audio does NOT touch speaking_event. The prosody.py pipeline owns
+    that event for the full duration of a reply so the mic stays muted
+    across all sentence chunks, not just one.
+  - speak() still manages speaking_event internally for backwards compat.
 """
 import re
+import threading
 import numpy as np
 import sounddevice as sd
 from kokoro import KPipeline
@@ -30,8 +44,72 @@ class TTSEngine:
         self.pipeline = KPipeline(lang_code=lang_code)
         self.voice = voice
         self.speaking_event = speaking_event
+        # Guards concurrent synthesis calls — KPipeline is not thread-safe.
+        # prosody.py uses a single synth_thread so this is belt-and-suspenders,
+        # but it protects against any future call-site changes.
+        self._synth_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Low-level primitives (used by prosody.py for streaming pipeline)
+    # ------------------------------------------------------------------
+
+    def _synthesize(self, text: str, speed: float = 1.0):
+        """
+        Synthesise text and return a numpy float32 audio array.
+        Does NOT play audio. Serialised by _synth_lock for thread safety.
+        Returns None if synthesis fails or text is empty after cleaning.
+        """
+        spoken = clean_for_speech(text)
+        if not spoken:
+            return None
+        with self._synth_lock:
+            try:
+                chunks = []
+                for _, _, audio in self.pipeline(spoken, voice=self.voice, speed=speed):
+                    if audio is not None and len(audio) > 0:
+                        chunks.append(audio)
+                if chunks:
+                    return np.concatenate(chunks)
+            except Exception as e:
+                print(f"[speech] synthesis error: {e}")
+        return None
+
+    def _play_audio(self, audio: np.ndarray):
+        """
+        Play a pre-synthesised numpy audio array.
+
+        Does NOT touch speaking_event — that lifecycle is owned by
+        prosody_stream() for the entire reply, keeping the mic muted across
+        all sentence chunks.
+        """
+        if audio is None or len(audio) == 0:
+            return
+        try:
+            sd.stop()
+            sd.play(audio, config.TTS_SAMPLE_RATE)
+            sd.wait()
+        except Exception as e:
+            print(f"[speech] playback error: {e}")
+
+    # ------------------------------------------------------------------
+    # Convenience wrapper (synthesise + play in one call)
+    # ------------------------------------------------------------------
+
+    def speak_chunk(self, text: str, speed: float = 1.0):
+        """Synthesise and immediately play a single sentence chunk."""
+        audio = self._synthesize(text, speed=speed)
+        if audio is not None:
+            self._play_audio(audio)
+
+    # ------------------------------------------------------------------
+    # Legacy blocking interface (unchanged for backwards compatibility)
+    # ------------------------------------------------------------------
 
     def speak(self, text, speed=1.0):
+        """
+        Synthesise full text and play it in one blocking call.
+        Manages speaking_event internally (legacy path, not used by prosody.py).
+        """
         spoken_text = clean_for_speech(text)
         if not spoken_text:
             return
@@ -40,16 +118,15 @@ class TTSEngine:
             self.speaking_event.set()
 
         try:
-            generator = self.pipeline(spoken_text, voice=self.voice, speed=speed)
-            audio_chunks = []
-            for _, _, audio in generator:
-                if audio is not None and len(audio) > 0:
-                    audio_chunks.append(audio)
+            with self._synth_lock:
+                generator = self.pipeline(spoken_text, voice=self.voice, speed=speed)
+                audio_chunks = []
+                for _, _, audio in generator:
+                    if audio is not None and len(audio) > 0:
+                        audio_chunks.append(audio)
 
             if audio_chunks:
-                # Concatenate into one smooth, unfragmented audio buffer
                 full_audio = np.concatenate(audio_chunks)
-                # Clear lingering PortAudio device state to prevent buffer underflows/creaking
                 sd.stop()
                 sd.play(full_audio, config.TTS_SAMPLE_RATE)
                 sd.wait()

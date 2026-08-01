@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches & temporary files
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Environments & Virtual Envs
+.venv/
+venv/
+ENV/
+env/
+.env
+.env.*
+!.env.example
+
+# IDE & OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Databases & Runtime State
+*.db
+*.sqlite
+*.sqlite3
+memory.db
+
+# Machine Learning Models & Weights
+*.pt
+*.pth
+*.onnx
+*.bin
+*.gguf
+*.task
+*.safetensors
+
+# Allow tracked .gitkeep files
+!*/.gitkeep
+
+Modelfile

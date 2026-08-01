@@ -110,6 +110,10 @@ def run_vision(memory, stop_event):
     previous_objects = set()
     previous_positions = {}
     user_x_history = deque(maxlen=10)
+    # Per-label startle cooldown: label → last startle timestamp
+    # Prevents the same object from triggering startle dozens of times per second
+    _startle_cooldowns = {}
+    STARTLE_COOLDOWN_SECONDS = 10  # min seconds between startles for the same label
 
     try:
         while not stop_event.is_set():
@@ -289,15 +293,24 @@ def run_vision(memory, stop_event):
             new_labels = labels - last_seen_labels
             startle_items = [l for l in new_labels if "looking" not in l and "face" not in l]
             if startle_items and len(last_seen_labels) > 0:
-                item_str = ", ".join(sorted(startle_items))
-                if log_console:
-                    print(f"[vision startle] suddenly noticed: {item_str}")
-                memory.add(
-                    kind="urgent_observation",
-                    text=f"suddenly noticed {item_str}",
-                    counts_as_activity=True,
-                    salience=1.0,
-                )
+                # Apply per-label cooldown so the same object doesn't startle every frame
+                now_t = time.time()
+                cooled = [
+                    l for l in startle_items
+                    if now_t - _startle_cooldowns.get(l, 0) >= STARTLE_COOLDOWN_SECONDS
+                ]
+                if cooled:
+                    for l in cooled:
+                        _startle_cooldowns[l] = now_t
+                    item_str = ", ".join(sorted(cooled))
+                    if log_console:
+                        print(f"[vision startle] suddenly noticed: {item_str}")
+                    memory.add(
+                        kind="urgent_observation",
+                        text=f"suddenly noticed {item_str}",
+                        counts_as_activity=True,
+                        salience=1.0,
+                    )
             last_seen_labels = labels
 
             # Add detections to memory
