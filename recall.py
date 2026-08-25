@@ -1,15 +1,18 @@
+#!/usr/bin/env python3
 """
-Quick way to test/inspect the long-term memory store.
+Memory Store Query CLI.
+Allows searching through long-term episodic memories from the terminal.
 
 Usage:
-    python recall.py "what did it notice this morning"
+    python recall.py "what did we talk about earlier"
 """
 import sys
 import time
 
-import config
-from memory_store import MemoryStore
 from sentence_transformers import SentenceTransformer
+
+from src import config
+from src.memory.store import MemoryStore
 
 
 def main():
@@ -19,14 +22,14 @@ def main():
 
     query = " ".join(sys.argv[1:])
 
-    embedder = SentenceTransformer(config.EMBED_MODEL_NAME)
+    embedder = SentenceTransformer(getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME))
     store = MemoryStore()
 
     embedding = embedder.encode(query).tolist()
     results = store.query(embedding, k=5)
 
     if not results:
-        print("No memories stored yet -- let it run and sleep at least once.")
+        print("No memories stored yet -- run Karma and trigger sleep consolidation at least once.")
         return
 
     print(f"\nTop matches for: {query!r}\n")

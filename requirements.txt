@@ -1,5 +1,4 @@
 llama-cpp-python
-groq
 ultralytics
 opencv-python
 faster-whisper
@@ -11,3 +10,6 @@ sentence-transformers
 sqlite-vec
 sqlean.py
 kokoro
+face_recognition
+mediapipe
+huggingface_hub

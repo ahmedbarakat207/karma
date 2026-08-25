@@ -44,6 +44,7 @@ memory.db
 *.gguf
 *.task
 *.safetensors
+models/
 
 # Allow tracked .gitkeep files
 !*/.gitkeep
