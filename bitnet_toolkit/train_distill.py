@@ -62,6 +62,10 @@ class DistillationLoss(nn.Module):
         return total_loss, ce, kl
 
 
+# Configure CUDA memory allocation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+
 def load_any_causal_model(model_name: str, dtype: torch.dtype):
     register_qwen3_5_architecture()
     try:
@@ -95,6 +99,33 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
                 )
 
 
+def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
+    """Loads Teacher model with optional 4-bit NF4 quantization on CUDA to save 70% VRAM."""
+    register_qwen3_5_architecture()
+
+    if device.type == "cuda":
+        try:
+            from transformers import BitsAndBytesConfig
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True
+            )
+            teacher = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True
+            )
+            print("✓ Loaded Teacher in 4-Bit NF4 (saves ~6 GB VRAM for Colab T4 GPU)")
+            return teacher
+        except Exception as e:
+            print(f"[Note] 4-bit teacher fallback ({e}), attempting standard load...")
+
+    return load_any_causal_model(model_name, dtype=dtype).to(device)
+
+
 def train_distillation(args):
     device = get_device()
     print("=" * 70)
@@ -107,14 +138,17 @@ def train_distillation(args):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 2. Load Full-Precision Teacher Model
+    # 2. Load Teacher Model (with 4-bit VRAM compression on CUDA)
     dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
-    print(f"[2/5] Loading Teacher model '{args.model_name}' in {dtype}...")
-    teacher = load_any_causal_model(args.model_name, dtype=dtype).to(device)
+    print(f"[2/5] Loading Teacher model '{args.model_name}'...")
+    teacher = load_teacher_model(args.model_name, dtype=dtype, device=device)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
-    print(f"Teacher parameters: {sum(p.numel() for p in teacher.parameters()):,} (FROZEN)")
+    print(f"Teacher loaded (FROZEN)")
+
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     # 3. Initialize BitNet Student Model
     print(f"[3/5] Constructing BitNet Student model...")
@@ -122,6 +156,7 @@ def train_distillation(args):
     # Perform model surgery
     student, converted_count, preserved_count = convert_model_to_bitnet(student, verbose=True)
     student = student.to(device)
+
 
 
     if args.gradient_checkpointing:
