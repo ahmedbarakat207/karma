@@ -13,3 +13,5 @@ kokoro
 face_recognition
 mediapipe
 huggingface_hub
+groq
+

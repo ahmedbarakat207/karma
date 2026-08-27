@@ -6,6 +6,8 @@ All Models Stored Locally Inside the models/ Directory.
 import os
 import warnings
 
+import sys
+
 # Suppress framework & dependency warnings across all modules
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -16,14 +18,57 @@ os.environ["ApplePersistenceIgnoreState"] = "YES"
 os.environ["MEDIAPIPE_DISABLE_GPU"] = "0"
 warnings.filterwarnings("ignore")
 
+
+class SilenceStderrFD:
+    """Temporarily silences C-level file descriptor 2 (stderr) to suppress C-level engine notices."""
+    def __enter__(self):
+        try:
+            sys.stderr.flush()
+            self.null_fd = os.open(os.devnull, os.O_WRONLY)
+            self.saved_stderr_fd = os.dup(2)
+            os.dup2(self.null_fd, 2)
+        except Exception:
+            self.null_fd = None
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if getattr(self, "null_fd", None) is not None:
+            try:
+                sys.stderr.flush()
+                os.dup2(self.saved_stderr_fd, 2)
+                os.close(self.saved_stderr_fd)
+                os.close(self.null_fd)
+            except Exception:
+                pass
+
+
 import torch
+
 
 # Project root directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 
+# Automatically load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
+except Exception:
+    env_file = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        os.environ.setdefault(_k.strip(), _v.strip().strip("'\""))
+        except Exception:
+            pass
+
 # CPU thread allocation (4 cores on Raspberry Pi 4)
 N_THREADS = int(os.environ.get("N_THREADS", str(min(4, os.cpu_count() or 4))))
+
 
 # Auto-detect best compute device (MPS on Apple Silicon, CPU on Raspberry Pi)
 _DEFAULT_YOLO_DEVICE = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
@@ -67,8 +112,59 @@ YOLO_IMGSZ = int(os.environ.get("YOLO_IMGSZ", "320"))         # 320x320 runs 4x 
 YOLO_CONFIDENCE = 0.50
 VISION_POLL_SECONDS = 0.033                                   # Target ~30 FPS
 OBJECT_DEDUP_SECONDS = 3                                      # Interval before repeating same object in memory
-SHOW_VISION_WINDOW = True                                     # Live camera window with bounding boxes & HUD
-LOG_VISION_TO_CONSOLE = True                                  # Log detected objects to terminal
+# Debug & Logging Mode (enabled via --debug, -d, -v, or DEBUG=1)
+DEBUG = bool(int(os.environ.get("DEBUG", "0"))) if os.environ.get("DEBUG", "0").isdigit() else os.environ.get("DEBUG", "").lower() in ("true", "yes", "1")
+SHOW_VISION_WINDOW = bool(int(os.environ.get("SHOW_VISION_WINDOW", "1" if DEBUG else "0"))) if os.environ.get("SHOW_VISION_WINDOW", "").isdigit() else os.environ.get("SHOW_VISION_WINDOW", "").lower() in ("true", "yes", "1")
+LOG_VISION_TO_CONSOLE = bool(int(os.environ.get("LOG_VISION_TO_CONSOLE", "1" if DEBUG else "0"))) if os.environ.get("LOG_VISION_TO_CONSOLE", "").isdigit() else os.environ.get("LOG_VISION_TO_CONSOLE", "").lower() in ("true", "yes", "1")
+FULLSCREEN_FACE = bool(int(os.environ.get("FULLSCREEN_FACE", "1"))) if os.environ.get("FULLSCREEN_FACE", "1").isdigit() else os.environ.get("FULLSCREEN_FACE", "1").lower() in ("true", "yes", "1")
+
+# Groq Cloud LLM (Only active when --groq is explicitly passed)
+USE_GROQ = bool(int(os.environ.get("USE_GROQ", "0"))) if os.environ.get("USE_GROQ", "0").isdigit() else os.environ.get("USE_GROQ", "").lower() in ("true", "yes", "1")
+_raw_groq = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = f"openai/{_raw_groq}" if _raw_groq in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else _raw_groq
+
+
+def log_debug(*args, **kwargs) -> None:
+    """Print message only when DEBUG mode is active."""
+    if DEBUG:
+        print(*args, **kwargs)
+
+
+def apply_cli_args(argv=None) -> None:
+    """Applies command-line arguments to global configuration."""
+    global DEBUG, SHOW_VISION_WINDOW, LOG_VISION_TO_CONSOLE, FULLSCREEN_FACE, USE_GROQ, GROQ_MODEL
+    if argv is None:
+        import sys
+        argv = sys.argv[1:]
+
+    for arg in argv:
+        clean = arg.strip().lower()
+        if clean in ("--debug", "-d", "-v", "--verbose"):
+            DEBUG = True
+            SHOW_VISION_WINDOW = True
+            LOG_VISION_TO_CONSOLE = True
+        elif clean in ("--camera", "--vision", "-c"):
+            SHOW_VISION_WINDOW = True
+        elif clean in ("--no-camera", "--hide-camera"):
+            SHOW_VISION_WINDOW = False
+        elif clean in ("--windowed", "-w", "--no-fullscreen"):
+            FULLSCREEN_FACE = False
+        elif clean in ("--fullscreen", "-f"):
+            FULLSCREEN_FACE = True
+        elif clean in ("--groq", "-g"):
+            USE_GROQ = True
+            GROQ_MODEL = "openai/gpt-oss-20b"
+        elif clean.startswith("--groq="):
+            USE_GROQ = True
+            val = arg.split("=", 1)[1].strip()
+            GROQ_MODEL = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
+        elif clean.startswith("--groq-model="):
+            USE_GROQ = True
+            val = arg.split("=", 1)[1].strip()
+            GROQ_MODEL = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
+
+
+
 
 # Face Recognition & Name Learning
 FACE_RECOGNITION_ENABLED = True
@@ -96,6 +192,7 @@ BARGE_IN_ENERGY_MULT = 3.5                                    # Energy gate mult
 # ==============================================================================
 # 4. Local Speech Synthesis (TTS) & Prosody
 # ==============================================================================
+USE_KOKORO_ONNX = bool(int(os.environ.get("USE_KOKORO_ONNX", "0"))) if os.environ.get("USE_KOKORO_ONNX", "0").isdigit() else os.environ.get("USE_KOKORO_ONNX", "").lower() in ("true", "yes", "1")
 KOKORO_MODEL_PATH = os.environ.get("KOKORO_MODEL_PATH", os.path.join(MODELS_DIR, "kokoro_q4.onnx"))
 KOKORO_VOICES_PATH = os.environ.get("KOKORO_VOICES_PATH", os.path.join(MODELS_DIR, "voices-v1.0.bin"))
 TTS_LANG_CODE = "a"                                           # 'a' = American English, 'b' = British English
@@ -104,6 +201,7 @@ TTS_SAMPLE_RATE = 24000
 SPEAK_THOUGHTS = False                                        # If True, speaks spontaneous internal thoughts
 TTS_STREAMING = True                                          # Stream LLM tokens -> parallel sentence synthesis
 PROSODY_SENTENCE_BOUNDARIES = r'[.!?]+'
+
 
 # ==============================================================================
 # 5. Cognition, Memory & Sleep Consolidation

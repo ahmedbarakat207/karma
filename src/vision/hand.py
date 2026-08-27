@@ -10,9 +10,7 @@ import numpy as np
 
 from src import config
 
-
 class SilenceStderrFD:
-    """Temporarily silences C-level file descriptor 2 (stderr) to suppress C++ framework log output."""
     def __enter__(self):
         try:
             sys.stderr.flush()
@@ -63,10 +61,11 @@ class HandTracker:
                         min_hand_presence_confidence=0.5,
                     )
                     self.detector = mp_vision.HandLandmarker.create_from_options(opts)
-                print("[vision] MediaPipe 3D Hand & Finger Tracking initialized!")
+                config.log_debug("[vision] MediaPipe 3D Hand & Finger Tracking initialized!")
                 atexit.register(self.close)
             except Exception as e:
-                print(f"[vision] HandLandmarker init note: {e}")
+                config.log_debug(f"[vision] HandLandmarker init note: {e}")
+
 
     def process(self, frame: np.ndarray) -> Tuple[List[str], List[List[Tuple[int, int]]]]:
         labels: List[str] = []

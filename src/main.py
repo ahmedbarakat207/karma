@@ -53,7 +53,7 @@ with SilenceStderrFD():
 
 def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder, speaking_event):
     """Coordinates cognition, user interaction turns, and spontaneous idle reflection."""
-    print("[main] Consciousness orchestrator started.")
+    config.log_debug("[main] Consciousness orchestrator started.")
     while not stop_event.is_set():
         try:
             state = memory.consciousness
@@ -72,21 +72,19 @@ def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder,
                 if random.random() < 0.05:
                     think_quietly(memory, engine, store, embedder)
         except Exception as e:
-            print(f"[main] consciousness loop exception: {e}")
+            config.log_debug(f"[main] consciousness loop exception: {e}")
             time.sleep(0.5)
 
 
 def main():
-    if "-v" in sys.argv:
-        config.LOG_VISION_TO_CONSOLE = True
-    else:
-        config.LOG_VISION_TO_CONSOLE = False
+    config.apply_cli_args()
 
-    print("[main] loading local LLM engine (llama_cpp)...")
+    engine_name = f"Groq ({getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')})" if getattr(config, "USE_GROQ", False) else "local llama_cpp"
+    config.log_debug(f"[main] loading LLM engine: {engine_name}...")
     engine = create_engine()
 
     embed_model_path = getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME)
-    print(f"[main] loading semantic embedding model from {embed_model_path}...")
+    config.log_debug(f"[main] loading semantic embedding model from {embed_model_path}...")
     embedder = SentenceTransformer(embed_model_path)
 
     store = MemoryStore()
@@ -95,7 +93,7 @@ def main():
     speaking_event = threading.Event()
     interrupt_event = threading.Event()
 
-    print("[main] loading TTS engine...")
+    config.log_debug("[main] loading TTS engine...")
     tts = TTSEngine(speaking_event=speaking_event, interrupt_event=interrupt_event)
 
     consolidation_lock = threading.Lock()
@@ -110,11 +108,12 @@ def main():
     def shutdown(signum=None, frame=None):
         """Clean shutdown handler: notifies threads and frees audio/vision hardware."""
         if not stop_event.is_set():
-            print("\n[main] shutting down Karma cleanly...")
+            if getattr(config, "DEBUG", False):
+                print("\n[main] shutting down Karma cleanly...")
             stop_event.set()
             interrupt_event.set()
             speaking_event.clear()
-            time.sleep(0.5)
+            time.sleep(0.3)
 
             try:
                 import sounddevice as _sd
@@ -140,6 +139,10 @@ def main():
                 elif cmd in ("quit", "exit"):
                     shutdown()
                     break
+            # Trigger clean shutdown when EOF (Ctrl+D) is received
+            shutdown()
+        except (EOFError, KeyboardInterrupt):
+            shutdown()
         except Exception:
             pass
 
@@ -157,7 +160,12 @@ def main():
     for t in threads:
         t.start()
 
-    print("\n[main] Karma is awake and running (100% Offline). Type 'sleep' to consolidate now, 'quit' to exit.\n")
+    groq_note = f" [Groq: {getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')}]" if getattr(config, "USE_GROQ", False) else ""
+    if getattr(config, "DEBUG", False):
+        print(f"\n[main] Karma is awake and running (DEBUG MODE{groq_note}: Full logs + Camera window enabled). Press Ctrl+D to exit.\n")
+    else:
+        print(f"\n✨ Karma is awake and running{groq_note}. Fullscreen face active. Press Ctrl+D to exit.\n")
+
 
     try:
         run_vision(memory, stop_event, speaking_event)
@@ -171,3 +179,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

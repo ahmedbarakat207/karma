@@ -72,11 +72,11 @@ def think_immediately(memory, engine, tts, store, embedder, urgency: str = "HIGH
         if not thought or thought.lower() == "[silence]" or ("silence" in thought.lower() and len(thought) < 12):
             return
 
-        print(f"[thought] (URGENT) {thought}")
+        config.log_debug(f"[thought] (URGENT) {thought}")
         memory.add(kind="thought", text=thought, salience=0.2)
 
     except Exception as e:
-        print(f"[think] urgent thought error: {e}")
+        config.log_debug(f"[think] urgent thought error: {e}")
 
 
 _last_thought_text = ""
@@ -116,7 +116,8 @@ def think_quietly(memory, engine, store, embedder) -> None:
 
         _last_thought_text = thought
         _last_thought_time = now
-        print(f"[thought] (IDLE) {thought}")
+        config.log_debug(f"[thought] (IDLE) {thought}")
         memory.add(kind="thought", text=thought, salience=0.1, counts_as_activity=False)
     except Exception:
         pass
+

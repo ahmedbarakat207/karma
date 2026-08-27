@@ -4,7 +4,8 @@ Language Model Subsystem ("The Mind").
 """
 import os
 import re
-from typing import Generator, Optional
+from typing import Generator, Optional, Union, Any
+
 
 from src import config
 
@@ -98,28 +99,30 @@ class LocalEngine:
                 ngram_size = getattr(config, "SPECULATIVE_NGRAM_SIZE", 2)
                 num_pred = getattr(config, "SPECULATIVE_NUM_PRED_TOKENS", 8)
                 draft_model = LlamaPromptLookupDecoding(max_ngram_size=ngram_size, num_pred_tokens=num_pred)
-                print(f"[llm] enabled Prompt-Lookup Speculative Decoding (ngram={ngram_size}, pred_tokens={num_pred})")
+                config.log_debug(f"[llm] enabled Prompt-Lookup Speculative Decoding (ngram={ngram_size}, pred_tokens={num_pred})")
             except Exception as e:
-                print(f"[llm] speculative decoding init note: {e}")
+                config.log_debug(f"[llm] speculative decoding init note: {e}")
+
 
         import llama_cpp
         type_k = llama_cpp.GGML_TYPE_Q8_0 if getattr(config, "KV_CACHE_TYPE", "q8_0") == "q8_0" else llama_cpp.GGML_TYPE_F16
         type_v = llama_cpp.GGML_TYPE_Q8_0 if getattr(config, "KV_CACHE_TYPE", "q8_0") == "q8_0" else llama_cpp.GGML_TYPE_F16
         flash_attn = getattr(config, "FLASH_ATTN", True)
 
-        self.llm = Llama(
-            model_path=self.model_path,
-            n_ctx=getattr(config, "CTX_SIZE", 2048),
-            n_batch=getattr(config, "N_BATCH", 512),
-            n_threads=threads,
-            n_threads_batch=threads,
-            n_gpu_layers=getattr(config, "N_GPU_LAYERS", -1),
-            type_k=type_k,
-            type_v=type_v,
-            flash_attn=flash_attn,
-            draft_model=draft_model,
-            verbose=False,
-        )
+        with config.SilenceStderrFD():
+            self.llm = Llama(
+                model_path=self.model_path,
+                n_ctx=getattr(config, "CTX_SIZE", 2048),
+                n_batch=getattr(config, "N_BATCH", 512),
+                n_threads=threads,
+                n_threads_batch=threads,
+                n_gpu_layers=getattr(config, "N_GPU_LAYERS", -1),
+                type_k=type_k,
+                type_v=type_v,
+                flash_attn=flash_attn,
+                draft_model=draft_model,
+                verbose=False,
+            )
         self.stop_tokens = ["<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<start_of_turn>"]
 
         import atexit
@@ -142,29 +145,178 @@ class LocalEngine:
             f"<|im_start|>assistant\n"
         )
 
-    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 300,
+    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
              temperature: float = 0.7) -> str:
         if self.llm is None:
             return ""
         prompt = self._format_prompt(system_prompt, user_prompt)
-        out = self.llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=self.stop_tokens)
+        with config.SilenceStderrFD():
+            out = self.llm(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=0.90,
+                repeat_penalty=1.20,
+                frequency_penalty=0.35,
+                presence_penalty=0.15,
+                stop=self.stop_tokens
+            )
         text = out["choices"][0]["text"].strip()
         return _strip_thinking(text).strip()
 
-    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 300,
+    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
                     temperature: float = 0.7) -> Generator[str, None, None]:
         if self.llm is None:
             return
         prompt = self._format_prompt(system_prompt, user_prompt)
 
         def raw_tokens():
-            stream = self.llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=self.stop_tokens, stream=True)
-            for chunk in stream:
-                yield chunk["choices"][0]["text"]
+            with config.SilenceStderrFD():
+                stream = self.llm(
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=0.90,
+                    repeat_penalty=1.20,
+                    frequency_penalty=0.35,
+                    presence_penalty=0.15,
+                    stop=self.stop_tokens,
+                    stream=True
+                )
+                for chunk in stream:
+                    yield chunk["choices"][0]["text"]
 
         yield from _strip_thinking_from_stream(raw_tokens())
 
 
-def create_engine() -> LocalEngine:
-    """Factory: Instantiates the in-process local llama_cpp engine."""
+
+class GroqEngine:
+    """
+    High-speed cloud inference engine using Groq API.
+    Activated only when --groq CLI argument is parsed.
+    Defaults to gpt-oss-20b.
+    """
+
+    def __init__(self, model_name: Optional[str] = None, api_key: Optional[str] = None):
+        raw = model_name or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
+        self.model = f"openai/{raw}" if raw in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else raw
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        self.client = None
+
+        try:
+            from groq import Groq
+            self.client = Groq(api_key=self.api_key) if self.api_key else Groq()
+            config.log_debug(f"[llm] Groq engine initialized with model: {self.model}")
+
+        except Exception as e:
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=self.api_key or os.environ.get("GROQ_API_KEY", "EMPTY")
+                )
+                config.log_debug(f"[llm] Groq OpenAI-compatible client initialized with model: {self.model}")
+            except Exception as e2:
+                config.log_debug(f"[llm] Groq client init note: {e2}")
+
+    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
+             temperature: float = 0.7) -> str:
+        if not self.client:
+            config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
+            return ""
+        try:
+            budget = max(max_tokens, 1024)
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_completion_tokens=budget,
+                temperature=temperature,
+            )
+            text = response.choices[0].message.content or ""
+            return _strip_thinking(text).strip()
+        except Exception as e:
+            config.log_debug(f"[groq] chat error: {e}")
+            try:
+                # Fallback without max_completion_tokens for non-o1 models
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=budget,
+                    temperature=temperature,
+                )
+                text = response.choices[0].message.content or ""
+                return _strip_thinking(text).strip()
+            except Exception as e2:
+                config.log_debug(f"[groq] fallback error: {e2}")
+                return ""
+
+    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
+                    temperature: float = 0.7) -> Generator[str, None, None]:
+        if not self.client:
+            config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
+            return
+
+        budget = max(max_tokens, 1024)
+
+        def raw_tokens():
+            try:
+                stream = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_completion_tokens=budget,
+                    temperature=temperature,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = getattr(chunk.choices[0], "delta", None)
+                        content = getattr(delta, "content", None) if delta else None
+                        if content:
+                            yield content
+            except Exception as e:
+                config.log_debug(f"[groq] stream error: {e}")
+                try:
+                    # Fallback with standard max_tokens
+                    stream = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        max_tokens=budget,
+                        temperature=temperature,
+                        stream=True
+                    )
+                    for chunk in stream:
+                        if chunk.choices and len(chunk.choices) > 0:
+                            delta = getattr(chunk.choices[0], "delta", None)
+                            content = getattr(delta, "content", None) if delta else None
+                            if content:
+                                yield content
+                except Exception as e2:
+                    config.log_debug(f"[groq] stream fallback error: {e2}")
+
+        yield from _strip_thinking_from_stream(raw_tokens())
+
+    def close(self) -> None:
+        pass
+
+
+
+def create_engine(use_groq: Optional[bool] = None, model_name: Optional[str] = None) -> Union[LocalEngine, GroqEngine]:
+    """Factory: Instantiates the local llama_cpp engine or Groq cloud engine."""
+    should_use_groq = getattr(config, "USE_GROQ", False) if use_groq is None else use_groq
+    if should_use_groq:
+        model = model_name or getattr(config, "GROQ_MODEL", "gpt-oss-20b")
+        return GroqEngine(model_name=model)
     return LocalEngine()
+

@@ -15,11 +15,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import src.config as config
 from src.speech.prosody import _flush_at_boundary, _JSONPrefixParser, _resolve_speed, prosody_stream
 from src.audio.pipeline import is_valid_transcript, audio_to_wav_bytes, transcribe_audio
-from src.cognition.interaction import _extract_plain_text, retrieve_memories, _extract_name_introduction
-from src.cognition.engine import LocalEngine, _strip_thinking, _strip_thinking_from_stream
+from src.cognition.interaction import _extract_plain_text, retrieve_memories, _extract_name_introduction, _deduplicate_phrase_loops
+
+from src.cognition.engine import LocalEngine, GroqEngine, create_engine, _strip_thinking, _strip_thinking_from_stream
+
 from src.memory.face_registry import FaceRegistry
 from src.memory.working import WorkingMemory
 from src.state import internal_state
+from src.vision.render import FaceRenderer, VisionRenderer
+
 
 
 # ==============================================================================
@@ -101,12 +105,23 @@ def test_json_parser_escape():
     assert results == ['He said "hello" to me.']
 
 
+def test_json_parser_markdown_fence():
+    p = _JSONPrefixParser()
+    stream = '```json\n{"emotion": "playful", "inflection": "excited", "text_chunks": ["Hey there!"]}\n```'
+    results = []
+    for ch in stream:
+        results.extend(p.feed(ch))
+    assert p.emotion == "playful"
+    assert results == ["Hey there!"]
+
+
 def test_resolve_speed_range():
     s1 = _resolve_speed("playful", "excited")
     assert 1.05 <= s1 <= 1.20
 
     s2 = _resolve_speed("tired", "whisper")
     assert 0.80 <= s2 <= 0.90
+
 
 
 # ==============================================================================
@@ -165,9 +180,26 @@ def test_extract_plain_text_strip():
     assert res == 'just some raw text here'
 
 
+def test_extract_plain_text_markdown_fences():
+    raw = '```json\n{"emotion": "playful", "text_chunks": ["Hey there!", "How are you?"]}\n```'
+    res = _extract_plain_text(raw)
+    assert res == "Hey there! How are you?"
+
+
+def test_deduplicate_phrase_loops():
+    text = "You know, I bet that was like, 'Ahhh! Ahhh! Ahhh! Ahhh! Ahhh! Ahhh!'"
+    res = _deduplicate_phrase_loops(text)
+    assert "Ahhh! Ahhh! Ahhh! Ahhh!" not in res
+
+    text2 = "Oh, wow, hi there! It's like 'Hi, hi, hi, hi, hi, hi, hi'"
+    res2 = _deduplicate_phrase_loops(text2)
+    assert "hi, hi, hi, hi" not in res2
+
+
 def test_retrieve_memories_empty():
     res = retrieve_memories("hello", store=None, embedder=None)
     assert res == ""
+
 
 
 # ==============================================================================
@@ -345,3 +377,120 @@ def test_barge_in_prosody_interrupt():
 
     assert elapsed < 2.0
     assert speaking_event.is_set() is False
+
+
+# ==============================================================================
+# FaceRenderer & Fullscreen UI Tests
+# ==============================================================================
+
+def test_face_renderer_canvas_shape():
+    renderer = FaceRenderer(width=1280, height=720)
+    frame = renderer.render(is_talking=False, is_user_speaking=False, fps=30.0)
+    assert frame.shape == (720, 1280, 3)
+    assert frame.dtype == np.uint8
+
+
+def test_face_renderer_custom_resolution():
+    renderer = FaceRenderer(width=1920, height=1080)
+    frame = renderer.render(target_shape=(1080, 1920))
+    assert frame.shape == (1080, 1920, 3)
+
+
+def test_face_renderer_all_moods():
+    renderer = FaceRenderer(width=640, height=480)
+    moods = ["playful", "curious", "excited", "attentive", "tired", "sad", "love", "angry"]
+    for m in moods:
+        internal_state.mood = m
+        internal_state.current_emotion = m
+        frame = renderer.render(is_talking=True, is_user_speaking=False)
+        assert frame is not None
+        assert frame.shape == (480, 640, 3)
+    internal_state.current_emotion = None
+
+
+def test_face_renderer_subtitles_overlay():
+    renderer = FaceRenderer(width=800, height=600)
+    internal_state.set_karma_speech("Hello there, my friend!")
+    frame = renderer.render(is_talking=True)
+    assert frame is not None
+    assert frame.shape == (600, 800, 3)
+
+
+# ==============================================================================
+# Subtitles & Gaze Tracking State Tests
+# ==============================================================================
+
+def test_internal_state_subtitles():
+    internal_state.set_user_speech("How are you?")
+    sub = internal_state.get_active_subtitle(max_age=5.0)
+    assert sub is not None
+    assert sub[0] == "You"
+    assert sub[1] == "How are you?"
+
+    time.sleep(0.01)
+    internal_state.set_karma_speech("I am feeling great!")
+    sub2 = internal_state.get_active_subtitle(max_age=5.0)
+    assert sub2 is not None
+    assert sub2[0] == "Karma"
+    assert sub2[1] == "I am feeling great!"
+
+
+def test_internal_state_gaze_clamping():
+    internal_state.set_gaze(2.5, -3.0, is_present=True)
+    assert internal_state.gaze_x == 1.0
+    assert internal_state.gaze_y == -1.0
+    assert internal_state.is_user_present is True
+
+    internal_state.set_gaze(0.2, 0.4, is_present=True)
+    assert abs(internal_state.gaze_x - 0.2) < 1e-4
+    assert abs(internal_state.gaze_y - 0.4) < 1e-4
+
+
+# ==============================================================================
+# CLI Argument Configuration Tests
+# ==============================================================================
+
+def test_apply_cli_args_debug():
+    config.apply_cli_args(["--debug"])
+    assert config.DEBUG is True
+    assert config.SHOW_VISION_WINDOW is True
+    assert config.LOG_VISION_TO_CONSOLE is True
+
+
+def test_apply_cli_args_windowed():
+    config.apply_cli_args(["--windowed"])
+    assert config.FULLSCREEN_FACE is False
+
+
+def test_apply_cli_args_fullscreen():
+    config.apply_cli_args(["--fullscreen"])
+    assert config.FULLSCREEN_FACE is True
+
+
+def test_apply_cli_args_camera_toggle():
+    config.apply_cli_args(["--hide-camera"])
+    assert config.SHOW_VISION_WINDOW is False
+    config.apply_cli_args(["--camera"])
+    assert config.SHOW_VISION_WINDOW is True
+
+
+def test_apply_cli_args_groq():
+    config.USE_GROQ = False
+    config.apply_cli_args(["--groq"])
+    assert config.USE_GROQ is True
+    assert config.GROQ_MODEL == "openai/gpt-oss-20b"
+
+
+def test_apply_cli_args_groq_custom_model():
+    config.apply_cli_args(["--groq=llama-3.3-70b-versatile"])
+    assert config.USE_GROQ is True
+    assert config.GROQ_MODEL == "llama-3.3-70b-versatile"
+
+
+def test_create_engine_groq():
+    engine = create_engine(use_groq=True, model_name="gpt-oss-20b")
+    assert isinstance(engine, GroqEngine)
+    assert engine.model == "openai/gpt-oss-20b"
+
+
+

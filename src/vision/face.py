@@ -30,13 +30,14 @@ class FaceAndGazeTracker:
                 self.profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
                 self.smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_smile.xml")
             except Exception as e:
-                print(f"[vision] CascadeClassifier load note: {e}")
+                config.log_debug(f"[vision] CascadeClassifier load note: {e}")
 
         self.face_registry = None
         if _face_recognition and getattr(config, "FACE_RECOGNITION_ENABLED", True):
             from src.memory.face_registry import FaceRegistry
             self.face_registry = FaceRegistry()
-            print(f"[vision] Face recognition enabled ({self.face_registry.count()} known face(s))")
+            config.log_debug(f"[vision] Face recognition enabled ({self.face_registry.count()} known face(s))")
+
 
         self.last_face_rec_time = 0.0
         self.face_rec_interval = getattr(config, "FACE_RECOGNITION_INTERVAL", 0.5)

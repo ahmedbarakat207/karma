@@ -82,6 +82,7 @@ class _JSONPrefixParser:
         self.inflection: Optional[str] = None
         self.text_chunks: List[str] = []
 
+        self._in_object = False
         self._in_string = False
         self._string_buf = ""
         self._current_key: Optional[str] = None
@@ -91,6 +92,8 @@ class _JSONPrefixParser:
 
     def feed(self, token: str) -> List[str]:
         """Feed a new string token and return any newly extracted text chunks."""
+        if self._array_closed:
+            return []
         new_chunks: List[str] = []
         for ch in token:
             extracted = self._feed_char(ch)
@@ -100,6 +103,12 @@ class _JSONPrefixParser:
 
     def _feed_char(self, ch: str) -> List[str]:
         results: List[str] = []
+
+        # Wait until outer JSON object begins
+        if not self._in_object:
+            if ch == '{':
+                self._in_object = True
+            return results
 
         if self._escape_next:
             self._escape_next = False
@@ -111,11 +120,14 @@ class _JSONPrefixParser:
             self._escape_next = True
             return results
 
-        if ch == ']' and not self._in_string:
+        if (ch == ']' or ch == '}') and not self._in_string:
             self._array_closed = True
             self._in_chunks_array = False
-            if self._in_string and self._string_buf.strip():
-                results.append(self._string_buf.strip())
+            if self._string_buf.strip():
+                val = self._string_buf.strip()
+                if val not in ("emotion", "inflection", "text_chunks"):
+                    results.append(val)
+                self._string_buf = ""
             return results
 
         if ch == '"':
@@ -133,6 +145,11 @@ class _JSONPrefixParser:
                 elif self._current_key == "inflection":
                     self.inflection = val
                     self._current_key = None
+                elif self._current_key in ("response", "reply", "message", "text"):
+                    if val:
+                        self.text_chunks.append(val)
+                        results.append(val)
+                    self._current_key = None
                 elif self._in_chunks_array:
                     if val:
                         self.text_chunks.append(val)
@@ -140,7 +157,7 @@ class _JSONPrefixParser:
                 self._string_buf = ""
             return results
 
-        if ch == '[' and self._current_key == "text_chunks" and not self._in_string:
+        if ch == '[' and self._current_key in ("text_chunks", "response", "reply", "message", "text") and not self._in_string:
             self._in_chunks_array = True
             self._current_key = None
             return results
@@ -149,6 +166,8 @@ class _JSONPrefixParser:
             self._string_buf += ch
 
         return results
+
+
 
 
 def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bool = True) -> None:
@@ -193,37 +212,52 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                     if audio is not None and not (interrupt_event and interrupt_event.is_set()):
                         audio_queue.put(audio)
                 except Exception as e:
-                    print(f"[prosody] synth error: {e}")
+                    config.log_debug(f"[prosody] synth error: {e}")
         finally:
             audio_queue.put(None)
 
     def audio_drain_worker():
         try:
+            with sd.OutputStream(samplerate=config.TTS_SAMPLE_RATE, channels=1, dtype="float32") as stream:
+                while True:
+                    if interrupt_event and interrupt_event.is_set():
+                        while not audio_queue.empty():
+                            try:
+                                audio_queue.get_nowait()
+                            except Exception:
+                                break
+                        break
+
+                    try:
+                        audio = audio_queue.get(timeout=0.05)
+                    except queue.Empty:
+                        continue
+
+                    if audio is None or (interrupt_event and interrupt_event.is_set()):
+                        break
+
+                    try:
+                        internal_state.set_playing_audio(True)
+                        audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
+                        stream.write(audio_arr)
+                    except Exception as e:
+                        config.log_debug(f"[prosody] playback error: {e}")
+                    finally:
+                        if audio_queue.empty():
+                            internal_state.set_playing_audio(False)
+        except Exception as e:
+            # Fallback to standard play if continuous stream cannot open
+            config.log_debug(f"[prosody] stream open fallback: {e}")
             while True:
                 if interrupt_event and interrupt_event.is_set():
-                    try:
-                        sd.stop()
-                    except Exception:
-                        pass
-                    while not audio_queue.empty():
-                        try:
-                            audio_queue.get_nowait()
-                        except Exception:
-                            break
                     break
-
                 try:
                     audio = audio_queue.get(timeout=0.05)
                 except queue.Empty:
                     continue
-
-                if audio is None or (interrupt_event and interrupt_event.is_set()):
+                if audio is None:
                     break
-
-                try:
-                    tts._play_audio(audio)
-                except Exception as e:
-                    print(f"[prosody] playback error: {e}")
+                tts._play_audio(audio)
         finally:
             internal_state.set_playing_audio(False)
 
@@ -231,6 +265,7 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
     drain_t = threading.Thread(target=audio_drain_worker, daemon=True, name="prosody_drain")
     synth_t.start()
     drain_t.start()
+
 
     emotion_logged = False
     speed = 1.0
@@ -246,7 +281,7 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                 emotion_logged = True
                 internal_state.current_emotion = parser.emotion
                 speed = _resolve_speed(parser.emotion, parser.inflection)
-                if verbose:
+                if verbose and getattr(config, "DEBUG", False):
                     e_str = parser.emotion or "neutral"
                     i_str = f"/{parser.inflection}" if parser.inflection else ""
                     print(f"[prosody] feeling: {e_str}{i_str} (speed={speed:.2f}x)")
@@ -257,7 +292,8 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                 synth_queue.put((chunk, speed))
 
     except Exception as e:
-        print(f"[prosody] token loop error: {e}")
+        config.log_debug(f"[prosody] token loop error: {e}")
+
     finally:
         synth_queue.put(None)
         synth_t.join(timeout=3.0)

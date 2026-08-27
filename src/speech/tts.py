@@ -29,8 +29,31 @@ def clean_for_speech(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
+    """Softly normalizes peak volume and applies anti-click micro cosine edge fade."""
+    if audio is None or len(audio) == 0:
+        return audio
+
+    # 1. Peak normalization (target 0.88 to prevent DAC distortion/clipping)
+    max_val = float(np.max(np.abs(audio)))
+    if max_val > 0.95:
+        audio = (audio / max_val) * 0.88
+    elif 0.05 < max_val < 0.60:
+        audio = (audio / max_val) * 0.85
+
+    # 2. Apply gentle 2.5ms cosine edge fade (60 samples @ 24kHz)
+    fade_len = min(60, len(audio) // 4)
+    if fade_len > 4:
+        fade_in = 0.5 * (1.0 - np.cos(np.linspace(0, np.pi, fade_len, dtype=np.float32)))
+        fade_out = 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_len, dtype=np.float32)))
+        audio[:fade_len] *= fade_in
+        audio[-fade_len:] *= fade_out
+
+    return np.ascontiguousarray(audio, dtype=np.float32)
+
+
 class TTSEngine:
-    """Coordinates Kokoro Q4 quantized ONNX synthesis and sounddevice hardware playback."""
+    """Coordinates Kokoro high-fidelity synthesis and sounddevice hardware playback."""
 
     def __init__(self, lang_code: str = config.TTS_LANG_CODE, voice: str = config.TTS_VOICE,
                  speaking_event: Optional[threading.Event] = None,
@@ -45,12 +68,12 @@ class TTSEngine:
         model_path = getattr(config, "KOKORO_MODEL_PATH", "")
         voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
 
-        # 1. Initialize tokenizer
+        # 1. Initialize high-fidelity pipeline
         from kokoro import KPipeline
         self.pipeline = KPipeline(lang_code=lang_code)
 
-        # 2. Try loading 4-bit Quantized ONNX model
-        if model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
+        # 2. Optionally load ONNX model if explicitly enabled via USE_KOKORO_ONNX
+        if getattr(config, "USE_KOKORO_ONNX", False) and model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
             try:
                 import onnxruntime as ort
                 opts = ort.SessionOptions()
@@ -58,9 +81,9 @@ class TTSEngine:
                 opts.inter_op_num_threads = 1
                 self.onnx_session = ort.InferenceSession(model_path, sess_options=opts, providers=["CPUExecutionProvider"])
                 self._load_voice_tensor(voices_path, self.voice)
-                print(f"[speech] initialized 4-bit Quantized Kokoro-82M ONNX model from {model_path} (Ultra-low RAM)!")
+                config.log_debug(f"[speech] initialized Quantized Kokoro-82M ONNX model from {model_path}!")
             except Exception as e:
-                print(f"[speech] ONNX Q4 init note: {e}")
+                config.log_debug(f"[speech] ONNX init note: {e}")
                 self.onnx_session = None
 
         # Warmup pipeline on startup to eliminate cold-start delay
@@ -82,18 +105,18 @@ class TTSEngine:
                         self._voices_cache[voice_name] = arr
                         return arr
         except Exception as e:
-            print(f"[speech] voice load error: {e}")
+            config.log_debug(f"[speech] voice load error: {e}")
         return None
 
     def _synthesize(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
-        """Synthesize text chunk to float32 numpy array."""
+        """Synthesize text chunk to normalized float32 numpy array."""
         spoken = clean_for_speech(text)
         if not spoken:
             return None
 
         with self._synth_lock:
             try:
-                # High-speed Quantized ONNX path (Q4 quantized)
+                # Quantized ONNX path (when enabled)
                 if self.onnx_session is not None:
                     voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
                     voice_arr = self._load_voice_tensor(voices_path, self.voice)
@@ -110,9 +133,9 @@ class TTSEngine:
                                 "speed": speed_arr
                             })[0]
                             if waveform is not None:
-                                return waveform.flatten().astype(np.float32)
+                                return _normalize_audio(waveform.flatten().astype(np.float32))
 
-                # PyTorch fallback path
+                # High-fidelity native PyTorch path
                 chunks: List[np.ndarray] = []
                 for _, _, audio in self.pipeline(spoken, voice=self.voice, speed=speed):
                     if audio is not None:
@@ -123,9 +146,10 @@ class TTSEngine:
                         if len(arr) > 0:
                             chunks.append(arr)
                 if chunks:
-                    return np.concatenate(chunks).astype(np.float32)
+                    full = np.concatenate(chunks).astype(np.float32)
+                    return _normalize_audio(full)
             except Exception as e:
-                print(f"[speech] synthesis error: {e}")
+                config.log_debug(f"[speech] synthesis error: {e}")
         return None
 
     def _play_audio(self, audio: Optional[np.ndarray]) -> None:
@@ -138,13 +162,13 @@ class TTSEngine:
         try:
             audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
             internal_state.set_playing_audio(True)
-            sd.stop()
             sd.play(audio_arr, config.TTS_SAMPLE_RATE)
             sd.wait()
         except Exception as e:
-            print(f"[speech] playback error: {e}")
+            config.log_debug(f"[speech] playback error: {e}")
         finally:
             internal_state.set_playing_audio(False)
+
 
     def speak(self, text: str, speed: float = 1.0) -> None:
         """Synthesize full text and play it in a single blocking call."""

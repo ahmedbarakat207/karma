@@ -36,7 +36,7 @@ try:
     vad_path = getattr(config, "SILERO_VAD_MODEL_PATH", "")
     if vad_path and os.path.exists(vad_path):
         _silero_vad_model = _torch.jit.load(vad_path)
-        print(f"[audio] Silero VAD loaded from {vad_path}!")
+        config.log_debug(f"[audio] Silero VAD loaded from {vad_path}!")
     else:
         _silero_vad_model, _ = _torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
@@ -44,9 +44,10 @@ try:
             force_reload=False,
             trust_repo=True,
         )
-        print("[audio] Silero VAD neural voice activity detector initialized!")
+        config.log_debug("[audio] Silero VAD neural voice activity detector initialized!")
 except Exception as e:
-    print(f"[audio] Silero VAD init note: {e}")
+    config.log_debug(f"[audio] Silero VAD init note: {e}")
+
 
 
 def audio_to_wav_bytes(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
@@ -125,7 +126,7 @@ class AudioPipeline:
             if not os.path.exists(whisper_path):
                 whisper_path = "tiny.en"
             threads = getattr(config, "N_THREADS", 4)
-            print(f"[audio] loading local faster-whisper from {whisper_path} with {threads} threads...")
+            config.log_debug(f"[audio] loading local faster-whisper from {whisper_path} with {threads} threads...")
             self.local_whisper = WhisperModel(
                 whisper_path,
                 device="cpu",
@@ -139,9 +140,9 @@ class AudioPipeline:
                 self.local_whisper.transcribe(dummy, language="en", beam_size=1, without_timestamps=True)
             except Exception:
                 pass
-            print("[audio] local faster-whisper ready and warmed up!")
+            config.log_debug("[audio] local faster-whisper ready and warmed up!")
         except Exception as e:
-            print(f"[audio] local whisper init error: {e}")
+            config.log_debug(f"[audio] local whisper init error: {e}")
 
     def run(self):
         q: queue.Queue = queue.Queue()
@@ -164,7 +165,8 @@ class AudioPipeline:
 
             q.put(indata.copy())
 
-        print(f"[audio] ready -- streaming microphone audio locally (Barge-in: {getattr(config, 'BARGE_IN_ENABLED', False)})")
+        config.log_debug(f"[audio] ready -- streaming microphone audio locally (Barge-in: {getattr(config, 'BARGE_IN_ENABLED', False)})")
+
 
         bg_energy = 0.002
         alpha = 0.95
@@ -272,10 +274,13 @@ class AudioPipeline:
                                     text = transcribe_audio(full_audio, self.local_whisper)
                                     if text:
                                         print(f"[audio] heard: '{text}'")
+                                        from src.state import internal_state
+                                        internal_state.set_user_speech(text)
                                         self.memory.add(kind="speech", text=text, counts_as_activity=True)
                                 pre_buffer = np.zeros(0, dtype=np.float32)
         except Exception as e:
-            print(f"[audio] stream error: {e}")
+            config.log_debug(f"[audio] stream error: {e}")
+
 
 
 def run_audio(memory, stop_event, speaking_event=None, interrupt_event=None) -> None:

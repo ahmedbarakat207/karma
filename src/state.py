@@ -4,7 +4,7 @@ Tracks energy, curiosity, dynamic mood, and facial expressions.
 """
 import threading
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 
 class InternalState:
@@ -19,6 +19,50 @@ class InternalState:
         self.current_emotion: Optional[str] = None  # momentary emotion from LLM output
         self.is_playing_audio: bool = False  # True when hardware TTS is actively outputting sound
         self.last_audio_played_time: float = 0.0
+
+        # Subtitles & Dialogue captions for Face UI
+        self.last_user_speech: Optional[str] = None
+        self.last_user_speech_time: float = 0.0
+        self.last_karma_speech: Optional[str] = None
+        self.last_karma_speech_time: float = 0.0
+
+        # Gaze tracking from camera/face detection: normalized (-1.0 to 1.0)
+        self.gaze_x: float = 0.0
+        self.gaze_y: float = 0.0
+        self.is_user_present: bool = False
+
+    def set_user_speech(self, text: str) -> None:
+        """Record user spoken text for UI subtitles."""
+        with self._lock:
+            self.last_user_speech = text
+            self.last_user_speech_time = time.time()
+
+    def set_karma_speech(self, text: str) -> None:
+        """Record Karma's spoken reply for UI subtitles."""
+        with self._lock:
+            self.last_karma_speech = text
+            self.last_karma_speech_time = time.time()
+
+    def set_gaze(self, x: float, y: float, is_present: bool = True) -> None:
+        """Update normalized gaze tracking target coordinates (-1.0 to 1.0)."""
+        with self._lock:
+            self.gaze_x = max(-1.0, min(1.0, x))
+            self.gaze_y = max(-1.0, min(1.0, y))
+            self.is_user_present = is_present
+
+    def get_active_subtitle(self, max_age: float = 7.0) -> Optional[Tuple[str, str]]:
+        """Returns the most recent active subtitle (speaker, text) within max_age seconds."""
+        with self._lock:
+            now = time.time()
+            u_age = now - self.last_user_speech_time
+            k_age = now - self.last_karma_speech_time
+
+            if k_age <= max_age and self.last_karma_speech and k_age <= u_age:
+                return ("Karma", self.last_karma_speech)
+            elif u_age <= max_age and self.last_user_speech:
+                return ("You", self.last_user_speech)
+            return None
+
 
     def set_playing_audio(self, val: bool) -> None:
         """Track audio playback state and record timestamp when playback stops."""
