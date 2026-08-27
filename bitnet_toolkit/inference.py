@@ -115,7 +115,8 @@ def run_interactive_inference(checkpoint_path: str, model_name: str):
 def main():
     parser = argparse.ArgumentParser(description="BitNet b1.58 Inference Benchmark")
     parser.add_argument("--checkpoint", type=str, default="none", help="Path to trained .pt weights (or 'none')")
-    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", help="Base model name")
+    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="Base model name")
+
     args = parser.parse_args()
 
     run_interactive_inference(args.checkpoint, args.model_name)

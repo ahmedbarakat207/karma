@@ -409,10 +409,10 @@ def train_distillation(args):
 
 def main():
     parser = argparse.ArgumentParser(description="BitNet b1.58 Knowledge Distillation Trainer")
-    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", help="Base HF model")
+    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="Base HF model")
     parser.add_argument("--dataset-name", type=str, default="HuggingFaceTB/smoltalk", help="Training dataset")
     parser.add_argument("--dataset-config", type=str, default="all", help="Dataset config name (e.g. 'all')")
-    parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_1.5b_output", help="Save directory")
+    parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_3b_output", help="Save directory")
     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
     parser.add_argument("--grad-accum-steps", type=int, default=16, help="Gradient accumulation steps")

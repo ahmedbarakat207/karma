@@ -92,9 +92,10 @@ def export_packed_bitnet(checkpoint_path: str, model_name: str, output_dir: str)
 
 def main():
     parser = argparse.ArgumentParser(description="BitNet b1.58 Exporter")
-    parser.add_argument("--checkpoint", type=str, default="./bitnet_qwen_1.5b_output/bitnet_final.pt", help="Path to trained .pt weights")
-    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-1.5B-Instruct", help="Base model name")
-    parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_1.5b_packed", help="Export directory")
+    parser.add_argument("--checkpoint", type=str, default="./bitnet_qwen_3b_output/bitnet_final.pt", help="Path to trained .pt weights")
+    parser.add_argument("--model-name", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="Base model name")
+    parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_3b_packed", help="Export directory")
+
     args = parser.parse_args()
 
     export_packed_bitnet(args.checkpoint, args.model_name, args.output_dir)
