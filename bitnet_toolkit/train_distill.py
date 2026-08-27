@@ -252,13 +252,18 @@ def train_distillation(args):
         eta_min=args.lr * 0.1
     )
 
-    criterion = DistillationLoss(temperature=args.temperature, alpha=args.alpha)
+    criterion = DistillationLoss(temperature=args.temperature, alpha=args.alpha, chunk_size=32)
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
+
 
     print(f"[5/5] Commencing QAT Training ({args.epochs} epochs, {total_steps} steps)...")
     os.makedirs(args.output_dir, exist_ok=True)
 
     step = 0
     start_time = time.time()
+
+    # Determine teacher device (supports CPU offloading)
+    teacher_dev = next(teacher.parameters()).device
 
     for epoch in range(args.epochs):
         print(f"\n--- Epoch {epoch + 1}/{args.epochs} ---")
@@ -272,20 +277,22 @@ def train_distillation(args):
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            # Teacher forward pass (no gradients)
+            # Teacher forward pass (no gradients, supports CPU offloading)
             with torch.no_grad():
-                teacher_out = teacher(input_ids=input_ids, attention_mask=attention_mask)
-                teacher_logits = teacher_out.logits
+                t_in = input_ids.to(teacher_dev)
+                t_mask = attention_mask.to(teacher_dev)
+                teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
+                teacher_logits = teacher_out.logits.to(device)
 
-            # Student forward pass (quantized weights + quantized activations)
-            student_out = student(input_ids=input_ids, attention_mask=attention_mask)
-            student_logits = student_out.logits
+            # Student forward pass with AMP Mixed Precision
+            with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
+                student_out = student(input_ids=input_ids, attention_mask=attention_mask)
+                student_logits = student_out.logits
+                loss, ce, kl = criterion(student_logits, teacher_logits, labels)
+                loss_scaled = loss / args.grad_accum_steps
 
-            # Calculate distillation loss
-            loss, ce, kl = criterion(student_logits, teacher_logits, labels)
-            loss_scaled = loss / args.grad_accum_steps
-            loss_scaled.backward()
-
+            # Backward pass with scaled gradients
+            scaler.scale(loss_scaled).backward()
 
             # Free transient forward tensors immediately
             del teacher_logits, teacher_out, student_logits, student_out
@@ -295,9 +302,11 @@ def train_distillation(args):
             accum_kl += kl.item()
 
             if (i + 1) % args.grad_accum_steps == 0:
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
-                optimizer.step()
-                optimizer.zero_grad()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
                 step += 1
 
@@ -317,6 +326,7 @@ def train_distillation(args):
                     "kl": f"{avg_kl:.3f}",
                     "lr": f"{scheduler.get_last_lr()[0]:.2e}"
                 })
+
 
         # Save checkpoint after each epoch
         ckpt_path = os.path.join(args.output_dir, f"bitnet_epoch_{epoch + 1}.pt")
