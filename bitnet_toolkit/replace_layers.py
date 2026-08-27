@@ -13,13 +13,16 @@ from bitlinear import BitLinear
 TARGET_LAYER_NAMES = {
     "q_proj", "k_proj", "v_proj", "o_proj",
     "gate_proj", "up_proj", "down_proj",
-    "fc1", "fc2", "dense", "out_proj"
+    "in_proj_qkv", "in_proj_a", "in_proj_b", "in_proj_z", "out_proj",
+    "fc1", "fc2", "dense"
 }
 
 PRESERVE_LAYER_NAMES = {
     "embed_tokens", "wte", "wpe",
-    "lm_head", "norm", "input_layernorm", "post_attention_layernorm", "visual"
+    "lm_head", "norm", "input_layernorm", "post_attention_layernorm",
+    "visual", "mtp", "conv1d", "A_log", "dt_bias"
 }
+
 
 
 def register_qwen3_5_architecture():

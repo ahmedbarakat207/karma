@@ -23,20 +23,10 @@ def export_packed_bitnet(checkpoint_path: str, model_name: str, output_dir: str)
 
     print(f"[1/3] Instantiating base model architecture '{model_name}'...")
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            trust_remote_code=True
-        )
-    except Exception:
-        from transformers import AutoModel
-        model = AutoModel.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            trust_remote_code=True
-        )
+    from train_distill import load_any_causal_model
+    model = load_any_causal_model(model_name, dtype=torch.float16)
     model, _, _ = convert_model_to_bitnet(model, verbose=False)
+
 
 
     print(f"[2/3] Loading fine-tuned weights from '{checkpoint_path}'...")

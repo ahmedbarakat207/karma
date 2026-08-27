@@ -29,20 +29,10 @@ def run_interactive_inference(checkpoint_path: str, model_name: str):
     print(f"[1/2] Loading tokenizer and base architecture...")
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=dtype,
-            trust_remote_code=True
-        )
-    except Exception:
-        from transformers import AutoModel
-        model = AutoModel.from_pretrained(
-            model_name,
-            torch_dtype=dtype,
-            trust_remote_code=True
-        )
+    from train_distill import load_any_causal_model
+    model = load_any_causal_model(model_name, dtype=dtype)
     model, converted, _ = convert_model_to_bitnet(model, verbose=False)
+
 
 
     if checkpoint_path and checkpoint_path != "none":

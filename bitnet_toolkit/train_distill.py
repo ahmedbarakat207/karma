@@ -372,14 +372,18 @@ def train_distillation(args):
                         "lr": f"{scheduler.get_last_lr()[0]:.2e}"
                     })
 
+                    if step > 0 and step % args.save_steps == 0:
+                        periodic_path = os.path.join(args.output_dir, "bitnet_final.pt")
+                        torch.save(student.state_dict(), periodic_path)
+                        tokenizer.save_pretrained(args.output_dir)
+                        print(f"\n✓ [Step {step}] Auto-saved checkpoint & tokenizer to '{periodic_path}'")
+
             except (torch.OutOfMemoryError, RuntimeError) as e:
                 # Silently catch and recover from any transient memory spike
                 optimizer.zero_grad(set_to_none=True)
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
                 continue
-
-
 
         # Save checkpoint after each epoch
         ckpt_path = os.path.join(args.output_dir, f"bitnet_epoch_{epoch + 1}.pt")
@@ -403,10 +407,11 @@ def main():
     parser.add_argument("--dataset-config", type=str, default="all", help="Dataset config name (e.g. 'all')")
     parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_1.5b_output", help="Save directory")
     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=1, help="Micro batch size (1 recommended for large models on 15GB GPUs)")
-    parser.add_argument("--grad-accum-steps", type=int, default=32, help="Gradient accumulation steps")
+    parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
+    parser.add_argument("--grad-accum-steps", type=int, default=16, help="Gradient accumulation steps")
     parser.add_argument("--max-seq-len", type=int, default=512, help="Max sequence length")
-    parser.add_argument("--max-samples", type=int, default=50000, help="Max training samples")
+    parser.add_argument("--max-samples", type=int, default=5000, help="Max training samples")
+    parser.add_argument("--save-steps", type=int, default=100, help="Save checkpoint every N steps")
     parser.add_argument("--lr", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument("--temperature", type=float, default=2.0, help="Distillation temperature")
     parser.add_argument("--alpha", type=float, default=0.5, help="KL vs CE loss blend ratio")
@@ -417,6 +422,7 @@ def main():
     args = parser.parse_args()
 
     train_distillation(args)
+
 
 
 if __name__ == "__main__":
