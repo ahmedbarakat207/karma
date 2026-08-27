@@ -160,6 +160,14 @@ def train_distillation(args):
     print(f"🚀 BitNet b1.58 Distillation Pipeline (Target: {device.type.upper()})")
     print("=" * 70)
 
+    # 0. Pre-initialize cuBLAS workspace before memory allocations
+    if device.type == "cuda":
+        try:
+            _ = torch.zeros((1, 1), device=device) @ torch.zeros((1, 1), device=device)
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     # 1. Load Tokenizer
     print(f"[1/5] Loading tokenizer for '{args.model_name}'...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
@@ -208,13 +216,33 @@ def train_distillation(args):
     )
 
 
-    # 5. Training Setup
-    optimizer = torch.optim.AdamW(
-        student.parameters(),
-        lr=args.lr,
-        betas=(0.9, 0.95),
-        weight_decay=args.weight_decay
-    )
+    # 5. Training Setup (8-Bit Paged AdamW on CUDA to save 16 GB optimizer memory)
+    if device.type == "cuda":
+        try:
+            import bitsandbytes as bnb
+            optimizer = bnb.optim.PagedAdamW8bit(
+                student.parameters(),
+                lr=args.lr,
+                betas=(0.9, 0.95),
+                weight_decay=args.weight_decay
+            )
+            print("✓ Initialized 8-Bit Paged AdamW Optimizer (saves 16 GB memory with GPU/CPU paging)")
+        except Exception as e:
+            print(f"[Optimizer] 8-bit Adam fallback ({e}), using standard AdamW...")
+            optimizer = torch.optim.AdamW(
+                student.parameters(),
+                lr=args.lr,
+                betas=(0.9, 0.95),
+                weight_decay=args.weight_decay
+            )
+    else:
+        optimizer = torch.optim.AdamW(
+            student.parameters(),
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            weight_decay=args.weight_decay
+        )
+
     total_steps = (len(dataloader) // args.grad_accum_steps) * args.epochs
     warmup_steps = int(total_steps * args.warmup_ratio)
 
