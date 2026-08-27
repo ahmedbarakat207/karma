@@ -96,11 +96,17 @@ def convert_model_to_bitnet(
 
     _replace_recursive(model)
 
+    # Freeze preserved layers (embeddings & LM head) to eliminate 1.2 GB gradient allocation
+    for name, param in model.named_parameters():
+        if any(p in name for p in preserve_names):
+            param.requires_grad = False
+
     if verbose:
         print(f"[BitNet Surgery] Successfully converted {converted_count} linear layers to BitLinear b1.58.")
-        print(f"[BitNet Surgery] Preserved {preserved_count} sensitive layers (embeddings / lm_head in full precision).")
+        print(f"[BitNet Surgery] Preserved {preserved_count} sensitive layers (embeddings / lm_head frozen in full precision to save 1.2 GB VRAM).")
 
     return model, converted_count, preserved_count
+
 
 
 def count_parameters(model: nn.Module) -> dict:

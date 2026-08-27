@@ -200,11 +200,14 @@ def train_distillation(args):
 
 
     # 5. Training Setup (8-Bit Paged AdamW on CUDA to save 16 GB optimizer memory)
+    trainable_params = [p for p in student.parameters() if p.requires_grad]
+    print(f"Trainable BitLinear Tensors: {len(trainable_params)} tensors ({sum(p.numel() for p in trainable_params):,} parameters)")
+
     if device.type == "cuda":
         try:
             import bitsandbytes as bnb
             optimizer = bnb.optim.PagedAdamW8bit(
-                student.parameters(),
+                trainable_params,
                 lr=args.lr,
                 betas=(0.9, 0.95),
                 weight_decay=args.weight_decay
@@ -213,18 +216,19 @@ def train_distillation(args):
         except Exception as e:
             print(f"[Optimizer] 8-bit Adam fallback ({e}), using standard AdamW...")
             optimizer = torch.optim.AdamW(
-                student.parameters(),
+                trainable_params,
                 lr=args.lr,
                 betas=(0.9, 0.95),
                 weight_decay=args.weight_decay
             )
     else:
         optimizer = torch.optim.AdamW(
-            student.parameters(),
+            trainable_params,
             lr=args.lr,
             betas=(0.9, 0.95),
             weight_decay=args.weight_decay
         )
+
 
     total_steps = (len(dataloader) // args.grad_accum_steps) * args.epochs
     warmup_steps = int(total_steps * args.warmup_ratio)
