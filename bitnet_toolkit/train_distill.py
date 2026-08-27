@@ -88,6 +88,29 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 def load_any_causal_model(model_name: str, dtype: torch.dtype):
     register_qwen3_5_architecture()
+    # 1. Try Qwen3_5 official conditional generation class
+    try:
+        from transformers import Qwen3_5ForConditionalGeneration
+        return Qwen3_5ForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            trust_remote_code=True
+        )
+    except Exception:
+        pass
+
+    # 2. Try AutoModelForImageTextToText (Qwen3.5 standard auto class)
+    try:
+        from transformers import AutoModelForImageTextToText
+        return AutoModelForImageTextToText.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            trust_remote_code=True
+        )
+    except Exception:
+        pass
+
+    # 3. Try AutoModelForCausalLM
     try:
         return AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -95,28 +118,15 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
             trust_remote_code=True
         )
     except Exception:
-        try:
-            from transformers import AutoModelForImageTextToText
-            return AutoModelForImageTextToText.from_pretrained(
-                model_name,
-                torch_dtype=dtype,
-                trust_remote_code=True
-            )
-        except Exception:
-            try:
-                from transformers import AutoModelForVision2Seq
-                return AutoModelForVision2Seq.from_pretrained(
-                    model_name,
-                    torch_dtype=dtype,
-                    trust_remote_code=True
-                )
-            except Exception:
-                from transformers import AutoModel
-                return AutoModel.from_pretrained(
-                    model_name,
-                    torch_dtype=dtype,
-                    trust_remote_code=True
-                )
+        pass
+
+    # 4. Universal fallback
+    from transformers import AutoModel
+    return AutoModel.from_pretrained(
+        model_name,
+        torch_dtype=dtype,
+        trust_remote_code=True
+    )
 
 
 def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
@@ -134,6 +144,36 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
             )
             dev_idx = device.index if device.index is not None else 0
             dev_map = {"": dev_idx}
+
+            # Try Qwen3_5 native
+            try:
+                from transformers import Qwen3_5ForConditionalGeneration
+                teacher = Qwen3_5ForConditionalGeneration.from_pretrained(
+                    model_name,
+                    quantization_config=bnb_config,
+                    device_map=dev_map,
+                    trust_remote_code=True
+                )
+                print(f"✓ Loaded Native Qwen3.5 Teacher in 4-Bit NF4 on {device}")
+                return teacher
+            except Exception:
+                pass
+
+            # Try AutoModelForImageTextToText
+            try:
+                from transformers import AutoModelForImageTextToText
+                teacher = AutoModelForImageTextToText.from_pretrained(
+                    model_name,
+                    quantization_config=bnb_config,
+                    device_map=dev_map,
+                    trust_remote_code=True
+                )
+                print(f"✓ Loaded Teacher (ImageTextToText) in 4-Bit NF4 on {device}")
+                return teacher
+            except Exception:
+                pass
+
+            # Standard CausalLM
             teacher = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 quantization_config=bnb_config,
@@ -146,6 +186,7 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
             print(f"[Note] 4-bit teacher fallback ({e}), attempting standard load...")
 
     return load_any_causal_model(model_name, dtype=dtype).to(device)
+
 
 
 def train_distillation(args):

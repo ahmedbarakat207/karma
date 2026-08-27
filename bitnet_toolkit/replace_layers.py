@@ -23,53 +23,47 @@ PRESERVE_LAYER_NAMES = {
 
 
 def register_qwen3_5_architecture():
-    """Dynamically registers Qwen 3.5 architectures universally across any transformers version."""
+    """Dynamically registers Qwen 3.5 architectures if not natively present in transformers."""
     try:
-        from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
-
-        BaseConfig = None
-        BaseModel = None
-
-        # 1. Try Qwen3VL if present (latest transformers)
+        from transformers import AutoConfig
         try:
-            from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig as BaseConfig
-            from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLForConditionalGeneration as BaseModel
+            # If transformers already natively supports qwen3_5, do NOT override it!
+            _ = AutoConfig.for_model("qwen3_5")
+            return
         except Exception:
             pass
 
-        # 2. Fallback to Qwen2 architecture (present in standard transformers)
-        if BaseConfig is None:
-            try:
-                from transformers.models.qwen2.configuration_qwen2 import Qwen2Config as BaseConfig
-                from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM as BaseModel
-            except Exception:
-                pass
+        # Try native Qwen3_5 classes
+        try:
+            from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
+            from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration
+            AutoConfig.register("qwen3_5", Qwen3_5Config)
+            return
+        except Exception:
+            pass
 
-        # 3. Universal PretrainedModel fallback
-        if BaseConfig is None:
-            try:
-                from transformers import PretrainedConfig as BaseConfig, PreTrainedModel as BaseModel
-            except Exception:
-                pass
+        # Try Qwen3VL fallback
+        try:
+            from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig
+            from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLForConditionalGeneration
 
-        if BaseConfig is not None and BaseModel is not None:
-            class Qwen3_5Config(BaseConfig):
+            class Qwen3_5Config(Qwen3VLConfig):
                 model_type = "qwen3_5"
 
-            class Qwen3_5ForCausalLM(BaseModel):
+            class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration):
                 config_class = Qwen3_5Config
 
-            try:
-                AutoConfig.register("qwen3_5", Qwen3_5Config)
-                AutoModelForCausalLM.register(Qwen3_5Config, Qwen3_5ForCausalLM)
-                AutoModel.register(Qwen3_5Config, Qwen3_5ForCausalLM)
-            except Exception:
-                pass
+            AutoConfig.register("qwen3_5", Qwen3_5Config)
+            return
+        except Exception:
+            pass
+
     except Exception:
         pass
 
 
 register_qwen3_5_architecture()
+
 
 
 
