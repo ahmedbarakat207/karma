@@ -220,9 +220,9 @@ def train_distillation(args):
         tokenizer.pad_token = tokenizer.eos_token
 
     # 2. Load Teacher Model (with 4-bit VRAM compression on CUDA / dual GPU)
-    dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
+    teacher_dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
     print(f"[2/5] Loading Teacher model '{args.model_name}' on {teacher_device}...")
-    teacher = load_teacher_model(args.model_name, dtype=dtype, device=teacher_device)
+    teacher = load_teacher_model(args.model_name, dtype=teacher_dtype, device=teacher_device)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
@@ -232,9 +232,10 @@ def train_distillation(args):
     if device.type == "cuda":
         torch.cuda.empty_cache()
 
-    # 3. Initialize BitNet Student Model
+    # 3. Initialize BitNet Student Model (master weights in FP32 for PyTorch AMP GradScaler & QAT STE stability)
     print(f"[3/5] Constructing BitNet Student model...")
-    student = load_any_causal_model(args.model_name, dtype=dtype)
+    student_dtype = torch.float32
+    student = load_any_causal_model(args.model_name, dtype=student_dtype).to(student_dtype)
     # Perform model surgery
     student, converted_count, preserved_count = convert_model_to_bitnet(student, verbose=True)
     student = student.to(device)
@@ -303,9 +304,6 @@ def train_distillation(args):
     )
 
     criterion = DistillationLoss(temperature=args.temperature, alpha=args.alpha, top_k=64)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
-
-
 
     print(f"[5/5] Commencing QAT Training ({args.epochs} epochs, {total_steps} steps)...")
     os.makedirs(args.output_dir, exist_ok=True)
@@ -343,8 +341,8 @@ def train_distillation(args):
                     loss, ce, kl = criterion(student_logits, teacher_logits, labels)
                     loss_scaled = loss / args.grad_accum_steps
 
-                # Backward pass with scaled gradients
-                scaler.scale(loss_scaled).backward()
+                # Backward pass
+                loss_scaled.backward()
 
                 # Free transient forward tensors immediately
                 del teacher_logits, teacher_out, student_logits, student_out
@@ -354,10 +352,8 @@ def train_distillation(args):
                 accum_kl += kl.item()
 
                 if (i + 1) % args.grad_accum_steps == 0:
-                    scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
-                    scaler.step(optimizer)
-                    scaler.update()
+                    optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
                     scheduler.step()
                     step += 1

@@ -18,13 +18,14 @@ def weight_quant(w: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     gamma = mean(abs(w))
     w_quant = round(clip(w / gamma, -1, 1))
     """
-    gamma = w.abs().mean().clamp(min=1e-6)
-    w_scaled = w / gamma
+    w_fp32 = w.float()
+    gamma = w_fp32.abs().mean().clamp(min=1e-6)
+    w_scaled = w_fp32 / gamma
     w_clamped = torch.clamp(w_scaled, -1.0, 1.0)
     w_rounded = torch.round(w_clamped)
 
     # Straight-Through Estimator (STE): forward uses w_rounded, backward uses original w
-    w_quant = w + (w_rounded * gamma - w).detach()
+    w_quant = w_fp32 + (w_rounded * gamma - w_fp32).detach()
     return w_quant, gamma
 
 
@@ -69,11 +70,17 @@ class BitLinear(nn.Linear):
         # 2. Quantize activations to INT8
         x_quant, eta = activation_quant(x_norm)
 
-        # 3. Quantize weights to ternary {-1, 0, 1}
-        w_quant, gamma = weight_quant(self.weight)
+        # 3. Quantize weights to ternary {-1, 0, 1} (autocast disabled for weight STE so param gradients stay FP32)
+        with torch.cuda.amp.autocast(enabled=False):
+            w_quant, gamma = weight_quant(self.weight.float())
+            bias = self.bias.float() if self.bias is not None else None
 
-        # 4. Compute linear projection
-        out = F.linear(x_quant, w_quant, self.bias)
+        # 4. Compute linear projection (cast w_quant to activation dtype for matmul)
+        out = F.linear(
+            x_quant,
+            w_quant.to(dtype=x_quant.dtype),
+            bias.to(dtype=x_quant.dtype) if bias is not None else None
+        )
         return out
 
     @classmethod
