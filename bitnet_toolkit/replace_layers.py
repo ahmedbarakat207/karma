@@ -23,46 +23,35 @@ PRESERVE_LAYER_NAMES = {
 
 
 def register_qwen3_5_architecture():
-    """Dynamically registers Qwen 3.5 architectures if not natively present in transformers."""
+    """Dynamically registers Qwen 3.5 architectures with HuggingFace transformers."""
     try:
-        from transformers import AutoConfig
-        try:
-            # If transformers already natively supports qwen3_5, do NOT override it!
-            _ = AutoConfig.for_model("qwen3_5")
-            return
-        except Exception:
-            pass
+        from transformers import AutoConfig, AutoModelForImageTextToText, AutoModelForCausalLM, AutoModel
+        from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig, Qwen3VLTextConfig
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLForConditionalGeneration
 
-        # Try native Qwen3_5 classes
+        class Qwen3_5Config(Qwen3VLConfig):
+            model_type = "qwen3_5"
+
+        class Qwen3_5TextConfig(Qwen3VLTextConfig):
+            model_type = "qwen3_5_text"
+
+        class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration):
+            config_class = Qwen3_5Config
+
         try:
-            from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
-            from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration
             AutoConfig.register("qwen3_5", Qwen3_5Config)
-            return
+            AutoConfig.register("qwen3_5_text", Qwen3_5TextConfig)
+            AutoModelForImageTextToText.register(Qwen3_5Config, Qwen3_5ForConditionalGeneration)
+            AutoModelForCausalLM.register(Qwen3_5Config, Qwen3_5ForConditionalGeneration)
+            AutoModel.register(Qwen3_5Config, Qwen3_5ForConditionalGeneration)
         except Exception:
             pass
-
-        # Try Qwen3VL fallback
-        try:
-            from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig
-            from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLForConditionalGeneration
-
-            class Qwen3_5Config(Qwen3VLConfig):
-                model_type = "qwen3_5"
-
-            class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration):
-                config_class = Qwen3_5Config
-
-            AutoConfig.register("qwen3_5", Qwen3_5Config)
-            return
-        except Exception:
-            pass
-
     except Exception:
         pass
 
 
 register_qwen3_5_architecture()
+
 
 
 
