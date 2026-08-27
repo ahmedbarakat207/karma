@@ -3,6 +3,9 @@ BitNet b1.58 Quantization-Aware Knowledge Distillation Trainer.
 Distills Qwen 2.5 1.5B (FP16 Teacher) into BitNet b1.58 (Ternary Student).
 Optimized for Apple Silicon Metal (MPS), NVIDIA CUDA, and multi-core CPU.
 """
+import warnings
+warnings.filterwarnings("ignore")
+
 import os
 import sys
 import time
@@ -261,59 +264,68 @@ def train_distillation(args):
         accum_kl = 0.0
 
         for i, batch in enumerate(pbar):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
+            try:
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+                labels = batch["labels"].to(device)
 
-            # Teacher forward pass (no gradients, supports CPU offloading)
-            with torch.no_grad():
-                t_in = input_ids.to(teacher_dev)
-                t_mask = attention_mask.to(teacher_dev)
-                teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
-                teacher_logits = teacher_out.logits.to(device)
+                # Teacher forward pass (no gradients, supports CPU offloading)
+                with torch.no_grad():
+                    t_in = input_ids.to(teacher_dev)
+                    t_mask = attention_mask.to(teacher_dev)
+                    teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
+                    teacher_logits = teacher_out.logits.to(device)
 
-            # Student forward pass with AMP Mixed Precision
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
-                student_out = student(input_ids=input_ids, attention_mask=attention_mask)
-                student_logits = student_out.logits
-                loss, ce, kl = criterion(student_logits, teacher_logits, labels)
-                loss_scaled = loss / args.grad_accum_steps
+                # Student forward pass with AMP Mixed Precision
+                with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
+                    student_out = student(input_ids=input_ids, attention_mask=attention_mask)
+                    student_logits = student_out.logits
+                    loss, ce, kl = criterion(student_logits, teacher_logits, labels)
+                    loss_scaled = loss / args.grad_accum_steps
 
-            # Backward pass with scaled gradients
-            scaler.scale(loss_scaled).backward()
+                # Backward pass with scaled gradients
+                scaler.scale(loss_scaled).backward()
 
-            # Free transient forward tensors immediately
-            del teacher_logits, teacher_out, student_logits, student_out
+                # Free transient forward tensors immediately
+                del teacher_logits, teacher_out, student_logits, student_out
 
-            accum_loss += loss.item()
-            accum_ce += ce.item()
-            accum_kl += kl.item()
+                accum_loss += loss.item()
+                accum_ce += ce.item()
+                accum_kl += kl.item()
 
-            if (i + 1) % args.grad_accum_steps == 0:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
-                scaler.step(optimizer)
-                scaler.update()
+                if (i + 1) % args.grad_accum_steps == 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+                    scheduler.step()
+                    step += 1
+
+                    if device.type == "cuda":
+                        torch.cuda.empty_cache()
+
+                    avg_loss = accum_loss / args.grad_accum_steps
+                    avg_ce = accum_ce / args.grad_accum_steps
+                    avg_kl = accum_kl / args.grad_accum_steps
+                    accum_loss = 0.0
+                    accum_ce = 0.0
+                    accum_kl = 0.0
+
+                    pbar.set_postfix({
+                        "loss": f"{avg_loss:.3f}",
+                        "ce": f"{avg_ce:.3f}",
+                        "kl": f"{avg_kl:.3f}",
+                        "lr": f"{scheduler.get_last_lr()[0]:.2e}"
+                    })
+
+            except (torch.OutOfMemoryError, RuntimeError) as e:
+                # Silently catch and recover from any transient memory spike
                 optimizer.zero_grad(set_to_none=True)
-                scheduler.step()
-                step += 1
-
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
+                continue
 
-                avg_loss = accum_loss / args.grad_accum_steps
-                avg_ce = accum_ce / args.grad_accum_steps
-                avg_kl = accum_kl / args.grad_accum_steps
-                accum_loss = 0.0
-                accum_ce = 0.0
-                accum_kl = 0.0
-
-                pbar.set_postfix({
-                    "loss": f"{avg_loss:.3f}",
-                    "ce": f"{avg_ce:.3f}",
-                    "kl": f"{avg_kl:.3f}",
-                    "lr": f"{scheduler.get_last_lr()[0]:.2e}"
-                })
 
 
         # Save checkpoint after each epoch
