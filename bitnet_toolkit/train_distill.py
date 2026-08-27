@@ -25,13 +25,20 @@ from dataset_loader import prepare_distillation_dataloader
 
 
 
+def get_devices() -> Tuple[torch.device, torch.device]:
+    """Auto-detects compute hardware; splits student (cuda:0) and teacher (cuda:1) on dual GPU systems (e.g. Kaggle 2x T4)."""
+    if torch.cuda.is_available():
+        if torch.cuda.device_count() >= 2:
+            return torch.device("cuda:0"), torch.device("cuda:1")
+        return torch.device("cuda:0"), torch.device("cuda:0")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps"), torch.device("mps")
+    return torch.device("cpu"), torch.device("cpu")
+
+
 def get_device() -> torch.device:
-    """Auto-detects best available compute hardware."""
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    elif torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
+    s_dev, _ = get_devices()
+    return s_dev
 
 
 class DistillationLoss(nn.Module):
@@ -72,7 +79,6 @@ class DistillationLoss(nn.Module):
 
         total_loss = (1.0 - self.alpha) * ce + self.alpha * kl
         return total_loss, ce.detach(), kl.detach()
-
 
 
 
@@ -126,13 +132,15 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True
             )
+            dev_idx = device.index if device.index is not None else 0
+            dev_map = {"": dev_idx}
             teacher = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 quantization_config=bnb_config,
-                device_map="auto",
+                device_map=dev_map,
                 trust_remote_code=True
             )
-            print("✓ Loaded Teacher in 4-Bit NF4 (saves ~6 GB VRAM for Colab T4 GPU)")
+            print(f"✓ Loaded Teacher in 4-Bit NF4 on {device}")
             return teacher
         except Exception as e:
             print(f"[Note] 4-bit teacher fallback ({e}), attempting standard load...")
@@ -141,9 +149,12 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
 
 
 def train_distillation(args):
-    device = get_device()
+    student_device, teacher_device = get_devices()
+    device = student_device
     print("=" * 70)
-    print(f"🚀 BitNet b1.58 Distillation Pipeline (Target: {device.type.upper()})")
+    print(f"🚀 BitNet b1.58 Distillation Pipeline (Student: {student_device}, Teacher: {teacher_device})")
+    if torch.cuda.is_available() and torch.cuda.device_count() >= 2:
+        print(f"⚡ Dual GPU Pipeline Active: 2x {torch.cuda.get_device_name(0)} (30 GB Total VRAM)")
     print("=" * 70)
 
     # 0. Pre-initialize cuBLAS workspace before memory allocations
@@ -160,14 +171,15 @@ def train_distillation(args):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 2. Load Teacher Model (with 4-bit VRAM compression on CUDA)
+    # 2. Load Teacher Model (with 4-bit VRAM compression on CUDA / dual GPU)
     dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
-    print(f"[2/5] Loading Teacher model '{args.model_name}'...")
-    teacher = load_teacher_model(args.model_name, dtype=dtype, device=device)
+    print(f"[2/5] Loading Teacher model '{args.model_name}' on {teacher_device}...")
+    teacher = load_teacher_model(args.model_name, dtype=dtype, device=teacher_device)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
     print(f"Teacher loaded (FROZEN)")
+
 
     if device.type == "cuda":
         torch.cuda.empty_cache()
