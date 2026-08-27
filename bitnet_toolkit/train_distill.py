@@ -94,7 +94,8 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
         return Qwen3_5ForConditionalGeneration.from_pretrained(
             model_name,
             torch_dtype=dtype,
-            trust_remote_code=True
+            trust_remote_code=True,
+            ignore_mismatched_sizes=True
         )
     except Exception:
         pass
@@ -105,7 +106,8 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
         return AutoModelForImageTextToText.from_pretrained(
             model_name,
             torch_dtype=dtype,
-            trust_remote_code=True
+            trust_remote_code=True,
+            ignore_mismatched_sizes=True
         )
     except Exception:
         pass
@@ -115,7 +117,8 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
         return AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=dtype,
-            trust_remote_code=True
+            trust_remote_code=True,
+            ignore_mismatched_sizes=True
         )
     except Exception:
         pass
@@ -125,7 +128,8 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
     return AutoModel.from_pretrained(
         model_name,
         torch_dtype=dtype,
-        trust_remote_code=True
+        trust_remote_code=True,
+        ignore_mismatched_sizes=True
     )
 
 
@@ -152,7 +156,8 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
                     model_name,
                     quantization_config=bnb_config,
                     device_map=dev_map,
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    ignore_mismatched_sizes=True
                 )
                 print(f"✓ Loaded Native Qwen3.5 Teacher in 4-Bit NF4 on {device}")
                 return teacher
@@ -166,7 +171,8 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
                     model_name,
                     quantization_config=bnb_config,
                     device_map=dev_map,
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    ignore_mismatched_sizes=True
                 )
                 print(f"✓ Loaded Teacher (ImageTextToText) in 4-Bit NF4 on {device}")
                 return teacher
@@ -178,7 +184,8 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
                 model_name,
                 quantization_config=bnb_config,
                 device_map=dev_map,
-                trust_remote_code=True
+                trust_remote_code=True,
+                ignore_mismatched_sizes=True
             )
             print(f"✓ Loaded Teacher in 4-Bit NF4 on {device}")
             return teacher
