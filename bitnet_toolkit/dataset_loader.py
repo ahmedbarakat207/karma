@@ -38,6 +38,7 @@ class TokenizedPackedDataset(Dataset):
 def prepare_distillation_dataloader(
     tokenizer,
     dataset_name: str = "HuggingFaceTB/smoltalk",
+    dataset_config: str = "all",
     split: str = "train",
     max_samples: int = 50000,
     max_seq_len: int = 512,
@@ -47,15 +48,25 @@ def prepare_distillation_dataloader(
     """
     Downloads/streams dataset, tokenizes, packs sequences, and returns a PyTorch DataLoader.
     """
-    print(f"[Dataset] Loading dataset '{dataset_name}' (subset: {max_samples} samples)...")
+    print(f"[Dataset] Loading dataset '{dataset_name}' (config: '{dataset_config}', max: {max_samples:,} samples)...")
 
     try:
         from datasets import load_dataset
-        ds = load_dataset(dataset_name, split=split, streaming=True)
+        if "smoltalk" in dataset_name.lower():
+            ds = load_dataset(dataset_name, dataset_config or "all", split=split, streaming=True)
+        else:
+            try:
+                ds = load_dataset(dataset_name, dataset_config, split=split, streaming=True)
+            except Exception:
+                ds = load_dataset(dataset_name, split=split, streaming=True)
     except Exception as e:
-        print(f"[Dataset] Note: Hugging Face datasets stream error ({e}), falling back to wikitext...")
+        print(f"[Dataset] Note: Stream error ({e}), attempting fallback dataset...")
         from datasets import load_dataset
-        ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="train", streaming=True)
+        try:
+            ds = load_dataset("HuggingFaceTB/smoltalk", "all", split="train", streaming=True)
+        except Exception:
+            ds = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="train", streaming=True)
+
 
     all_tokens: List[int] = []
     count = 0
