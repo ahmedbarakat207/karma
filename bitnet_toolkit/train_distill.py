@@ -33,33 +33,61 @@ def get_device() -> torch.device:
 
 class DistillationLoss(nn.Module):
     """
-    Combines hard label Cross-Entropy with soft logit KL Divergence distillation.
+    Memory-efficient chunked Cross-Entropy and KL Divergence distillation.
+    Prevents OOM on large vocabulary models (e.g. Qwen 248k vocab) by chunking sequence tokens.
     """
 
-    def __init__(self, temperature: float = 2.0, alpha: float = 0.5):
+    def __init__(self, temperature: float = 2.0, alpha: float = 0.5, chunk_size: int = 64):
         super().__init__()
         self.temperature = temperature
         self.alpha = alpha
+        self.chunk_size = chunk_size
         self.ce_loss = nn.CrossEntropyLoss(ignore_index=-100)
-        self.kl_loss = nn.KLDivLoss(reduction="batchmean")
 
     def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor,
                 labels: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # 1. Hard Cross-Entropy Loss
-        shift_logits = student_logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        ce = self.ce_loss(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        shift_student = student_logits[..., :-1, :]
+        shift_teacher = teacher_logits[..., :-1, :]
+        shift_labels = labels[..., 1:]
 
-        # 2. Soft KL Divergence Logit Distillation
+        seq_len = shift_student.size(1)
+        vocab_size = shift_student.size(-1)
         t = self.temperature
-        p_student = F.log_softmax(shift_logits / t, dim=-1)
-        p_teacher = F.softmax(teacher_logits[..., :-1, :].contiguous() / t, dim=-1)
 
-        kl = self.kl_loss(p_student, p_teacher) * (t ** 2)
+        total_ce = torch.tensor(0.0, device=student_logits.device)
+        total_kl = torch.tensor(0.0, device=student_logits.device)
+        total_loss = torch.tensor(0.0, device=student_logits.device)
+        num_chunks = 0
 
-        # 3. Blended total loss
-        total_loss = (1.0 - self.alpha) * ce + self.alpha * kl
-        return total_loss, ce, kl
+        # Chunk along sequence dimension to keep transient activation memory tiny
+        for i in range(0, seq_len, self.chunk_size):
+            end_idx = min(i + self.chunk_size, seq_len)
+
+            s_chunk = shift_student[:, i:end_idx, :]
+            t_chunk = shift_teacher[:, i:end_idx, :]
+            l_chunk = shift_labels[:, i:end_idx]
+
+            # 1. Chunked Cross-Entropy
+            ce_chunk = self.ce_loss(s_chunk.reshape(-1, vocab_size), l_chunk.reshape(-1))
+
+            # 2. Chunked KL Divergence
+            p_s = F.log_softmax(s_chunk / t, dim=-1)
+            p_t = F.softmax(t_chunk / t, dim=-1)
+            kl_chunk = F.kl_div(p_s, p_t, reduction="batchmean") * (t ** 2)
+
+            loss_chunk = (1.0 - self.alpha) * ce_chunk + self.alpha * kl_chunk
+
+            total_loss = total_loss + loss_chunk
+            total_ce = total_ce + ce_chunk.detach()
+            total_kl = total_kl + kl_chunk.detach()
+            num_chunks += 1
+
+        total_loss = total_loss / max(1, num_chunks)
+        total_ce = total_ce / max(1, num_chunks)
+        total_kl = total_kl / max(1, num_chunks)
+
+        return total_loss, total_ce, total_kl
+
 
 
 # Configure CUDA memory allocation
@@ -230,6 +258,10 @@ def train_distillation(args):
             loss_scaled = loss / args.grad_accum_steps
             loss_scaled.backward()
 
+
+            # Free transient forward tensors immediately
+            del teacher_logits, teacher_out, student_logits, student_out
+
             accum_loss += loss.item()
             accum_ce += ce.item()
             accum_kl += kl.item()
@@ -240,6 +272,9 @@ def train_distillation(args):
                 optimizer.zero_grad()
                 scheduler.step()
                 step += 1
+
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
 
                 avg_loss = accum_loss / args.grad_accum_steps
                 avg_ce = accum_ce / args.grad_accum_steps
@@ -276,12 +311,11 @@ def main():
     parser.add_argument("--dataset-name", type=str, default="HuggingFaceTB/smoltalk", help="Training dataset")
     parser.add_argument("--dataset-config", type=str, default="all", help="Dataset config name (e.g. 'all')")
     parser.add_argument("--output-dir", type=str, default="./bitnet_qwen_1.5b_output", help="Save directory")
-
     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
-    parser.add_argument("--grad-accum-steps", type=int, default=16, help="Gradient accumulation steps")
+    parser.add_argument("--batch-size", type=int, default=1, help="Micro batch size (1 recommended for large models on 15GB GPUs)")
+    parser.add_argument("--grad-accum-steps", type=int, default=32, help="Gradient accumulation steps")
     parser.add_argument("--max-seq-len", type=int, default=512, help="Max sequence length")
-    parser.add_argument("--max-samples", type=int, default=10000, help="Max training samples")
+    parser.add_argument("--max-samples", type=int, default=50000, help="Max training samples")
     parser.add_argument("--lr", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument("--temperature", type=float, default=2.0, help="Distillation temperature")
     parser.add_argument("--alpha", type=float, default=0.5, help="KL vs CE loss blend ratio")
@@ -290,6 +324,7 @@ def main():
     parser.add_argument("--gradient-checkpointing", action="store_true", default=True, help="Enable grad checkpointing")
 
     args = parser.parse_args()
+
     train_distillation(args)
 
 
