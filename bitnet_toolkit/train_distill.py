@@ -388,10 +388,11 @@ def train_distillation(args):
                     torch.cuda.empty_cache()
                 continue
 
-        # Save checkpoint after each epoch
-        ckpt_path = os.path.join(args.output_dir, f"bitnet_epoch_{epoch + 1}.pt")
-        torch.save(student.state_dict(), ckpt_path)
-        print(f"✓ Saved checkpoint to '{ckpt_path}'")
+        # Save per-epoch checkpoint only if training multiple epochs
+        if args.epochs > 1:
+            ckpt_path = os.path.join(args.output_dir, f"bitnet_epoch_{epoch + 1}.pt")
+            torch.save(student.state_dict(), ckpt_path)
+            print(f"✓ Saved epoch checkpoint to '{ckpt_path}'")
 
     total_time = time.time() - start_time
     print("\n" + "=" * 70)
