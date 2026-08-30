@@ -134,65 +134,13 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
 
 
 def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
-    """Loads Teacher model with optional 4-bit NF4 quantization on CUDA to save 70% VRAM."""
+    """Loads Teacher model in clean FP16 on the designated device (e.g. cuda:1)."""
     register_qwen3_5_architecture()
-
-    if device.type == "cuda":
-        try:
-            from transformers import BitsAndBytesConfig
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True
-            )
-            dev_idx = device.index if device.index is not None else 0
-            dev_map = {"": dev_idx}
-
-            # Try Qwen3_5 native
-            try:
-                from transformers import Qwen3_5ForConditionalGeneration
-                teacher = Qwen3_5ForConditionalGeneration.from_pretrained(
-                    model_name,
-                    quantization_config=bnb_config,
-                    device_map=dev_map,
-                    trust_remote_code=True,
-                    ignore_mismatched_sizes=True
-                )
-                print(f"✓ Loaded Native Qwen3.5 Teacher in 4-Bit NF4 on {device}")
-                return teacher
-            except Exception:
-                pass
-
-            # Try AutoModelForImageTextToText
-            try:
-                from transformers import AutoModelForImageTextToText
-                teacher = AutoModelForImageTextToText.from_pretrained(
-                    model_name,
-                    quantization_config=bnb_config,
-                    device_map=dev_map,
-                    trust_remote_code=True,
-                    ignore_mismatched_sizes=True
-                )
-                print(f"✓ Loaded Teacher (ImageTextToText) in 4-Bit NF4 on {device}")
-                return teacher
-            except Exception:
-                pass
-
-            # Standard CausalLM
-            teacher = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                quantization_config=bnb_config,
-                device_map=dev_map,
-                trust_remote_code=True,
-                ignore_mismatched_sizes=True
-            )
-            print(f"✓ Loaded Teacher in 4-Bit NF4 on {device}")
-            return teacher
-        except Exception as e:
-            print(f"[Note] 4-bit teacher fallback ({e}), attempting standard load...")
-
-    return load_any_causal_model(model_name, dtype=dtype).to(device)
+    teacher = load_any_causal_model(model_name, dtype=dtype)
+    teacher = teacher.to(device)
+    if hasattr(teacher, "config"):
+        teacher.config.use_cache = False
+    return teacher
 
 
 
@@ -205,46 +153,35 @@ def train_distillation(args):
         print(f"⚡ Dual GPU Pipeline Active: 2x {torch.cuda.get_device_name(0)} (30 GB Total VRAM)")
     print("=" * 70)
 
-    # 0. Pre-initialize cuBLAS workspace before memory allocations
-    if device.type == "cuda":
-        try:
-            _ = torch.zeros((1, 1), device=device) @ torch.zeros((1, 1), device=device)
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-
     # 1. Load Tokenizer
     print(f"[1/5] Loading tokenizer for '{args.model_name}'...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 2. Load Teacher Model (with 4-bit VRAM compression on CUDA / dual GPU)
-    teacher_dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
-    print(f"[2/5] Loading Teacher model '{args.model_name}' on {teacher_device}...")
-    teacher = load_teacher_model(args.model_name, dtype=teacher_dtype, device=teacher_device)
+    # 2. Load Teacher Model in native FP16
+    dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
+    print(f"[2/5] Loading Teacher model '{args.model_name}' in FP16 on {teacher_device}...")
+    teacher = load_teacher_model(args.model_name, dtype=dtype, device=teacher_device)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
-    print(f"Teacher loaded (FROZEN)")
-
+    print(f"Teacher loaded on {teacher_device} (FROZEN)")
 
     if device.type == "cuda":
         torch.cuda.empty_cache()
 
-    # 3. Initialize BitNet Student Model (master weights in FP32 for PyTorch AMP GradScaler & QAT STE stability)
+    # 3. Initialize BitNet Student Model
     print(f"[3/5] Constructing BitNet Student model...")
-    student_dtype = torch.float32
-    student = load_any_causal_model(args.model_name, dtype=student_dtype).to(student_dtype)
-    # Perform model surgery
+    student = load_any_causal_model(args.model_name, dtype=dtype)
     student, converted_count, preserved_count = convert_model_to_bitnet(student, verbose=True)
     student = student.to(device)
-
-
+    if hasattr(student, "config"):
+        student.config.use_cache = False
 
     if args.gradient_checkpointing:
         student.gradient_checkpointing_enable()
-        print("✓ Enabled Gradient Checkpointing (60% VRAM reduction)")
+        print("✓ Enabled Gradient Checkpointing")
 
     student.train()
     stats = count_parameters(student)
@@ -263,36 +200,26 @@ def train_distillation(args):
     )
 
 
-    # 5. Training Setup (8-Bit Paged AdamW on CUDA to save 16 GB optimizer memory)
+    # 5. Training Setup (Native PyTorch AdamW)
     trainable_params = [p for p in student.parameters() if p.requires_grad]
     print(f"Trainable BitLinear Tensors: {len(trainable_params)} tensors ({sum(p.numel() for p in trainable_params):,} parameters)")
 
-    if device.type == "cuda":
-        try:
-            import bitsandbytes as bnb
-            optimizer = bnb.optim.PagedAdamW8bit(
-                trainable_params,
-                lr=args.lr,
-                betas=(0.9, 0.95),
-                weight_decay=args.weight_decay
-            )
-            print("✓ Initialized 8-Bit Paged AdamW Optimizer (saves 16 GB memory with GPU/CPU paging)")
-        except Exception as e:
-            print(f"[Optimizer] 8-bit Adam fallback ({e}), using standard AdamW...")
-            optimizer = torch.optim.AdamW(
-                trainable_params,
-                lr=args.lr,
-                betas=(0.9, 0.95),
-                weight_decay=args.weight_decay
-            )
-    else:
+    use_fused = (device.type == "cuda")
+    try:
+        optimizer = torch.optim.AdamW(
+            trainable_params,
+            lr=args.lr,
+            betas=(0.9, 0.95),
+            weight_decay=args.weight_decay,
+            fused=use_fused
+        )
+    except Exception:
         optimizer = torch.optim.AdamW(
             trainable_params,
             lr=args.lr,
             betas=(0.9, 0.95),
             weight_decay=args.weight_decay
         )
-
 
     total_steps = (len(dataloader) // args.grad_accum_steps) * args.epochs
     warmup_steps = int(total_steps * args.warmup_ratio)
@@ -304,14 +231,13 @@ def train_distillation(args):
     )
 
     criterion = DistillationLoss(temperature=args.temperature, alpha=args.alpha, top_k=64)
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
     print(f"[5/5] Commencing QAT Training ({args.epochs} epochs, {total_steps} steps)...")
     os.makedirs(args.output_dir, exist_ok=True)
 
     step = 0
     start_time = time.time()
-
-    # Determine teacher device (supports CPU offloading)
     teacher_dev = next(teacher.parameters()).device
 
     for epoch in range(args.epochs):
@@ -322,71 +248,61 @@ def train_distillation(args):
         accum_kl = 0.0
 
         for i, batch in enumerate(pbar):
-            try:
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["labels"].to(device)
 
-                # Teacher forward pass (no gradients, supports CPU offloading)
-                with torch.no_grad():
-                    t_in = input_ids.to(teacher_dev)
-                    t_mask = attention_mask.to(teacher_dev)
-                    teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
-                    teacher_logits = teacher_out.logits.to(device)
+            # Teacher forward pass (no gradients)
+            with torch.no_grad():
+                t_in = input_ids.to(teacher_dev)
+                t_mask = attention_mask.to(teacher_dev)
+                teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
+                teacher_logits = teacher_out.logits.to(device)
 
-                # Student forward pass with AMP Mixed Precision
-                with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
-                    student_out = student(input_ids=input_ids, attention_mask=attention_mask)
-                    student_logits = student_out.logits
-                    loss, ce, kl = criterion(student_logits, teacher_logits, labels)
-                    loss_scaled = loss / args.grad_accum_steps
+            # Student forward pass with AMP Mixed Precision
+            with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
+                student_out = student(input_ids=input_ids, attention_mask=attention_mask)
+                student_logits = student_out.logits
+                loss, ce, kl = criterion(student_logits, teacher_logits, labels)
+                loss_scaled = loss / args.grad_accum_steps
 
-                # Backward pass
-                loss_scaled.backward()
+            # Backward pass with GradScaler
+            scaler.scale(loss_scaled).backward()
 
-                # Free transient forward tensors immediately
-                del teacher_logits, teacher_out, student_logits, student_out
+            del teacher_logits, teacher_out, student_logits, student_out
 
-                accum_loss += loss.item()
-                accum_ce += ce.item()
-                accum_kl += kl.item()
+            accum_loss += loss.item()
+            accum_ce += ce.item()
+            accum_kl += kl.item()
 
-                if (i + 1) % args.grad_accum_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
-                    scheduler.step()
-                    step += 1
-
-                    if device.type == "cuda":
-                        torch.cuda.empty_cache()
-
-                    avg_loss = accum_loss / args.grad_accum_steps
-                    avg_ce = accum_ce / args.grad_accum_steps
-                    avg_kl = accum_kl / args.grad_accum_steps
-                    accum_loss = 0.0
-                    accum_ce = 0.0
-                    accum_kl = 0.0
-
-                    pbar.set_postfix({
-                        "loss": f"{avg_loss:.3f}",
-                        "ce": f"{avg_ce:.3f}",
-                        "kl": f"{avg_kl:.3f}",
-                        "lr": f"{scheduler.get_last_lr()[0]:.2e}"
-                    })
-
-                    if step > 0 and step % args.save_steps == 0:
-                        periodic_path = os.path.join(args.output_dir, "bitnet_final.pt")
-                        torch.save(student.state_dict(), periodic_path)
-                        tokenizer.save_pretrained(args.output_dir)
-                        print(f"\n✓ [Step {step}] Auto-saved checkpoint & tokenizer to '{periodic_path}'")
-
-            except (torch.OutOfMemoryError, RuntimeError) as e:
-                # Silently catch and recover from any transient memory spike
+            if (i + 1) % args.grad_accum_steps == 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
-                continue
+                scheduler.step()
+                step += 1
+
+                avg_loss = accum_loss / args.grad_accum_steps
+                avg_ce = accum_ce / args.grad_accum_steps
+                avg_kl = accum_kl / args.grad_accum_steps
+                accum_loss = 0.0
+                accum_ce = 0.0
+                accum_kl = 0.0
+
+                pbar.set_postfix({
+                    "loss": f"{avg_loss:.3f}",
+                    "ce": f"{avg_ce:.3f}",
+                    "kl": f"{avg_kl:.3f}",
+                    "lr": f"{scheduler.get_last_lr()[0]:.2e}"
+                })
+
+                if step > 0 and step % args.save_steps == 0:
+                    periodic_path = os.path.join(args.output_dir, "bitnet_final.pt")
+                    torch.save(student.state_dict(), periodic_path)
+                    tokenizer.save_pretrained(args.output_dir)
+                    print(f"\n✓ [Step {step}] Auto-saved checkpoint & tokenizer to '{periodic_path}'")
 
         # Save per-epoch checkpoint only if training multiple epochs
         if args.epochs > 1:
