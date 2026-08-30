@@ -196,20 +196,29 @@ def train_distillation(args):
     )
 
 
-    # 5. Training Setup (Native PyTorch AdamW)
+    # 5. Training Setup (8-Bit AdamW on CUDA to save 16.5 GB optimizer VRAM)
     trainable_params = [p for p in student.parameters() if p.requires_grad]
     print(f"Trainable BitLinear Tensors: {len(trainable_params)} tensors ({sum(p.numel() for p in trainable_params):,} parameters)")
 
-    use_fused = (device.type == "cuda")
-    try:
-        optimizer = torch.optim.AdamW(
-            trainable_params,
-            lr=args.lr,
-            betas=(0.9, 0.95),
-            weight_decay=args.weight_decay,
-            fused=use_fused
-        )
-    except Exception:
+    if device.type == "cuda":
+        try:
+            import bitsandbytes as bnb
+            optimizer = bnb.optim.AdamW8bit(
+                trainable_params,
+                lr=args.lr,
+                betas=(0.9, 0.95),
+                weight_decay=args.weight_decay
+            )
+            print("✓ Initialized 8-Bit AdamW Optimizer (saves 16.5 GB VRAM)")
+        except Exception as e:
+            print(f"[Optimizer] bitsandbytes fallback ({e}), using standard AdamW...")
+            optimizer = torch.optim.AdamW(
+                trainable_params,
+                lr=args.lr,
+                betas=(0.9, 0.95),
+                weight_decay=args.weight_decay
+            )
+    else:
         optimizer = torch.optim.AdamW(
             trainable_params,
             lr=args.lr,
