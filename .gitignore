@@ -49,4 +49,7 @@ models/
 # Allow tracked .gitkeep files
 !*/.gitkeep
 
+# C++ Build & Binaries
+bitnet_cpp/
+
 Modelfile
