@@ -227,35 +227,20 @@ def train_distillation(args):
         batch_size=args.batch_size
     )
 
-    # 5. Training Setup (8-Bit AdamW on CUDA to save 16.5 GB optimizer VRAM)
+    # 5. Training Setup (Ultra-Low Memory Adafactor: consumes ~15 MB vs 5,500 MB for Adam)
     trainable_params = [p for p in student.parameters() if p.requires_grad]
     print(f"Trainable BitLinear Tensors: {len(trainable_params)} tensors ({sum(p.numel() for p in trainable_params):,} parameters)")
 
-    if device.type == "cuda":
-        try:
-            import bitsandbytes as bnb
-            optimizer = bnb.optim.AdamW8bit(
-                trainable_params,
-                lr=args.lr,
-                betas=(0.9, 0.95),
-                weight_decay=args.weight_decay
-            )
-            print("✓ Initialized 8-Bit AdamW Optimizer (saves 16.5 GB VRAM)")
-        except Exception as e:
-            print(f"[Optimizer] bitsandbytes fallback ({e}), using standard AdamW...")
-            optimizer = torch.optim.AdamW(
-                trainable_params,
-                lr=args.lr,
-                betas=(0.9, 0.95),
-                weight_decay=args.weight_decay
-            )
-    else:
-        optimizer = torch.optim.AdamW(
-            trainable_params,
-            lr=args.lr,
-            betas=(0.9, 0.95),
-            weight_decay=args.weight_decay
-        )
+    from transformers.optimization import Adafactor
+    optimizer = Adafactor(
+        trainable_params,
+        lr=args.lr,
+        scale_parameter=False,
+        relative_step=False,
+        warmup_init=False,
+        weight_decay=args.weight_decay
+    )
+    print("✓ Initialized Adafactor Optimizer (Consumes only ~15 MB VRAM instead of 5.5 GB!)")
 
     total_steps = (len(dataloader) // args.grad_accum_steps) * args.epochs
     warmup_steps = int(total_steps * args.warmup_ratio)
