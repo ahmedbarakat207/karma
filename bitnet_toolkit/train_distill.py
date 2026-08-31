@@ -82,14 +82,17 @@ class DistillationLoss(nn.Module):
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
-def load_any_causal_model(model_name: str, dtype: torch.dtype):
+def load_any_causal_model(model_name: str, dtype: torch.dtype, device: Optional[torch.device] = None):
     register_qwen3_5_architecture()
+    dev_map = {"": device} if device is not None and device.type == "cuda" else None
+
     # 1. Try Qwen3_5 official conditional generation class
     try:
         from transformers import Qwen3_5ForConditionalGeneration
         return Qwen3_5ForConditionalGeneration.from_pretrained(
             model_name,
             torch_dtype=dtype,
+            device_map=dev_map,
             trust_remote_code=True,
             ignore_mismatched_sizes=True
         )
@@ -102,6 +105,7 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
         return AutoModelForImageTextToText.from_pretrained(
             model_name,
             torch_dtype=dtype,
+            device_map=dev_map,
             trust_remote_code=True,
             ignore_mismatched_sizes=True
         )
@@ -113,6 +117,7 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
         return AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=dtype,
+            device_map=dev_map,
             trust_remote_code=True,
             ignore_mismatched_sizes=True
         )
@@ -124,16 +129,16 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype):
     return AutoModel.from_pretrained(
         model_name,
         torch_dtype=dtype,
+        device_map=dev_map,
         trust_remote_code=True,
         ignore_mismatched_sizes=True
     )
 
 
 def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
-    """Loads Teacher model in clean FP16 on the designated device (e.g. cuda:1)."""
+    """Loads Teacher model directly in FP16 on designated device (e.g. cuda:1)."""
     register_qwen3_5_architecture()
-    teacher = load_any_causal_model(model_name, dtype=dtype)
-    teacher = teacher.to(device)
+    teacher = load_any_causal_model(model_name, dtype=dtype, device=device)
     if hasattr(teacher, "config"):
         teacher.config.use_cache = False
     return teacher
@@ -169,9 +174,8 @@ def train_distillation(args):
 
     # 3. Initialize BitNet Student Model
     print(f"[3/5] Constructing BitNet Student model...")
-    student = load_any_causal_model(args.model_name, dtype=dtype)
+    student = load_any_causal_model(args.model_name, dtype=dtype, device=device)
     student, converted_count, preserved_count = convert_model_to_bitnet(student, verbose=True)
-    student = student.to(device)
     if hasattr(student, "config"):
         student.config.use_cache = False
 
