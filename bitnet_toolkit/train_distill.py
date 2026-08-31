@@ -283,13 +283,14 @@ def train_distillation(args):
                     del c_t_h, c_t_logits, c_vals, c_inds
                 del t_hidden, shift_t_h
 
-            # 2. Student forward backbone + Chunked LM-Head Loss (Max 19.4 MB per chunk instead of 1.16 GB!)
+            # 2. Student forward backbone + Zero-Retention Chunked LM-Head Loss
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
                 s_hidden = student.model(input_ids=input_ids, attention_mask=attention_mask)[0]
                 shift_s_h = s_hidden[:, :-1, :]
                 shift_labels = labels[:, 1:].to(device)
 
                 num_chunks = len(all_topk_vals)
+                grad_shift_s_h = torch.zeros_like(shift_s_h)
                 step_loss = 0.0
                 step_ce = 0.0
                 step_kl = 0.0
@@ -315,16 +316,21 @@ def train_distillation(args):
                     chunk_loss = (1.0 - args.alpha) * c_ce + args.alpha * c_kl
                     chunk_loss_scaled = chunk_loss / (args.grad_accum_steps * num_chunks)
 
-                    # Backward pass per chunk (frees chunk logits immediately!)
-                    chunk_loss_scaled.backward(retain_graph=(idx < num_chunks - 1))
+                    # Backward ONLY through chunk lm_head (frees logits immediately with ZERO retain_graph!)
+                    c_grad_h = torch.autograd.grad(chunk_loss_scaled, c_s_h, retain_graph=False)[0]
+                    grad_shift_s_h[:, c_start:c_end, :] = c_grad_h
 
                     step_loss += chunk_loss.item() / num_chunks
                     step_ce += c_ce.item() / num_chunks
                     step_kl += c_kl.item() / num_chunks
 
-                    del c_s_h, c_s_logits, c_lbls, c_t_vals, c_t_inds, c_ce, c_kl, chunk_loss
+                    del c_s_h, c_s_logits, c_lbls, c_t_vals, c_t_inds, c_ce, c_kl, chunk_loss, c_grad_h
 
-                del s_hidden, shift_s_h, all_topk_vals, all_topk_inds
+                del all_topk_vals, all_topk_inds
+
+            # 3. Single clean backward pass through the student backbone (ZERO retain_graph)
+            shift_s_h.backward(grad_shift_s_h)
+            del s_hidden, shift_s_h, grad_shift_s_h
 
             accum_loss += step_loss
             accum_ce += step_ce
