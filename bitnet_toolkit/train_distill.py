@@ -272,9 +272,12 @@ def train_distillation(args):
         accum_kl = 0.0
 
         for i, batch in enumerate(pbar):
+            t_start = time.time()
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             attention_mask = batch["attention_mask"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
+            if device.type == "cuda": torch.cuda.synchronize()
+            t_data = time.time()
 
             # 1. Fast Vectorized Teacher forward (extract Top-64 logits under AMP on teacher GPU)
             with torch.no_grad():
@@ -289,6 +292,8 @@ def train_distillation(args):
                     topk_vals = topk_vals.to(device, non_blocking=True)
                     topk_inds = topk_inds.to(device, non_blocking=True)
                     del t_outputs, t_logits, shift_t_logits
+            if device.type == "cuda": torch.cuda.synchronize(teacher_dev); torch.cuda.synchronize(device)
+            t_teacher = time.time()
 
             # 2. Fast Vectorized Student forward + Distillation Loss under AMP
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
@@ -296,10 +301,17 @@ def train_distillation(args):
                 s_logits = s_outputs.logits if hasattr(s_outputs, "logits") else s_outputs[0]
                 loss, ce_loss, kl_loss = criterion(s_logits, topk_vals, topk_inds, labels)
                 loss_scaled = loss / args.grad_accum_steps
+            if device.type == "cuda": torch.cuda.synchronize(device)
+            t_student = time.time()
 
             # 3. Clean backward pass through Student model
             loss_scaled.backward()
             del s_outputs, s_logits, topk_vals, topk_inds
+            if device.type == "cuda": torch.cuda.synchronize(device)
+            t_backward = time.time()
+            
+            if i < 3:
+                print(f"\n[Profile Iter {i}] Data: {t_data - t_start:.3f}s | Teacher: {t_teacher - t_data:.3f}s | Student Fwd: {t_student - t_teacher:.3f}s | Student Bwd: {t_backward - t_student:.3f}s", flush=True)
 
             accum_loss += loss.item()
             accum_ce += ce_loss.item()
