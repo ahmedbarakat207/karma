@@ -74,6 +74,11 @@ class BitLinear(nn.Linear):
         w_quant, gamma = weight_quant(self.weight)
 
         # 4. Compute linear projection
+        # CRITICAL: Cast w_quant to x_quant's dtype (e.g. FP16 under AMP) to trigger Tensor Cores!
+        # Since student weights are FP32 for QAT gradient accumulation, F.linear would otherwise
+        # upcast activations to FP32 and run ~8x slower on T4 GPUs without this explicit cast.
+        w_quant = w_quant.to(x_quant.dtype)
+        
         return F.linear(x_quant, w_quant, self.bias)
 
     @classmethod
