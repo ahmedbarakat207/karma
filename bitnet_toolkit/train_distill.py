@@ -136,12 +136,12 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype, device: Optional[
     )
 
 
-def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
-    """Loads Teacher model in ultra-compact 4-bit NF4 (or FP16) on designated device."""
+def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device, use_4bit: bool = False):
+    """Loads Teacher model in pure FP16 or ultra-compact 4-bit NF4 on designated device."""
     register_qwen3_5_architecture()
     dev_map = {"": device} if device.type == "cuda" else None
 
-    if device.type == "cuda":
+    if device.type == "cuda" and use_4bit:
         try:
             from transformers import BitsAndBytesConfig
             bnb_config = BitsAndBytesConfig(
@@ -150,7 +150,7 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True,
             )
-            print(f"[Teacher] Loading 4-Bit NF4 Teacher on {device} (Saves 4.2 GB VRAM)...")
+            print(f"[Teacher] Loading 4-Bit NF4 Teacher on {device} (Saves VRAM, but slower forward pass)...")
             from transformers import AutoModelForCausalLM
             teacher = AutoModelForCausalLM.from_pretrained(
                 model_name,
@@ -165,6 +165,7 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
         except Exception as e:
             print(f"[Teacher] 4-bit loading fallback ({e}), loading native FP16 on {device}...")
 
+    print(f"[Teacher] Loading native FP16 Teacher on {device} for maximum inference speed...")
     teacher = load_any_causal_model(model_name, dtype=dtype, device=device)
     if hasattr(teacher, "config"):
         teacher.config.use_cache = False
@@ -188,8 +189,8 @@ def train_distillation(args):
 
     # 2. Load Teacher Model in native FP16
     dtype = torch.float16 if device.type in ("mps", "cuda") else torch.float32
-    print(f"[2/5] Loading Teacher model '{args.model_name}' in FP16 on {teacher_device}...")
-    teacher = load_teacher_model(args.model_name, dtype=dtype, device=teacher_device)
+    print(f"[2/5] Loading Teacher model '{args.model_name}' on {teacher_device}...")
+    teacher = load_teacher_model(args.model_name, dtype=dtype, device=teacher_device, use_4bit=args.use_4bit_teacher)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
@@ -365,6 +366,7 @@ def main():
     parser.add_argument("--warmup-ratio", type=float, default=0.05, help="LR warmup ratio")
     parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay")
     parser.add_argument("--num-workers", type=int, default=2, help="DataLoader async worker count")
+    parser.add_argument("--use-4bit-teacher", action="store_true", default=False, help="Load teacher in 4-bit NF4 to save VRAM (Warning: Slows down inference on T4 GPUs)")
     parser.add_argument("--gradient-checkpointing", action="store_true", default=True, help="Enable grad checkpointing")
     parser.add_argument("--no-gradient-checkpointing", dest="gradient_checkpointing", action="store_false", help="Disable gradient checkpointing for maximum speed")
 
