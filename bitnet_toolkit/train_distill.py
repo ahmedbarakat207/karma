@@ -261,33 +261,74 @@ def train_distillation(args):
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            # Teacher forward pass (extract Top-64 logits on teacher GPU, transfer 0.25 MB)
+            # 1. Teacher forward (extract Top-64 logits in 64-token chunks on teacher GPU)
             with torch.no_grad():
                 t_in = input_ids.to(teacher_dev)
                 t_mask = attention_mask.to(teacher_dev)
-                teacher_out = teacher(input_ids=t_in, attention_mask=t_mask)
-                shift_t = teacher_out.logits[..., :-1, :]
-                k = min(64, shift_t.size(-1))
-                topk_vals, topk_inds = torch.topk(shift_t, k=k, dim=-1)
-                topk_teacher_vals = topk_vals.to(device)
-                topk_indices = topk_inds.to(device)
-                del teacher_out, shift_t, topk_vals, topk_inds
+                t_hidden = teacher.model(input_ids=t_in, attention_mask=t_mask)[0]
+                shift_t_h = t_hidden[:, :-1, :]
+                seq_len = shift_t_h.size(1)
+                chunk_size = 64
 
-            # Student forward pass with AMP Mixed Precision
+                all_topk_vals = []
+                all_topk_inds = []
+                for c_start in range(0, seq_len, chunk_size):
+                    c_end = min(c_start + chunk_size, seq_len)
+                    c_t_h = shift_t_h[:, c_start:c_end, :]
+                    c_t_logits = teacher.lm_head(c_t_h)
+                    k = min(64, c_t_logits.size(-1))
+                    c_vals, c_inds = torch.topk(c_t_logits, k=k, dim=-1)
+                    all_topk_vals.append(c_vals.to(device))
+                    all_topk_inds.append(c_inds.to(device))
+                    del c_t_h, c_t_logits, c_vals, c_inds
+                del t_hidden, shift_t_h
+
+            # 2. Student forward backbone + Chunked LM-Head Loss (Max 19.4 MB per chunk instead of 1.16 GB!)
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
-                student_out = student(input_ids=input_ids, attention_mask=attention_mask)
-                student_logits = student_out.logits
-                loss, ce, kl = criterion(student_logits, topk_teacher_vals, topk_indices, labels)
-                loss_scaled = loss / args.grad_accum_steps
+                s_hidden = student.model(input_ids=input_ids, attention_mask=attention_mask)[0]
+                shift_s_h = s_hidden[:, :-1, :]
+                shift_labels = labels[:, 1:].to(device)
 
-            # Backward pass directly in mixed precision
-            loss_scaled.backward()
+                num_chunks = len(all_topk_vals)
+                step_loss = 0.0
+                step_ce = 0.0
+                step_kl = 0.0
 
-            del topk_teacher_vals, topk_indices, student_logits, student_out
+                for idx, c_start in enumerate(range(0, seq_len, chunk_size)):
+                    c_end = min(c_start + chunk_size, seq_len)
+                    c_s_h = shift_s_h[:, c_start:c_end, :]
+                    c_s_logits = student.lm_head(c_s_h)
+                    c_lbls = shift_labels[:, c_start:c_end]
 
-            accum_loss += loss.item()
-            accum_ce += ce.item()
-            accum_kl += kl.item()
+                    c_t_vals = all_topk_vals[idx]
+                    c_t_inds = all_topk_inds[idx]
+
+                    # Chunk Cross-Entropy
+                    c_ce = F.cross_entropy(c_s_logits.reshape(-1, c_s_logits.size(-1)), c_lbls.reshape(-1), ignore_index=-100)
+
+                    # Chunk Top-64 KL Divergence
+                    c_topk_s = torch.gather(c_s_logits, -1, c_t_inds)
+                    p_s = F.log_softmax(c_topk_s.float() / args.temperature, dim=-1)
+                    p_t = F.softmax(c_t_vals.float() / args.temperature, dim=-1)
+                    c_kl = F.kl_div(p_s, p_t, reduction="batchmean") * (args.temperature ** 2)
+
+                    chunk_loss = (1.0 - args.alpha) * c_ce + args.alpha * c_kl
+                    chunk_loss_scaled = chunk_loss / (args.grad_accum_steps * num_chunks)
+
+                    # Backward pass per chunk (frees chunk logits immediately!)
+                    chunk_loss_scaled.backward(retain_graph=(idx < num_chunks - 1))
+
+                    step_loss += chunk_loss.item() / num_chunks
+                    step_ce += c_ce.item() / num_chunks
+                    step_kl += c_kl.item() / num_chunks
+
+                    del c_s_h, c_s_logits, c_lbls, c_t_vals, c_t_inds, c_ce, c_kl, chunk_loss
+
+                del s_hidden, shift_s_h, all_topk_vals, all_topk_inds
+
+            accum_loss += step_loss
+            accum_ce += step_ce
+            accum_kl += step_kl
 
             if (i + 1) % args.grad_accum_steps == 0:
                 torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
