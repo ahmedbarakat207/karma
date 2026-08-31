@@ -279,7 +279,7 @@ def train_distillation(args):
                 t_hidden = teacher.model(input_ids=t_in, attention_mask=t_mask)[0]
                 shift_t_h = t_hidden[:, :-1, :]
                 seq_len = shift_t_h.size(1)
-                chunk_size = 64
+                chunk_size = 256
 
                 all_topk_vals = []
                 all_topk_inds = []
