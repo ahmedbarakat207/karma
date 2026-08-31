@@ -23,6 +23,11 @@ from replace_layers import convert_model_to_bitnet, count_parameters, register_q
 from dataset_loader import prepare_distillation_dataloader
 
 
+# Configure CUDA hardware precision and memory allocation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
 
 
 def get_devices() -> Tuple[torch.device, torch.device]:
@@ -71,15 +76,11 @@ class DistillationLoss(nn.Module):
         topk_student_vals = torch.gather(shift_student, -1, topk_indices)
         p_s = F.log_softmax(topk_student_vals.float() / t, dim=-1)
         p_t = F.softmax(topk_teacher_vals.float() / t, dim=-1)
-        kl = F.kl_div(p_s, p_t, reduction="batchmean") * (t ** 2)
+        # Correctly scale KL divergence by total active tokens (batch_size * sequence_length)
+        kl = F.kl_div(p_s, p_t, reduction="sum") * (t ** 2) / (shift_student.size(0) * shift_student.size(1))
 
         total_loss = (1.0 - self.alpha) * ce + self.alpha * kl
         return total_loss, ce.detach(), kl.detach()
-
-
-
-# Configure CUDA memory allocation
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
 def load_any_causal_model(model_name: str, dtype: torch.dtype, device: Optional[torch.device] = None):
@@ -170,7 +171,6 @@ def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device
     return teacher
 
 
-
 def train_distillation(args):
     student_device, teacher_device = get_devices()
     device = student_device
@@ -210,6 +210,8 @@ def train_distillation(args):
             student.enable_input_require_grads()
         student.gradient_checkpointing_enable()
         print("✓ Enabled Gradient Checkpointing (Freeing 85% activation memory)")
+    else:
+        print("⚡ Gradient Checkpointing disabled for maximum throughput")
 
     student.train()
     stats = count_parameters(student)
@@ -224,7 +226,8 @@ def train_distillation(args):
         dataset_config=getattr(args, "dataset_config", "all"),
         max_samples=args.max_samples,
         max_seq_len=args.max_seq_len,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        num_workers=getattr(args, "num_workers", 2)
     )
 
     # 5. Training Setup (Ultra-Low Memory Adafactor: consumes ~15 MB vs 5,500 MB for Adam)
@@ -268,84 +271,38 @@ def train_distillation(args):
         accum_kl = 0.0
 
         for i, batch in enumerate(pbar):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
+            input_ids = batch["input_ids"].to(device, non_blocking=True)
+            attention_mask = batch["attention_mask"].to(device, non_blocking=True)
+            labels = batch["labels"].to(device, non_blocking=True)
 
-            # 1. Teacher forward (extract Top-64 logits in 64-token chunks on teacher GPU)
+            # 1. Fast Vectorized Teacher forward (extract Top-64 logits under AMP on teacher GPU)
             with torch.no_grad():
-                t_in = input_ids.to(teacher_dev)
-                t_mask = attention_mask.to(teacher_dev)
-                t_hidden = teacher.model(input_ids=t_in, attention_mask=t_mask)[0]
-                shift_t_h = t_hidden[:, :-1, :]
-                seq_len = shift_t_h.size(1)
-                chunk_size = 1024
+                with torch.cuda.amp.autocast(enabled=(teacher_dev.type == "cuda"), dtype=torch.float16):
+                    t_in = input_ids.to(teacher_dev, non_blocking=True)
+                    t_mask = attention_mask.to(teacher_dev, non_blocking=True)
+                    t_outputs = teacher(input_ids=t_in, attention_mask=t_mask)
+                    t_logits = t_outputs.logits if hasattr(t_outputs, "logits") else t_outputs[0]
+                    shift_t_logits = t_logits[:, :-1, :]
+                    k = min(64, shift_t_logits.size(-1))
+                    topk_vals, topk_inds = torch.topk(shift_t_logits, k=k, dim=-1)
+                    topk_vals = topk_vals.to(device, non_blocking=True)
+                    topk_inds = topk_inds.to(device, non_blocking=True)
+                    del t_outputs, t_logits, shift_t_logits
 
-                all_topk_vals = []
-                all_topk_inds = []
-                for c_start in range(0, seq_len, chunk_size):
-                    c_end = min(c_start + chunk_size, seq_len)
-                    c_t_h = shift_t_h[:, c_start:c_end, :]
-                    c_t_logits = teacher.lm_head(c_t_h)
-                    k = min(64, c_t_logits.size(-1))
-                    c_vals, c_inds = torch.topk(c_t_logits, k=k, dim=-1)
-                    all_topk_vals.append(c_vals.to(device))
-                    all_topk_inds.append(c_inds.to(device))
-                    del c_t_h, c_t_logits, c_vals, c_inds
-                del t_hidden, shift_t_h
-
-            # 2. Student forward backbone + Zero-Retention Chunked LM-Head Loss
+            # 2. Fast Vectorized Student forward + Distillation Loss under AMP
             with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
-                s_hidden = student.model(input_ids=input_ids, attention_mask=attention_mask)[0]
-                shift_s_h = s_hidden[:, :-1, :]
-                shift_labels = labels[:, 1:].to(device)
+                s_outputs = student(input_ids=input_ids, attention_mask=attention_mask)
+                s_logits = s_outputs.logits if hasattr(s_outputs, "logits") else s_outputs[0]
+                loss, ce_loss, kl_loss = criterion(s_logits, topk_vals, topk_inds, labels)
+                loss_scaled = loss / args.grad_accum_steps
 
-                num_chunks = len(all_topk_vals)
-                grad_shift_s_h = torch.zeros_like(shift_s_h)
-                step_loss = 0.0
-                step_ce = 0.0
-                step_kl = 0.0
+            # 3. Clean backward pass through Student model
+            loss_scaled.backward()
+            del s_outputs, s_logits, topk_vals, topk_inds
 
-                for idx, c_start in enumerate(range(0, seq_len, chunk_size)):
-                    c_end = min(c_start + chunk_size, seq_len)
-                    c_s_h = shift_s_h[:, c_start:c_end, :]
-                    c_s_logits = student.lm_head(c_s_h)
-                    c_lbls = shift_labels[:, c_start:c_end]
-
-                    c_t_vals = all_topk_vals[idx]
-                    c_t_inds = all_topk_inds[idx]
-
-                    # Chunk Cross-Entropy
-                    c_ce = F.cross_entropy(c_s_logits.reshape(-1, c_s_logits.size(-1)), c_lbls.reshape(-1), ignore_index=-100)
-
-                    # Chunk Top-64 KL Divergence
-                    c_topk_s = torch.gather(c_s_logits, -1, c_t_inds)
-                    p_s = F.log_softmax(c_topk_s.float() / args.temperature, dim=-1)
-                    p_t = F.softmax(c_t_vals.float() / args.temperature, dim=-1)
-                    c_kl = F.kl_div(p_s, p_t, reduction="batchmean") * (args.temperature ** 2)
-
-                    chunk_loss = (1.0 - args.alpha) * c_ce + args.alpha * c_kl
-                    chunk_loss_scaled = chunk_loss / (args.grad_accum_steps * num_chunks)
-
-                    # Backward ONLY through chunk lm_head (frees logits immediately with ZERO retain_graph!)
-                    c_grad_h = torch.autograd.grad(chunk_loss_scaled, c_s_h, retain_graph=False)[0]
-                    grad_shift_s_h[:, c_start:c_end, :] = c_grad_h
-
-                    step_loss += chunk_loss.item() / num_chunks
-                    step_ce += c_ce.item() / num_chunks
-                    step_kl += c_kl.item() / num_chunks
-
-                    del c_s_h, c_s_logits, c_lbls, c_t_vals, c_t_inds, c_ce, c_kl, chunk_loss, c_grad_h
-
-                del all_topk_vals, all_topk_inds
-
-            # 3. Single clean backward pass through the student backbone (ZERO retain_graph)
-            shift_s_h.backward(grad_shift_s_h)
-            del s_hidden, shift_s_h, grad_shift_s_h
-
-            accum_loss += step_loss
-            accum_ce += step_ce
-            accum_kl += step_kl
+            accum_loss += loss.item()
+            accum_ce += ce_loss.item()
+            accum_kl += kl_loss.item()
 
             if (i + 1) % args.grad_accum_steps == 0:
                 torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
@@ -407,13 +364,15 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.5, help="KL vs CE loss blend ratio")
     parser.add_argument("--warmup-ratio", type=float, default=0.05, help="LR warmup ratio")
     parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay")
+    parser.add_argument("--num-workers", type=int, default=2, help="DataLoader async worker count")
     parser.add_argument("--gradient-checkpointing", action="store_true", default=True, help="Enable grad checkpointing")
+    parser.add_argument("--no-gradient-checkpointing", dest="gradient_checkpointing", action="store_false", help="Disable gradient checkpointing for maximum speed")
 
     args = parser.parse_args()
 
     train_distillation(args)
 
 
-
 if __name__ == "__main__":
     main()
+

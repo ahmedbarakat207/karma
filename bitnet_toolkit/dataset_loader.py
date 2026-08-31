@@ -43,10 +43,11 @@ def prepare_distillation_dataloader(
     max_samples: int = 50000,
     max_seq_len: int = 512,
     batch_size: int = 2,
-    num_workers: int = 0
+    num_workers: int = 2,
+    pin_memory: Optional[bool] = None
 ) -> DataLoader:
     """
-    Downloads/streams dataset, tokenizes, packs sequences, and returns a PyTorch DataLoader.
+    Downloads/streams dataset, tokenizes, packs sequences, and returns an optimized PyTorch DataLoader.
     """
     print(f"[Dataset] Loading dataset '{dataset_name}' (config: '{dataset_config}', max: {max_samples:,} samples)...")
 
@@ -91,10 +92,16 @@ def prepare_distillation_dataloader(
     packed_dataset = TokenizedPackedDataset(all_tokens, max_seq_len=max_seq_len)
     print(f"[Dataset] Packed into {len(packed_dataset)} sequence blocks (seq_len={max_seq_len}).")
 
+    if pin_memory is None:
+        pin_memory = torch.cuda.is_available()
+
+    use_persistent = num_workers > 0
+
     return DataLoader(
         packed_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=False
+        pin_memory=pin_memory,
+        persistent_workers=use_persistent
     )

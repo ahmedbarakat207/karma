@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from typing import Optional, Tuple
 
 
+@torch.jit.script
 def weight_quant(w: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Quantizes weights to ternary values {-1, 0, +1} using BitNet b1.58 scaling.
@@ -28,13 +29,14 @@ def weight_quant(w: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     return w_quant, gamma
 
 
+@torch.jit.script
 def activation_quant(x: torch.Tensor, num_bits: int = 8) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Quantizes activations to INT8 [-128, 127] using absmax scaling.
     eta = max(abs(x))
     x_quant = round(clip(x * Q_b / eta, -Q_b, Q_b))
     """
-    q_max = 2 ** (num_bits - 1) - 1  # 127 for 8-bit
+    q_max = float(2 ** (num_bits - 1) - 1)  # 127.0 for 8-bit
     eta = x.abs().max(dim=-1, keepdim=True).values.clamp(min=1e-5)
     scale = q_max / eta
     x_scaled = x * scale
