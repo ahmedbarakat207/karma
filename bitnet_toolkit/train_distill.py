@@ -136,8 +136,34 @@ def load_any_causal_model(model_name: str, dtype: torch.dtype, device: Optional[
 
 
 def load_teacher_model(model_name: str, dtype: torch.dtype, device: torch.device):
-    """Loads Teacher model directly in FP16 on designated device (e.g. cuda:1)."""
+    """Loads Teacher model in ultra-compact 4-bit NF4 (or FP16) on designated device."""
     register_qwen3_5_architecture()
+    dev_map = {"": device} if device.type == "cuda" else None
+
+    if device.type == "cuda":
+        try:
+            from transformers import BitsAndBytesConfig
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            print(f"[Teacher] Loading 4-Bit NF4 Teacher on {device} (Saves 4.2 GB VRAM)...")
+            from transformers import AutoModelForCausalLM
+            teacher = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map=dev_map,
+                trust_remote_code=True,
+                ignore_mismatched_sizes=True
+            )
+            if hasattr(teacher, "config"):
+                teacher.config.use_cache = False
+            return teacher
+        except Exception as e:
+            print(f"[Teacher] 4-bit loading fallback ({e}), loading native FP16 on {device}...")
+
     teacher = load_any_causal_model(model_name, dtype=dtype, device=device)
     if hasattr(teacher, "config"):
         teacher.config.use_cache = False
