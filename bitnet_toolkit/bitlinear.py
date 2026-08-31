@@ -12,40 +12,39 @@ import torch.nn.functional as F
 from typing import Optional, Tuple
 
 
-@torch.jit.script
+class STEWeightQuant(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, w):
+        gamma = w.abs().mean().clamp(min=1e-5)
+        w_scaled = w / gamma
+        w_quant = torch.round(torch.clamp(w_scaled, -1.0, 1.0)) * gamma
+        return w_quant, gamma
+
+    @staticmethod
+    def backward(ctx, grad_w_quant, grad_gamma):
+        return grad_w_quant
+
+class STEActivationQuant(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, num_bits=8):
+        q_max = float(2 ** (num_bits - 1) - 1)
+        eta = x.abs().max(dim=-1, keepdim=True).values.clamp(min=1e-5)
+        scale = q_max / eta
+        x_scaled = x * scale
+        x_quant = torch.round(torch.clamp(x_scaled, -q_max, q_max)) * (1.0 / scale)
+        return x_quant, eta
+    
+    @staticmethod
+    def backward(ctx, grad_x_quant, grad_eta):
+        return grad_x_quant, None
+
 def weight_quant(w: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Quantizes weights to ternary values {-1, 0, +1} using BitNet b1.58 scaling.
-    gamma = mean(abs(w))
-    w_quant = round(clip(w / gamma, -1, 1))
-    """
-    gamma = w.abs().mean().clamp(min=1e-5)
-    w_scaled = w / gamma
-    w_clamped = torch.clamp(w_scaled, -1.0, 1.0)
-    w_rounded = torch.round(w_clamped)
+    """Quantizes weights to ternary values {-1, 0, +1} using BitNet b1.58 scaling."""
+    return STEWeightQuant.apply(w)
 
-    # Straight-Through Estimator (STE)
-    w_quant = w + (w_rounded * gamma - w).detach()
-    return w_quant, gamma
-
-
-@torch.jit.script
 def activation_quant(x: torch.Tensor, num_bits: int = 8) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Quantizes activations to INT8 [-128, 127] using absmax scaling.
-    eta = max(abs(x))
-    x_quant = round(clip(x * Q_b / eta, -Q_b, Q_b))
-    """
-    q_max = float(2 ** (num_bits - 1) - 1)  # 127.0 for 8-bit
-    eta = x.abs().max(dim=-1, keepdim=True).values.clamp(min=1e-5)
-    scale = q_max / eta
-    x_scaled = x * scale
-    x_clamped = torch.clamp(x_scaled, -q_max, q_max)
-    x_rounded = torch.round(x_clamped)
-
-    # STE
-    x_quant = x + (x_rounded * (eta / q_max) - x).detach()
-    return x_quant, eta
+    """Quantizes activations to INT8 [-128, 127] using absmax scaling."""
+    return STEActivationQuant.apply(x, num_bits)
 
 
 class BitLinear(nn.Linear):
