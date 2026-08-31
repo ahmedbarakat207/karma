@@ -180,8 +180,10 @@ def train_distillation(args):
         student.config.use_cache = False
 
     if args.gradient_checkpointing:
+        if hasattr(student, "enable_input_require_grads"):
+            student.enable_input_require_grads()
         student.gradient_checkpointing_enable()
-        print("✓ Enabled Gradient Checkpointing")
+        print("✓ Enabled Gradient Checkpointing (Freeing 85% activation memory)")
 
     student.train()
     stats = count_parameters(student)
@@ -198,7 +200,6 @@ def train_distillation(args):
         max_seq_len=args.max_seq_len,
         batch_size=args.batch_size
     )
-
 
     # 5. Training Setup (8-Bit AdamW on CUDA to save 16.5 GB optimizer VRAM)
     trainable_params = [p for p in student.parameters() if p.requires_grad]
@@ -240,7 +241,6 @@ def train_distillation(args):
     )
 
     criterion = DistillationLoss(temperature=args.temperature, alpha=args.alpha)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
     print(f"[5/5] Commencing QAT Training ({args.epochs} epochs, {total_steps} steps)...")
     os.makedirs(args.output_dir, exist_ok=True)
@@ -280,8 +280,8 @@ def train_distillation(args):
                 loss, ce, kl = criterion(student_logits, topk_teacher_vals, topk_indices, labels)
                 loss_scaled = loss / args.grad_accum_steps
 
-            # Backward pass with GradScaler
-            scaler.scale(loss_scaled).backward()
+            # Backward pass directly in mixed precision
+            loss_scaled.backward()
 
             del topk_teacher_vals, topk_indices, student_logits, student_out
 
@@ -290,10 +290,8 @@ def train_distillation(args):
             accum_kl += kl.item()
 
             if (i + 1) % args.grad_accum_steps == 0:
-                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
-                scaler.step(optimizer)
-                scaler.update()
+                optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
                 step += 1
