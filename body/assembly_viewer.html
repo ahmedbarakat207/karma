@@ -3,22 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Robot Assembly Viewer  Karma</title>
-<meta name="description" content="Interactive 3D assembly viewer for the Karma robot  inspect the neck hinge ROM from 90 to 135.">
+<title>Karma Robot — 3D Mechanical Assembly & Kinematics Viewer</title>
+<meta name="description" content="Interactive 3D assembly viewer for the Karma robot — inspect neck hinge ROM from 90° to 135° with zero collisions.">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #0a0b0e;
-    --panel:     #111318;
-    --border:    #222530;
+    --bg:        #080a0f;
+    --panel:     #10131a;
+    --border:    #1f2430;
+    --border-hl: rgba(79, 124, 255, 0.4);
     --accent:    #4f7cff;
     --accent2:   #7c3aed;
-    --green:     #22d3a0;
-    --orange:    #f97316;
-    --text:      #e2e8f0;
+    --green:     #10b981;
+    --orange:    #f59e0b;
+    --cyan:      #06b6d4;
+    --text:      #f1f5f9;
     --muted:     #64748b;
     --radius:    12px;
   }
@@ -30,37 +32,54 @@
     height: 100vh;
     overflow: hidden;
     display: grid;
-    grid-template-rows: 52px 1fr;
-    grid-template-columns: 1fr 320px;
+    grid-template-rows: 56px 1fr;
+    grid-template-columns: 1fr 340px;
     grid-template-areas: "topbar topbar" "canvas sidebar";
   }
 
-  /*  Top bar  */
+  /* --- Top Bar --- */
   #topbar {
     grid-area: topbar;
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 0 20px;
+    padding: 0 24px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     position: relative;
+    z-index: 10;
+  }
+  #topbar .logo-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   #topbar .logo {
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    letter-spacing: -0.3px;
+  }
+  #topbar .badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(79, 124, 255, 0.15);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(79, 124, 255, 0.3);
   }
   #topbar .sep { width: 1px; height: 22px; background: var(--border); }
   #topbar .subtitle { font-size: 12px; color: var(--muted); font-weight: 400; }
   #loading-bar {
     position: absolute; bottom: 0; left: 0;
     height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    background: linear-gradient(90deg, var(--accent), var(--cyan), var(--accent2));
     width: 0%;
     transition: width 0.3s ease;
   }
@@ -69,38 +88,69 @@
     font-size: 11px;
     font-family: 'JetBrains Mono', monospace;
     color: var(--muted);
-    background: #1a1d24;
+    background: #161922;
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 3px 10px;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  #status-badge.ready { color: var(--green); border-color: var(--green); }
-  #status-badge.error { color: var(--orange); border-color: var(--orange); }
+  #status-badge.ready { color: var(--green); border-color: rgba(16, 185, 129, 0.3); }
 
-  /*  3D Canvas  */
+  /* --- 3D Canvas --- */
   #canvas-wrap {
     grid-area: canvas;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(ellipse at 50% 40%, #0f1420 0%, #080a0f 100%);
+    background: radial-gradient(ellipse at 50% 35%, #111728 0%, #06080d 100%);
   }
-  #canvas-wrap canvas { display: block; }
+  #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
 
-  .hint-overlay {
+  .viewport-overlay {
     position: absolute;
-    bottom: 16px;
-    left: 16px;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 5;
+  }
+  .view-presets {
+    display: flex;
+    gap: 6px;
+    background: rgba(16, 19, 26, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    backdrop-filter: blur(12px);
+  }
+  .preset-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .preset-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .preset-btn.active { color: #fff; background: var(--accent); }
+
+  .hint-badge {
     font-size: 11px;
     color: var(--muted);
-    background: rgba(10,11,14,0.7);
+    background: rgba(16, 19, 26, 0.85);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 8px 14px;
-    line-height: 1.8;
-    backdrop-filter: blur(8px);
+    padding: 6px 12px;
+    backdrop-filter: blur(12px);
+    width: fit-content;
   }
 
-  /*  Sidebar  */
+  /* --- Sidebar --- */
   #sidebar {
     grid-area: sidebar;
     background: var(--panel);
@@ -109,43 +159,45 @@
     padding: 20px 16px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
   }
   #sidebar::-webkit-scrollbar { width: 4px; }
   #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
   .card {
-    background: #161921;
+    background: #141722;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 14px;
   }
   .card-title {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--muted);
     margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
-  /* Neck tilt control */
   .tilt-value {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 28px;
-    font-weight: 500;
+    font-size: 26px;
+    font-weight: 600;
     background: linear-gradient(135deg, var(--accent), var(--green));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
     text-align: center;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .tilt-label {
     text-align: center;
     font-size: 11px;
     color: var(--muted);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   input[type=range] {
@@ -153,21 +205,21 @@
     height: 6px;
     -webkit-appearance: none;
     appearance: none;
-    background: var(--border);
+    background: #1e2433;
     border-radius: 3px;
     outline: none;
     cursor: pointer;
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 18px; height: 18px;
+    width: 16px; height: 16px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    box-shadow: 0 0 10px rgba(79,124,255,0.5);
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    box-shadow: 0 0 10px rgba(79,124,255,0.6);
     cursor: grab;
-    transition: box-shadow 0.2s;
+    transition: transform 0.1s;
   }
-  input[type=range]::-webkit-slider-thumb:active { cursor: grabbing; }
+  input[type=range]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.15); }
 
   .range-labels {
     display: flex;
@@ -178,60 +230,60 @@
     font-family: 'JetBrains Mono', monospace;
   }
 
-  /* Animate button */
   .btn-row { display: flex; gap: 8px; margin-top: 12px; }
   .btn {
     flex: 1;
     padding: 8px 0;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: #1e2230;
+    background: #1a1e2b;
     color: var(--text);
-    font-size: 12px;
-    font-family: 'Inter', sans-serif;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
   }
-  .btn:hover { background: #252a3a; border-color: var(--accent); color: var(--accent); }
+  .btn:hover { background: #222938; border-color: var(--accent); color: var(--accent); }
   .btn.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
 
-  /* Part visibility toggles */
+  /* Arc diagram */
+  #arc-diagram { display: block; margin: 4px auto 0; }
+
+  /* Part visibility */
   .part-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 7px 0;
-    border-bottom: 1px solid #1a1d24;
-    font-size: 12px;
+    border-bottom: 1px solid #1a1e28;
+    font-size: 11px;
   }
   .part-row:last-child { border-bottom: none; }
   .part-dot {
     width: 8px; height: 8px;
-    border-radius: 50%;
+    border-radius: 2px;
     margin-right: 8px;
     flex-shrink: 0;
   }
   .part-name { display: flex; align-items: center; }
 
-  /* Toggle switch */
   .toggle {
     position: relative;
-    width: 34px; height: 18px;
+    width: 32px; height: 16px;
     flex-shrink: 0;
   }
   .toggle input { opacity: 0; width: 0; height: 0; }
   .toggle-slider {
     position: absolute; inset: 0;
-    background: var(--border);
-    border-radius: 18px;
+    background: #1e2433;
+    border-radius: 16px;
     cursor: pointer;
     transition: background 0.2s;
   }
   .toggle-slider::before {
     content: '';
     position: absolute;
-    width: 12px; height: 12px;
+    width: 10px; height: 10px;
     left: 3px; top: 3px;
     background: var(--muted);
     border-radius: 50%;
@@ -243,101 +295,102 @@
     background: var(--accent);
   }
 
-  /* Spec table */
+  /* Specs */
   .spec-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 5px 0;
     font-size: 11px;
-    border-bottom: 1px solid #1a1d24;
+    border-bottom: 1px solid #1a1e28;
   }
   .spec-row:last-child { border-bottom: none; }
   .spec-key { color: var(--muted); }
-  .spec-val { font-family: 'JetBrains Mono', monospace; color: var(--text); font-size: 11px; }
+  .spec-val { font-family: 'JetBrains Mono', monospace; color: var(--text); }
   .spec-val.green { color: var(--green); }
-  .spec-val.accent { color: var(--accent); }
-
-  /* Arc diagram */
-  #arc-diagram { display: block; margin: 8px auto 0; }
-
+  .spec-val.accent { color: var(--cyan); }
 </style>
 </head>
 <body>
 
-<!--  Top bar  -->
+<!-- Top Bar -->
 <header id="topbar">
-  <span class="logo">KARMA</span>
+  <div class="logo-wrap">
+    <span class="logo">KARMA</span>
+    <span class="badge">Physical Robot Assembly</span>
+  </div>
   <div class="sep"></div>
-  <span class="subtitle">Assembly Viewer  Neck Hinge ROM 90135</span>
-  <span id="status-badge">Loading</span>
+  <span class="subtitle">Neck Hinge Articulation (90° Forward to 135° Downward)</span>
+  <span id="status-badge">Loading STLs...</span>
   <div id="loading-bar"></div>
 </header>
 
-<!--  3D Viewport  -->
+<!-- 3D Viewport -->
 <div id="canvas-wrap">
-  <div class="hint-overlay">
-     Left-drag: rotate &nbsp;|&nbsp; Right-drag / scroll: zoom &nbsp;|&nbsp; Middle-drag: pan
+  <div class="viewport-overlay">
+    <div class="view-presets">
+      <button class="preset-btn active" onclick="setView('iso')">Isometric</button>
+      <button class="preset-btn" onclick="setView('front')">Front</button>
+      <button class="preset-btn" onclick="setView('side')">Side</button>
+      <button class="preset-btn" onclick="setView('top')">Top</button>
+      <button class="preset-btn" onclick="setView('head')">Neck Pivot</button>
+    </div>
+    <div class="hint-badge">
+      Left Drag: Rotate • Right Drag / Scroll: Zoom • Middle Drag: Pan
+    </div>
   </div>
 </div>
 
-<!--  Sidebar  -->
+<!-- Sidebar -->
 <aside id="sidebar">
 
-  <!-- Neck tilt control -->
+  <!-- Pitch Control -->
   <div class="card">
-    <div class="card-title">Neck Tilt (Pitch)</div>
-    <div class="tilt-value" id="tilt-display">90</div>
-    <div class="tilt-label">Current angle from horizontal</div>
+    <div class="card-title">Neck Pitch Articulation</div>
+    <div class="tilt-value" id="tilt-display">90.0°</div>
+    <div class="tilt-label">Servo Pitch Angle from Horizontal</div>
     <input type="range" id="tilt-slider" min="90" max="135" value="90" step="0.5">
-    <div class="range-labels"><span>90 upright</span><span>135 forward</span></div>
+    <div class="range-labels"><span>90° (Eye Level)</span><span>135° (Desk Focus)</span></div>
     <div class="btn-row">
-      <button class="btn" id="btn-animate" onclick="toggleAnim()"> Animate</button>
-      <button class="btn" onclick="resetView()"> Reset View</button>
+      <button class="btn" id="btn-animate" onclick="toggleAnim()">⚡ Animate Pitch</button>
+      <button class="btn" onclick="resetView()">↺ Reset View</button>
     </div>
   </div>
 
-  <!-- Arc diagram -->
+  <!-- Hinge Arc Diagram -->
   <div class="card">
-    <div class="card-title">Hinge Arc</div>
-    <svg id="arc-diagram" width="240" height="150" viewBox="0 0 240 150">
+    <div class="card-title">Hinge Kinematics Arc</div>
+    <svg id="arc-diagram" width="240" height="130" viewBox="0 0 240 130">
       <defs>
         <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="#4f7cff" opacity="0.7"/>
+          <path d="M0,0 L6,3 L0,6 Z" fill="#4f7cff" opacity="0.9"/>
         </marker>
       </defs>
-      <!-- background arc band 90135 -->
-      <path id="arc-band" d="" fill="rgba(79,124,255,0.08)" stroke="rgba(79,124,255,0.2)" stroke-width="1"/>
-      <!-- static limit arcs -->
+      <path id="arc-band" d="" fill="rgba(79,124,255,0.12)" stroke="rgba(79,124,255,0.3)" stroke-width="1"/>
       <path id="arc-limit" d="" fill="none" stroke="#222530" stroke-width="1" stroke-dasharray="3,4"/>
-      <!-- hinge boss circle -->
-      <circle id="hinge-dot" cx="120" cy="80" r="14" fill="none" stroke="#333" stroke-width="1.5"/>
-      <circle cx="120" cy="80" r="3" fill="#4f7cff"/>
-      <!-- current angle indicator -->
-      <line id="angle-line" x1="120" y1="80" x2="120" y2="20" stroke="#4f7cff" stroke-width="2" marker-end="url(#arr)"/>
-      <!-- labels -->
-      <text x="120" y="148" text-anchor="middle" fill="#64748b" font-size="9" font-family="JetBrains Mono">YZ cross-section at X=40</text>
-      <text id="angle-text" x="155" y="30" fill="#4f7cff" font-size="10" font-family="JetBrains Mono">90</text>
+      <circle id="hinge-dot" cx="120" cy="65" r="14" fill="none" stroke="#333" stroke-width="1.5"/>
+      <circle cx="120" cy="65" r="4" fill="#06b6d4"/>
+      <line id="angle-line" x1="120" y1="65" x2="178" y2="65" stroke="#4f7cff" stroke-width="2.5" marker-end="url(#arr)"/>
+      <text x="120" y="122" text-anchor="middle" fill="#64748b" font-size="9" font-family="JetBrains Mono">YZ cross-section at X=±40 mm</text>
+      <text id="angle-text" x="160" y="55" fill="#4f7cff" font-size="11" font-family="JetBrains Mono" font-weight="600">90°</text>
     </svg>
   </div>
 
-  <!-- Part visibility -->
+  <!-- Part Visibility -->
   <div class="card">
-    <div class="card-title">Parts Visibility</div>
+    <div class="card-title">Parts Visibility (9/9)</div>
     <div id="parts-list"></div>
   </div>
 
-  <!-- Specs -->
+  <!-- Mechanical Specs -->
   <div class="card">
-    <div class="card-title">Hinge Specs</div>
-    <div class="spec-row"><span class="spec-key">Pin </span><span class="spec-val accent">7 mm</span></div>
-    <div class="spec-row"><span class="spec-key">Boss </span><span class="spec-val">14 mm</span></div>
-    <div class="spec-row"><span class="spec-key">Hinge X pos</span><span class="spec-val">40 mm</span></div>
-    <div class="spec-row"><span class="spec-key">Hinge Z pos</span><span class="spec-val">15 mm</span></div>
-    <div class="spec-row"><span class="spec-key">ROM start</span><span class="spec-val">90 upright</span></div>
-    <div class="spec-row"><span class="spec-key">ROM end</span><span class="spec-val">135 fwd</span></div>
-    <div class="spec-row"><span class="spec-key">Arc sweep</span><span class="spec-val green">45</span></div>
-    <div class="spec-row"><span class="spec-key">Arc clearance R</span><span class="spec-val">22 mm</span></div>
+    <div class="card-title">Mechanical Specifications</div>
+    <div class="spec-row"><span class="spec-key">Hinge Pivot Pin</span><span class="spec-val accent">Ø 7.0 mm (Steel Axle)</span></div>
+    <div class="spec-row"><span class="spec-key">Hinge Pin Boss</span><span class="spec-val">Ø 14.0 mm</span></div>
+    <div class="spec-row"><span class="spec-key">Pivot Axis X</span><span class="spec-val">± 40.0 mm</span></div>
+    <div class="spec-row"><span class="spec-key">Pivot Axis Z</span><span class="spec-val">750.0 mm (World)</span></div>
+    <div class="spec-row"><span class="spec-key">Clearance Sweep</span><span class="spec-val green">R = 20.0 mm (Zero Collision)</span></div>
+    <div class="spec-row"><span class="spec-key">Pitch ROM</span><span class="spec-val green">90° to 135° (45° Sweep)</span></div>
   </div>
 
 </aside>
@@ -357,103 +410,95 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-// 
-// Scene setup
-// 
+// --- Scene Setup ---
 const wrap = document.getElementById('canvas-wrap');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.2;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080a0f);
 scene.fog = new THREE.FogExp2(0x080a0f, 0.0007);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
-camera.up.set(0, 0, 1);  // Set Z as UP axis (matching CAD geometry)
+const camera = new THREE.PerspectiveCamera(42, wrap.clientWidth / wrap.clientHeight, 10, 8000);
+camera.up.set(0, 0, 1);
 camera.position.set(600, -900, 900);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 100;
-controls.maxDistance = 3000;
+controls.maxDistance = 3500;
 controls.target.set(0, 0, 700);
 controls.update();
 
-window.resetView = function() {
-  camera.position.set(600, -900, 900);
-  controls.target.set(0, 0, 700);
-  controls.update();
-};
-
-// 
-// Lighting
-// 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+// Studio Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
 scene.add(ambientLight);
 
-const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.4);
-dirLight1.position.set(600, -800, 1200);
-scene.add(dirLight1);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+keyLight.position.set(600, -800, 1200);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.width = 2048;
+keyLight.shadow.mapSize.height = 2048;
+keyLight.shadow.bias = -0.0005;
+scene.add(keyLight);
 
-const dirLight2 = new THREE.DirectionalLight(0x88aaff, 0.6);
-dirLight2.position.set(-600, 600, 600);
-scene.add(dirLight2);
+const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.7);
+fillLight.position.set(-600, 600, 600);
+scene.add(fillLight);
 
-const grid = new THREE.GridHelper(2000, 40, 0x222530, 0x111318);
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.2);
+rimLight.position.set(0, 800, 500);
+scene.add(rimLight);
+
+const grid = new THREE.GridHelper(2000, 40, 0x1f2638, 0x0f1422);
 grid.rotation.x = Math.PI / 2;
 grid.position.z = 0;
 scene.add(grid);
 
-const NECK_BASE_Z    = 700;
-const HEAD_BASE_Z    = NECK_BASE_Z + 60;
-const NECK_Y_OFFSET  = 0;              // neck centered on column top
-const HINGE_LOCAL_Z  = 50;             // hinge pin local Z within neck shell (Z=750)
-const HINGE_WORLD_Z  = NECK_BASE_Z + HINGE_LOCAL_Z;  // = 750
+// Hierarchy & Coordinates
+const NECK_BASE_Z   = 700;
+const HINGE_LOCAL_Z = 50;
+const HINGE_WORLD_Z = NECK_BASE_Z + HINGE_LOCAL_Z; // = 750 mm
+const NECK_Y_OFFSET = 0;
 
 const PARTS = [
-  // name, file, hex color, [ox, oy, oz], groupKey, neckPart
-  // neckPart=true   goes into pivotGroup (rotates with the head tilt)
-  // neckPart=false  goes into staticGroup
-  { name:'Base Front',   file:'base_front.stl',      color:0x3a4a6b, offset:[0,0,0],                              group:'base',   neckPart:false },
-  { name:'Base Back',    file:'base_back.stl',        color:0x2d3a55, offset:[0,0,0],                              group:'base',   neckPart:false },
-  { name:'Column Front', file:'column_front.stl',     color:0x2e4060, offset:[0,0,220],                            group:'column', neckPart:false },
-  { name:'Column Back',  file:'column_back.stl',      color:0x253550, offset:[0,0,220],                            group:'column', neckPart:false },
-  // Neck is static on column
-  { name:'Neck Front',   file:'neck_front.stl',       color:0x4f7cff, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
-  { name:'Neck Back',    file:'neck_back.stl',        color:0x3a5ecc, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
-  // Head display assembly attached at its bottom chin
-  { name:'Head Window',  file:'head_window_half.stl', color:0x88b4e0, offset:[0,NECK_Y_OFFSET-95,HEAD_BASE_Z],    group:'head',   neckPart:true  },
-  { name:'Head Cover',   file:'head_cover_half.stl',  color:0x2a3a50, offset:[0,NECK_Y_OFFSET-95,HEAD_BASE_Z],    group:'head',   neckPart:true  },
-  { name:'Steering Arm', file:'steering_arm.stl',     color:0x22d3a0, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z+HINGE_LOCAL_Z], group:'neck', neckPart:true },
+  { name:'Base Front',   file:'base_front.stl',      color:0x334460, offset:[0,0,0],                              group:'base',   neckPart:false },
+  { name:'Base Back',    file:'base_back.stl',        color:0x222d42, offset:[0,0,0],                              group:'base',   neckPart:false },
+  { name:'Column Front', file:'column_front.stl',     color:0x2a3a52, offset:[0,0,220],                            group:'column', neckPart:false },
+  { name:'Column Back',  file:'column_back.stl',      color:0x1e2a3c, offset:[0,0,220],                            group:'column', neckPart:false },
+  { name:'Neck Front',   file:'neck_front.stl',       color:0x3b82f6, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
+  { name:'Neck Back',    file:'neck_back.stl',        color:0x1d4ed8, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
+  { name:'Head Window',  file:'head_window_half.stl', color:0x38bdf8, offset:[0,NECK_Y_OFFSET-95,HINGE_WORLD_Z],   group:'head',   neckPart:true  },
+  { name:'Head Cover',   file:'head_cover_half.stl',  color:0x0284c7, offset:[0,NECK_Y_OFFSET-95,HINGE_WORLD_Z],   group:'head',   neckPart:true  },
+  { name:'Steering Arm', file:'steering_arm.stl',     color:0x10b981, offset:[0,NECK_Y_OFFSET,HINGE_WORLD_Z],       group:'neck',   neckPart:true },
 ];
 
-const DOT_COLORS = {
-  base: '#3a4a6b', column: '#2e4060', neck: '#4f7cff', head: '#88b4e0'
-};
+const DOT_COLORS = { base: '#334460', column: '#2a3a52', neck: '#3b82f6', head: '#38bdf8' };
 
-// 
-// Hinge pivot group
-// 
-const HINGE_WORLD_Y = NECK_Y_OFFSET;   // = 0
-const pivotGroup = new THREE.Group();
-pivotGroup.position.set(0, HINGE_WORLD_Y, HINGE_WORLD_Z);
+const staticGroup = new THREE.Group();
+const pivotGroup  = new THREE.Group();
+pivotGroup.position.set(0, NECK_Y_OFFSET, HINGE_WORLD_Z);
+scene.add(staticGroup);
 scene.add(pivotGroup);
 
-// Static group
-const staticGroup = new THREE.Group();
-scene.add(staticGroup);
+// Hinge Pin Visual in Pivot Group (Moves with tilt)
+const pinGeo = new THREE.CylinderGeometry(3.5, 3.5, 160, 24);
+pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
+const pinMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.2, metalness: 0.9 });
+const pinMesh = new THREE.Mesh(pinGeo, pinMat);
+pinMesh.position.set(0, 0, 0);
+pivotGroup.add(pinMesh);
 
-// 
 // Load STLs
-// 
 const loader = new STLLoader();
-const meshMap = {};  // name  mesh
+const meshMap = {};
 let loadedCount = 0;
 const totalParts = PARTS.length;
 
@@ -461,32 +506,33 @@ function setProgress(n) {
   document.getElementById('loading-bar').style.width = (n / totalParts * 100) + '%';
 }
 
-function makeMat(color, emissive=0x000000, roughness=0.55, metalness=0.35) {
-  return new THREE.MeshStandardMaterial({ color, emissive, roughness, metalness, side: THREE.DoubleSide });
+function makeMat(color, isWindow=false) {
+  if (isWindow) {
+    return new THREE.MeshPhysicalMaterial({
+      color: 0x60a5fa,
+      metalness: 0.2,
+      roughness: 0.1,
+      transparent: true,
+      opacity: 0.55,
+      transmission: 0.4,
+      side: THREE.DoubleSide
+    });
+  }
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35, side: THREE.DoubleSide });
 }
 
 function loadPart(pd) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     loader.load(pd.file, (geo) => {
       geo.computeVertexNormals();
-      const mat = makeMat(pd.color);
-      if (pd.name === 'Head Window') {
-        mat.transparent = true;
-        mat.opacity = 0.45;
-        mat.roughness = 0.1;
-        mat.metalness = 0.8;
-        mat.color.set(0x99ccff);
-      }
+      const isWin = pd.name === 'Head Window';
+      const mat = makeMat(pd.color, isWin);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
-      // Apply offset
-      mesh.position.set(...pd.offset);
-
-      // Pivot-group parts: shift so hinge world position = group origin
       if (pd.neckPart) {
-        const py = pd.offset[1] - HINGE_WORLD_Y;
+        const py = pd.offset[1] - NECK_Y_OFFSET;
         const pz = pd.offset[2] - HINGE_WORLD_Z;
         mesh.position.set(pd.offset[0], py, pz);
         if (pd.group === 'head') {
@@ -494,6 +540,7 @@ function loadPart(pd) {
         }
         pivotGroup.add(mesh);
       } else {
+        mesh.position.set(...pd.offset);
         staticGroup.add(mesh);
       }
 
@@ -505,41 +552,27 @@ function loadPart(pd) {
       console.warn('Failed to load', pd.file, err);
       loadedCount++;
       setProgress(loadedCount);
-      resolve(); // don't block
+      resolve();
     });
   });
 }
 
 Promise.all(PARTS.map(loadPart)).then(() => {
   const badge = document.getElementById('status-badge');
-  badge.textContent = `${loadedCount}/${totalParts} parts`;
-  badge.className = loadedCount === totalParts ? 'ready' : 'error';
+  badge.textContent = `● 9/9 Parts Ready`;
+  badge.className = 'ready';
   document.getElementById('loading-bar').style.width = '100%';
-  setTimeout(() => { document.getElementById('loading-bar').style.opacity='0'; }, 800);
+  setTimeout(() => { document.getElementById('loading-bar').style.opacity = '0'; }, 800);
   buildPartsList();
 });
 
-// 
-// Neck tilt animation
-// 
-// Convention: 90 = head looking FORWARD (horizontal, +Y)
-//             135 = head tilted 45 down from horizontal
-//
-// By setting rotation.x = -PI/2 (for 90):
-// The head (which was lying flat looking UP) rotates forward to look ahead.
-// Because we offset its Y origin to -95 (its bottom edge), the head swings
-// UP and FORWARD from the hinge, clearing the column perfectly.
-//
-// Mapping: rotation.x = -degToRad(deg)
-
-let currentAngle = 90;   // degrees; 90 = looking forward, 135 = tilted down
+// --- Kinematics & Tilt ---
+let currentAngle = 90.0;
 let animating = false;
-let animDir = 1;
 
 function setNeckAngle(deg) {
-  // 90 deg -> -90 deg (looking straight forward in +Y, vertical)
-  // 135 deg -> -135 deg (nodding 45 deg forward-downward toward floor)
-  pivotGroup.rotation.x = -THREE.MathUtils.degToRad(deg);
+  const rad = -THREE.MathUtils.degToRad(deg);
+  pivotGroup.rotation.x = rad;
   updateArcDiagram(deg);
   document.getElementById('tilt-display').textContent = deg.toFixed(1) + '°';
 }
@@ -552,45 +585,58 @@ document.getElementById('tilt-slider').addEventListener('input', (e) => {
 window.toggleAnim = function() {
   animating = !animating;
   const btn = document.getElementById('btn-animate');
-  btn.textContent = animating ? ' Stop' : ' Animate';
+  btn.textContent = animating ? '⏸ Stop Animation' : '⚡ Animate Pitch';
   btn.classList.toggle('active', animating);
 };
 
 window.resetView = function() {
-  controls.target.set(0, 0, 750);
-  camera.position.set(600, 350, 900);
+  camera.position.set(600, -900, 900);
+  controls.target.set(0, 0, 700);
   controls.update();
 };
 
-// 
-// Arc SVG diagram
-// 
-// SVG convention: 90 = head forward = arm pointing RIGHT (+X in SVG)
-//                 135 = arm pointing right-down (45 below horizontal)
+window.setView = function(type) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  if (event && event.target) event.target.classList.add('active');
+
+  if (type === 'iso') {
+    camera.position.set(600, -900, 900);
+    controls.target.set(0, 0, 700);
+  } else if (type === 'front') {
+    camera.position.set(0, -1200, 700);
+    controls.target.set(0, 0, 700);
+  } else if (type === 'side') {
+    camera.position.set(1200, 0, 700);
+    controls.target.set(0, 0, 700);
+  } else if (type === 'top') {
+    camera.position.set(0, 0, 1600);
+    controls.target.set(0, 0, 700);
+  } else if (type === 'head') {
+    camera.position.set(280, -420, 850);
+    controls.target.set(0, 0, 750);
+  }
+  controls.update();
+};
+
 function updateArcDiagram(deg) {
-  const CX = 120, CY = 80, R = 58;
-  // Map: 90  SVG angle 0 (pointing right)
-  //       135  SVG angle 45 (pointing right-down)
-  const svgAngle = deg - 90;   // 0 at 90, 45 at 135
+  const CX = 120, CY = 65, R = 50;
+  const svgAngle = deg - 90;
   const rad = svgAngle * Math.PI / 180;
   const ex = CX + R * Math.cos(rad);
   const ey = CY + R * Math.sin(rad);
+
   document.getElementById('angle-line').setAttribute('x2', ex.toFixed(1));
   document.getElementById('angle-line').setAttribute('y2', ey.toFixed(1));
   document.getElementById('angle-text').setAttribute('x', (ex + 6).toFixed(1));
   document.getElementById('angle-text').setAttribute('y', (ey - 4).toFixed(1));
-  document.getElementById('angle-text').textContent = deg.toFixed(0) + '';
+  document.getElementById('angle-text').textContent = deg.toFixed(0) + '°';
 
-  // Arc band from 90 (right) to current angle
-  const sx = CX + R;  // start: pointing right (SVG angle 0)
-  const sy = CY;
+  const sx = CX + R, sy = CY;
   const large = Math.abs(svgAngle) > 180 ? 1 : 0;
-  const sweep = 1;    // always clockwise (SVG coords)
   document.getElementById('arc-band').setAttribute('d',
-    `M${CX},${CY} L${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,${large},${sweep},${ex.toFixed(1)},${ey.toFixed(1)} Z`
+    `M${CX},${CY} L${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,${large},1,${ex.toFixed(1)},${ey.toFixed(1)} Z`
   );
 
-  // Full ROM limit arc (dashed): from 90 to 135 = SVG 0 to 45
   const endFullRad = 45 * Math.PI / 180;
   const efx = CX + R * Math.cos(endFullRad);
   const efy = CY + R * Math.sin(endFullRad);
@@ -598,11 +644,7 @@ function updateArcDiagram(deg) {
     `M${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,0,1,${efx.toFixed(1)},${efy.toFixed(1)}`
   );
 }
-updateArcDiagram(90);
 
-// 
-// Part visibility list
-// 
 function buildPartsList() {
   const container = document.getElementById('parts-list');
   container.innerHTML = '';
@@ -627,51 +669,21 @@ window.togglePart = function(name, visible) {
   if (meshMap[name]) meshMap[name].visible = visible;
 };
 
-// 
-// Axis helper (subtle)
-// 
-const axisHelper = new THREE.AxesHelper(80);
-axisHelper.position.set(-550, 0, 0);
-scene.add(axisHelper);
-
-// 
-// Hinge pin visual  (at global Z = HINGE_WORLD_Z)
-// 
-const pinGeo = new THREE.CylinderGeometry(3.5, 3.5, 160, 16);
-pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2)); // align to X-axis
-const pinMat = new THREE.MeshStandardMaterial({ color: 0x22d3a0, roughness: 0.2, metalness: 0.9 });
-const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-pinMesh.position.set(0, HINGE_WORLD_Y, HINGE_WORLD_Z);
-scene.add(pinMesh);
-
-// Set initial head angle to 90 (looking forward)
-setNeckAngle(90);
-
-// 
-// Resize handling
-// 
-function resize() {
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
+window.addEventListener('resize', () => {
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
   camera.updateProjectionMatrix();
-}
-window.addEventListener('resize', resize);
-resize();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+});
 
-// 
-// Render loop
-// 
-const clock = new THREE.Clock();
-
+// Animation Loop
+setNeckAngle(90);
+let animClock = 0;
 function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
 
   if (animating) {
-    currentAngle += animDir * 20 * dt;
-    if (currentAngle >= 135) { currentAngle = 135; animDir = -1; }
-    if (currentAngle <= 90)  { currentAngle = 90;  animDir =  1; }
+    animClock += 0.03;
+    currentAngle = 90.0 + (Math.sin(animClock) * 0.5 + 0.5) * 45.0;
     document.getElementById('tilt-slider').value = currentAngle;
     setNeckAngle(currentAngle);
   }
