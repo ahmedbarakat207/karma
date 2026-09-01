@@ -393,7 +393,24 @@ window.resetView = function() {
 
 // 
 // Lighting
-// const NECK_BASE_Z    = 700;
+// 
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+scene.add(ambientLight);
+
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.4);
+dirLight1.position.set(600, -800, 1200);
+scene.add(dirLight1);
+
+const dirLight2 = new THREE.DirectionalLight(0x88aaff, 0.6);
+dirLight2.position.set(-600, 600, 600);
+scene.add(dirLight2);
+
+const grid = new THREE.GridHelper(2000, 40, 0x222530, 0x111318);
+grid.rotation.x = Math.PI / 2;
+grid.position.z = 0;
+scene.add(grid);
+
+const NECK_BASE_Z    = 700;
 const HEAD_BASE_Z    = NECK_BASE_Z + 60;
 const NECK_Y_OFFSET  = 0;              // neck centered on column top
 const HINGE_LOCAL_Z  = 50;             // hinge pin local Z within neck shell (Z=750)
