@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Assembly Viewer  Karma</title>
+<meta name="description" content="Interactive 3D assembly viewer for the Karma robot  inspect the neck hinge ROM from 90 to 135.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0b0e;
+    --panel:     #111318;
+    --border:    #222530;
+    --accent:    #4f7cff;
+    --accent2:   #7c3aed;
+    --green:     #22d3a0;
+    --orange:    #f97316;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --radius:    12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 52px 1fr;
+    grid-template-columns: 1fr 320px;
+    grid-template-areas: "topbar topbar" "canvas sidebar";
+  }
+
+  /*  Top bar  */
+  #topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  #topbar .logo {
+    font-size: 16px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.3px;
+  }
+  #topbar .sep { width: 1px; height: 22px; background: var(--border); }
+  #topbar .subtitle { font-size: 12px; color: var(--muted); font-weight: 400; }
+  #loading-bar {
+    position: absolute; bottom: 0; left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  #status-badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+    background: #1a1d24;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+  }
+  #status-badge.ready { color: var(--green); border-color: var(--green); }
+  #status-badge.error { color: var(--orange); border-color: var(--orange); }
+
+  /*  3D Canvas  */
+  #canvas-wrap {
+    grid-area: canvas;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 40%, #0f1420 0%, #080a0f 100%);
+  }
+  #canvas-wrap canvas { display: block; }
+
+  .hint-overlay {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(10,11,14,0.7);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    line-height: 1.8;
+    backdrop-filter: blur(8px);
+  }
+
+  /*  Sidebar  */
+  #sidebar {
+    grid-area: sidebar;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .card {
+    background: #161921;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .card-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* Neck tilt control */
+  .tilt-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 500;
+    background: linear-gradient(135deg, var(--accent), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  .tilt-label {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  input[type=range] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 0 10px rgba(79,124,255,0.5);
+    cursor: grab;
+    transition: box-shadow 0.2s;
+  }
+  input[type=range]::-webkit-slider-thumb:active { cursor: grabbing; }
+
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Animate button */
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #1e2230;
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: #252a3a; border-color: var(--accent); color: var(--accent); }
+  .btn.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+
+  /* Part visibility toggles */
+  .part-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid #1a1d24;
+    font-size: 12px;
+  }
+  .part-row:last-child { border-bottom: none; }
+  .part-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .part-name { display: flex; align-items: center; }
+
+  /* Toggle switch */
+  .toggle {
+    position: relative;
+    width: 34px; height: 18px;
+    flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 18px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 12px; height: 12px;
+    left: 3px; top: 3px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle input:checked + .toggle-slider { background: rgba(79,124,255,0.3); }
+  .toggle input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background: var(--accent);
+  }
+
+  /* Spec table */
+  .spec-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    font-size: 11px;
+    border-bottom: 1px solid #1a1d24;
+  }
+  .spec-row:last-child { border-bottom: none; }
+  .spec-key { color: var(--muted); }
+  .spec-val { font-family: 'JetBrains Mono', monospace; color: var(--text); font-size: 11px; }
+  .spec-val.green { color: var(--green); }
+  .spec-val.accent { color: var(--accent); }
+
+  /* Arc diagram */
+  #arc-diagram { display: block; margin: 8px auto 0; }
+
+</style>
+</head>
+<body>
+
+<!--  Top bar  -->
+<header id="topbar">
+  <span class="logo">KARMA</span>
+  <div class="sep"></div>
+  <span class="subtitle">Assembly Viewer  Neck Hinge ROM 90135</span>
+  <span id="status-badge">Loading</span>
+  <div id="loading-bar"></div>
+</header>
+
+<!--  3D Viewport  -->
+<div id="canvas-wrap">
+  <div class="hint-overlay">
+     Left-drag: rotate &nbsp;|&nbsp; Right-drag / scroll: zoom &nbsp;|&nbsp; Middle-drag: pan
+  </div>
+</div>
+
+<!--  Sidebar  -->
+<aside id="sidebar">
+
+  <!-- Neck tilt control -->
+  <div class="card">
+    <div class="card-title">Neck Tilt (Pitch)</div>
+    <div class="tilt-value" id="tilt-display">90</div>
+    <div class="tilt-label">Current angle from horizontal</div>
+    <input type="range" id="tilt-slider" min="90" max="135" value="90" step="0.5">
+    <div class="range-labels"><span>90 upright</span><span>135 forward</span></div>
+    <div class="btn-row">
+      <button class="btn" id="btn-animate" onclick="toggleAnim()"> Animate</button>
+      <button class="btn" onclick="resetView()"> Reset View</button>
+    </div>
+  </div>
+
+  <!-- Arc diagram -->
+  <div class="card">
+    <div class="card-title">Hinge Arc</div>
+    <svg id="arc-diagram" width="240" height="150" viewBox="0 0 240 150">
+      <defs>
+        <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#4f7cff" opacity="0.7"/>
+        </marker>
+      </defs>
+      <!-- background arc band 90135 -->
+      <path id="arc-band" d="" fill="rgba(79,124,255,0.08)" stroke="rgba(79,124,255,0.2)" stroke-width="1"/>
+      <!-- static limit arcs -->
+      <path id="arc-limit" d="" fill="none" stroke="#222530" stroke-width="1" stroke-dasharray="3,4"/>
+      <!-- hinge boss circle -->
+      <circle id="hinge-dot" cx="120" cy="80" r="14" fill="none" stroke="#333" stroke-width="1.5"/>
+      <circle cx="120" cy="80" r="3" fill="#4f7cff"/>
+      <!-- current angle indicator -->
+      <line id="angle-line" x1="120" y1="80" x2="120" y2="20" stroke="#4f7cff" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- labels -->
+      <text x="120" y="148" text-anchor="middle" fill="#64748b" font-size="9" font-family="JetBrains Mono">YZ cross-section at X=40</text>
+      <text id="angle-text" x="155" y="30" fill="#4f7cff" font-size="10" font-family="JetBrains Mono">90</text>
+    </svg>
+  </div>
+
+  <!-- Part visibility -->
+  <div class="card">
+    <div class="card-title">Parts Visibility</div>
+    <div id="parts-list"></div>
+  </div>
+
+  <!-- Specs -->
+  <div class="card">
+    <div class="card-title">Hinge Specs</div>
+    <div class="spec-row"><span class="spec-key">Pin </span><span class="spec-val accent">7 mm</span></div>
+    <div class="spec-row"><span class="spec-key">Boss </span><span class="spec-val">14 mm</span></div>
+    <div class="spec-row"><span class="spec-key">Hinge X pos</span><span class="spec-val">40 mm</span></div>
+    <div class="spec-row"><span class="spec-key">Hinge Z pos</span><span class="spec-val">15 mm</span></div>
+    <div class="spec-row"><span class="spec-key">ROM start</span><span class="spec-val">90 upright</span></div>
+    <div class="spec-row"><span class="spec-key">ROM end</span><span class="spec-val">135 fwd</span></div>
+    <div class="spec-row"><span class="spec-key">Arc sweep</span><span class="spec-val green">45</span></div>
+    <div class="spec-row"><span class="spec-key">Arc clearance R</span><span class="spec-val">22 mm</span></div>
+  </div>
+
+</aside>
+
+<!-- Three.js + STLLoader via CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.167.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+// 
+// Scene setup
+// 
+const wrap = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080a0f);
+scene.fog = new THREE.FogExp2(0x080a0f, 0.0007);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000);
+camera.up.set(0, 0, 1);  // Set Z as UP axis (matching CAD geometry)
+camera.position.set(600, -900, 900);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 100;
+controls.maxDistance = 3000;
+controls.target.set(0, 0, 700);
+controls.update();
+
+window.resetView = function() {
+  camera.position.set(600, -900, 900);
+  controls.target.set(0, 0, 700);
+  controls.update();
+};
+
+// 
+// Lighting
+// const NECK_BASE_Z    = 700;
+const HEAD_BASE_Z    = NECK_BASE_Z + 60;
+const NECK_Y_OFFSET  = 0;              // neck centered on column top
+const HINGE_LOCAL_Z  = 50;             // hinge pin local Z within neck shell (Z=750)
+const HINGE_WORLD_Z  = NECK_BASE_Z + HINGE_LOCAL_Z;  // = 750
+
+const PARTS = [
+  // name, file, hex color, [ox, oy, oz], groupKey, neckPart
+  // neckPart=true   goes into pivotGroup (rotates with the head tilt)
+  // neckPart=false  goes into staticGroup
+  { name:'Base Front',   file:'base_front.stl',      color:0x3a4a6b, offset:[0,0,0],                              group:'base',   neckPart:false },
+  { name:'Base Back',    file:'base_back.stl',        color:0x2d3a55, offset:[0,0,0],                              group:'base',   neckPart:false },
+  { name:'Column Front', file:'column_front.stl',     color:0x2e4060, offset:[0,0,220],                            group:'column', neckPart:false },
+  { name:'Column Back',  file:'column_back.stl',      color:0x253550, offset:[0,0,220],                            group:'column', neckPart:false },
+  // Neck is static on column
+  { name:'Neck Front',   file:'neck_front.stl',       color:0x4f7cff, offset:[0,0,NECK_BASE_Z],                    group:'neck',   neckPart:false },
+  { name:'Neck Back',    file:'neck_back.stl',        color:0x3a5ecc, offset:[0,0,NECK_BASE_Z],                    group:'neck',   neckPart:false },
+  // Head display assembly: bottom chin mounts at hinge pin (Z=750), back cover touches hinge front (Y=0..22.5), window faces forward (Y=22.5..45)
+  { name:'Head Window',  file:'head_window_half.stl', color:0x88b4e0, offset:[0,-95,HEAD_BASE_Z],                 group:'head',   neckPart:true  },
+  { name:'Head Cover',   file:'head_cover_half.stl',  color:0x2a3a50, offset:[0,-95,HEAD_BASE_Z],                 group:'head',   neckPart:true  },
+  { name:'Steering Arm', file:'steering_arm.stl',     color:0x22d3a0, offset:[0,0,NECK_BASE_Z+HINGE_LOCAL_Z],      group:'neck',   neckPart:true },
+];    group:'base',   neckPart:false },
+  { name:'Column Front', file:'column_front.stl',     color:0x2e4060, offset:[0,0,220],                            group:'column', neckPart:false },
+  { name:'Column Back',  file:'column_back.stl',      color:0x253550, offset:[0,0,220],                            group:'column', neckPart:false },
+  // Neck is static  shifted to front of column (Y=95)
+  { name:'Neck Front',   file:'neck_front.stl',       color:0x4f7cff, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
+  { name:'Neck Back',    file:'neck_back.stl',        color:0x3a5ecc, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
+  // Head display assembly attached at its bottom chin (Y offset = -95) so the neck box sits BELOW the display screen, leaving the window 100% unblocked
+  { name:'Head Window',  file:'head_window_half.stl', color:0x88b4e0, offset:[0,NECK_Y_OFFSET-95,HEAD_BASE_Z],    group:'head',   neckPart:true  },
+  { name:'Head Cover',   file:'head_cover_half.stl',  color:0x2a3a50, offset:[0,NECK_Y_OFFSET-95,HEAD_BASE_Z],    group:'head',   neckPart:true  },
+  { name:'Steering Arm', file:'steering_arm.stl',     color:0x22d3a0, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z+HINGE_LOCAL_Z], group:'neck', neckPart:true },
+];
+
+const DOT_COLORS = {
+  base: '#3a4a6b', column: '#2e4060', neck: '#4f7cff', head: '#88b4e0'
+};
+
+// 
+// Hinge pivot group
+// 
+const HINGE_WORLD_Y = NECK_Y_OFFSET;   // = 0
+const pivotGroup = new THREE.Group();
+pivotGroup.position.set(0, HINGE_WORLD_Y, HINGE_WORLD_Z);
+scene.add(pivotGroup);
+
+// Static group
+const staticGroup = new THREE.Group();
+scene.add(staticGroup);
+
+// 
+// Load STLs
+// 
+const loader = new STLLoader();
+const meshMap = {};  // name  mesh
+let loadedCount = 0;
+const totalParts = PARTS.length;
+
+function setProgress(n) {
+  document.getElementById('loading-bar').style.width = (n / totalParts * 100) + '%';
+}
+
+function makeMat(color, emissive=0x000000, roughness=0.55, metalness=0.35) {
+  return new THREE.MeshStandardMaterial({ color, emissive, roughness, metalness, side: THREE.DoubleSide });
+}
+
+function loadPart(pd) {
+  return new Promise((resolve, reject) => {
+    loader.load(pd.file, (geo) => {
+      geo.computeVertexNormals();
+      const mat = makeMat(pd.color);
+      if (pd.name === 'Head Window') {
+        mat.transparent = true;
+        mat.opacity = 0.45;
+        mat.roughness = 0.1;
+        mat.metalness = 0.8;
+        mat.color.set(0x99ccff);
+      }
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      // Apply offset
+      mesh.position.set(...pd.offset);
+
+      // Pivot-group parts: shift so hinge world position = group origin
+      if (pd.neckPart) {
+        const py = pd.offset[1] - HINGE_WORLD_Y;
+        const pz = pd.offset[2] - HINGE_WORLD_Z;
+        mesh.position.set(pd.offset[0], py, pz);
+        if (pd.group === 'head') {
+          mesh.scale.set(1, 1, -1);
+        }
+        pivotGroup.add(mesh);
+      } else {
+        staticGroup.add(mesh);
+      }
+
+      meshMap[pd.name] = mesh;
+      loadedCount++;
+      setProgress(loadedCount);
+      resolve();
+    }, undefined, (err) => {
+      console.warn('Failed to load', pd.file, err);
+      loadedCount++;
+      setProgress(loadedCount);
+      resolve(); // don't block
+    });
+  });
+}
+
+Promise.all(PARTS.map(loadPart)).then(() => {
+  const badge = document.getElementById('status-badge');
+  badge.textContent = `${loadedCount}/${totalParts} parts`;
+  badge.className = loadedCount === totalParts ? 'ready' : 'error';
+  document.getElementById('loading-bar').style.width = '100%';
+  setTimeout(() => { document.getElementById('loading-bar').style.opacity='0'; }, 800);
+  buildPartsList();
+});
+
+// 
+// Neck tilt animation
+// 
+// Convention: 90 = head looking FORWARD (horizontal, +Y)
+//             135 = head tilted 45 down from horizontal
+//
+// By setting rotation.x = -PI/2 (for 90):
+// The head (which was lying flat looking UP) rotates forward to look ahead.
+// Because we offset its Y origin to -95 (its bottom edge), the head swings
+// UP and FORWARD from the hinge, clearing the column perfectly.
+//
+// Mapping: rotation.x = -degToRad(deg)
+
+let currentAngle = 90;   // degrees; 90 = looking forward, 135 = tilted down
+let animating = false;
+let animDir = 1;
+
+function setNeckAngle(deg) {
+  // 90 -> -90 (looking straight ahead, vertical)
+  // 135 -> -45 (nodding 45 down toward floor)
+  pivotGroup.rotation.x = -THREE.MathUtils.degToRad(180 - deg);
+  updateArcDiagram(deg);
+  document.getElementById('tilt-display').textContent = deg.toFixed(1) + '';
+}
+
+document.getElementById('tilt-slider').addEventListener('input', (e) => {
+  currentAngle = parseFloat(e.target.value);
+  setNeckAngle(currentAngle);
+});
+
+window.toggleAnim = function() {
+  animating = !animating;
+  const btn = document.getElementById('btn-animate');
+  btn.textContent = animating ? ' Stop' : ' Animate';
+  btn.classList.toggle('active', animating);
+};
+
+window.resetView = function() {
+  controls.target.set(0, 0, 750);
+  camera.position.set(600, 350, 900);
+  controls.update();
+};
+
+// 
+// Arc SVG diagram
+// 
+// SVG convention: 90 = head forward = arm pointing RIGHT (+X in SVG)
+//                 135 = arm pointing right-down (45 below horizontal)
+function updateArcDiagram(deg) {
+  const CX = 120, CY = 80, R = 58;
+  // Map: 90  SVG angle 0 (pointing right)
+  //       135  SVG angle 45 (pointing right-down)
+  const svgAngle = deg - 90;   // 0 at 90, 45 at 135
+  const rad = svgAngle * Math.PI / 180;
+  const ex = CX + R * Math.cos(rad);
+  const ey = CY + R * Math.sin(rad);
+  document.getElementById('angle-line').setAttribute('x2', ex.toFixed(1));
+  document.getElementById('angle-line').setAttribute('y2', ey.toFixed(1));
+  document.getElementById('angle-text').setAttribute('x', (ex + 6).toFixed(1));
+  document.getElementById('angle-text').setAttribute('y', (ey - 4).toFixed(1));
+  document.getElementById('angle-text').textContent = deg.toFixed(0) + '';
+
+  // Arc band from 90 (right) to current angle
+  const sx = CX + R;  // start: pointing right (SVG angle 0)
+  const sy = CY;
+  const large = Math.abs(svgAngle) > 180 ? 1 : 0;
+  const sweep = 1;    // always clockwise (SVG coords)
+  document.getElementById('arc-band').setAttribute('d',
+    `M${CX},${CY} L${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,${large},${sweep},${ex.toFixed(1)},${ey.toFixed(1)} Z`
+  );
+
+  // Full ROM limit arc (dashed): from 90 to 135 = SVG 0 to 45
+  const endFullRad = 45 * Math.PI / 180;
+  const efx = CX + R * Math.cos(endFullRad);
+  const efy = CY + R * Math.sin(endFullRad);
+  document.getElementById('arc-limit').setAttribute('d',
+    `M${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,0,1,${efx.toFixed(1)},${efy.toFixed(1)}`
+  );
+}
+updateArcDiagram(90);
+
+// 
+// Part visibility list
+// 
+function buildPartsList() {
+  const container = document.getElementById('parts-list');
+  container.innerHTML = '';
+  PARTS.forEach(pd => {
+    const row = document.createElement('div');
+    row.className = 'part-row';
+    const color = DOT_COLORS[pd.group] || '#888';
+    row.innerHTML = `
+      <span class="part-name">
+        <span class="part-dot" style="background:${color}"></span>
+        ${pd.name}
+      </span>
+      <label class="toggle">
+        <input type="checkbox" checked onchange="togglePart('${pd.name}', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>`;
+    container.appendChild(row);
+  });
+}
+
+window.togglePart = function(name, visible) {
+  if (meshMap[name]) meshMap[name].visible = visible;
+};
+
+// 
+// Axis helper (subtle)
+// 
+const axisHelper = new THREE.AxesHelper(80);
+axisHelper.position.set(-550, 0, 0);
+scene.add(axisHelper);
+
+// 
+// Hinge pin visual  (at global Z = HINGE_WORLD_Z)
+// 
+const pinGeo = new THREE.CylinderGeometry(3.5, 3.5, 160, 16);
+pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2)); // align to X-axis
+const pinMat = new THREE.MeshStandardMaterial({ color: 0x22d3a0, roughness: 0.2, metalness: 0.9 });
+const pinMesh = new THREE.Mesh(pinGeo, pinMat);
+pinMesh.position.set(0, HINGE_WORLD_Y, HINGE_WORLD_Z);
+scene.add(pinMesh);
+
+// Set initial head angle to 90 (looking forward)
+setNeckAngle(90);
+
+// 
+// Resize handling
+// 
+function resize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// 
+// Render loop
+// 
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  if (animating) {
+    currentAngle += animDir * 20 * dt;
+    if (currentAngle >= 135) { currentAngle = 135; animDir = -1; }
+    if (currentAngle <= 90)  { currentAngle = 90;  animDir =  1; }
+    document.getElementById('tilt-slider').value = currentAngle;
+    setNeckAngle(currentAngle);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
