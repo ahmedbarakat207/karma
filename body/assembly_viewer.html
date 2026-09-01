@@ -3,26 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Karma Robot — 3D Mechanical Assembly & Kinematics Viewer</title>
-<meta name="description" content="Interactive 3D assembly viewer for the Karma robot — inspect neck hinge ROM from 90° to 135° with zero collisions.">
+<title>Karma Robot — Exotic 3D Mechanical Assembly & Kinematics Viewer</title>
+<meta name="description" content="Exotic 3D mechanical assembly viewer for the Karma robot — inspect zero-collision neck hinge ROM from 90° to 135°.">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:        #080a0f;
-    --panel:     #10131a;
-    --border:    #1f2430;
-    --border-hl: rgba(79, 124, 255, 0.4);
-    --accent:    #4f7cff;
-    --accent2:   #7c3aed;
-    --green:     #10b981;
-    --orange:    #f59e0b;
-    --cyan:      #06b6d4;
-    --text:      #f1f5f9;
-    --muted:     #64748b;
-    --radius:    12px;
+    --bg:          #06080d;
+    --panel:       rgba(14, 18, 26, 0.88);
+    --panel-solid: #0e121a;
+    --border:      rgba(255, 255, 255, 0.08);
+    --border-hl:   rgba(79, 124, 255, 0.4);
+    --accent:      #4f7cff;
+    --accent-glow: rgba(79, 124, 255, 0.35);
+    --accent2:     #8b5cf6;
+    --green:       #10b981;
+    --orange:      #f59e0b;
+    --cyan:        #00f0ff;
+    --text:        #f1f5f9;
+    --muted:       #64748b;
+    --radius:      12px;
   }
 
   body {
@@ -44,7 +46,7 @@
     align-items: center;
     gap: 16px;
     padding: 0 24px;
-    background: var(--panel);
+    background: var(--panel-solid);
     border-bottom: 1px solid var(--border);
     position: relative;
     z-index: 10;
@@ -58,7 +60,7 @@
     font-size: 18px;
     font-weight: 800;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    background: linear-gradient(135deg, var(--cyan), var(--accent), var(--accent2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -68,18 +70,18 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(79, 124, 255, 0.15);
-    color: var(--accent);
+    background: rgba(0, 240, 255, 0.12);
+    color: var(--cyan);
     padding: 2px 8px;
     border-radius: 4px;
-    border: 1px solid rgba(79, 124, 255, 0.3);
+    border: 1px solid rgba(0, 240, 255, 0.3);
   }
   #topbar .sep { width: 1px; height: 22px; background: var(--border); }
   #topbar .subtitle { font-size: 12px; color: var(--muted); font-weight: 400; }
   #loading-bar {
     position: absolute; bottom: 0; left: 0;
     height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--cyan), var(--accent2));
+    background: linear-gradient(90deg, var(--cyan), var(--accent), var(--accent2));
     width: 0%;
     transition: width 0.3s ease;
   }
@@ -88,7 +90,7 @@
     font-size: 11px;
     font-family: 'JetBrains Mono', monospace;
     color: var(--muted);
-    background: #161922;
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 4px 12px;
@@ -96,14 +98,14 @@
     align-items: center;
     gap: 6px;
   }
-  #status-badge.ready { color: var(--green); border-color: rgba(16, 185, 129, 0.3); }
+  #status-badge.ready { color: var(--cyan); border-color: rgba(0, 240, 255, 0.4); box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); }
 
   /* --- 3D Canvas --- */
   #canvas-wrap {
     grid-area: canvas;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(ellipse at 50% 35%, #111728 0%, #06080d 100%);
+    background: radial-gradient(ellipse at 50% 30%, #0f1626 0%, #05070b 100%);
   }
   #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
 
@@ -119,7 +121,7 @@
   .view-presets {
     display: flex;
     gap: 6px;
-    background: rgba(16, 19, 26, 0.85);
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 4px;
@@ -142,7 +144,7 @@
   .hint-badge {
     font-size: 11px;
     color: var(--muted);
-    background: rgba(16, 19, 26, 0.85);
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 6px 12px;
@@ -150,10 +152,34 @@
     width: fit-content;
   }
 
+  /* Part HUD Tooltip */
+  #part-hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border-hl);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 20px var(--accent-glow);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    backdrop-filter: blur(16px);
+    min-width: 260px;
+    display: none;
+    z-index: 6;
+  }
+  #part-hud.show { display: block; animation: fadeIn 0.2s ease; }
+  #part-hud .hud-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  #part-hud .hud-group { font-size: 11px; color: var(--cyan); font-weight: 600; text-transform: uppercase; margin-bottom: 10px; }
+  #part-hud .hud-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+  #part-hud .hud-key { color: var(--muted); }
+  #part-hud .hud-val { font-family: 'JetBrains Mono', monospace; color: var(--text); }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
   /* --- Sidebar --- */
   #sidebar {
     grid-area: sidebar;
-    background: var(--panel);
+    background: var(--panel-solid);
     border-left: 1px solid var(--border);
     overflow-y: auto;
     padding: 20px 16px;
@@ -165,7 +191,7 @@
   #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
   .card {
-    background: #141722;
+    background: #0d1017;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 14px;
@@ -182,30 +208,23 @@
     justify-content: space-between;
   }
 
-  .tilt-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 26px;
-    font-weight: 600;
-    background: linear-gradient(135deg, var(--accent), var(--green));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    text-align: center;
-    margin-bottom: 4px;
+  .control-group { margin-bottom: 12px; }
+  .control-group:last-child { margin-bottom: 0; }
+  .control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
   }
-  .tilt-label {
-    text-align: center;
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 12px;
-  }
+  .control-label { font-size: 11px; font-weight: 500; color: var(--text); }
+  .control-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--cyan); }
 
   input[type=range] {
     width: 100%;
     height: 6px;
     -webkit-appearance: none;
     appearance: none;
-    background: #1e2433;
+    background: #1a202c;
     border-radius: 3px;
     outline: none;
     cursor: pointer;
@@ -214,8 +233,8 @@
     -webkit-appearance: none;
     width: 16px; height: 16px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--cyan));
-    box-shadow: 0 0 10px rgba(79,124,255,0.6);
+    background: linear-gradient(135deg, var(--cyan), var(--accent));
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.7);
     cursor: grab;
     transition: transform 0.1s;
   }
@@ -230,103 +249,82 @@
     font-family: 'JetBrains Mono', monospace;
   }
 
-  .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
   .btn {
     flex: 1;
     padding: 8px 0;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: #1a1e2b;
+    background: #151923;
     color: var(--text);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
   }
-  .btn:hover { background: #222938; border-color: var(--accent); color: var(--accent); }
-  .btn.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+  .btn:hover { background: #1e2433; border-color: var(--cyan); color: var(--cyan); }
+  .btn.active { background: linear-gradient(135deg, var(--cyan), var(--accent)); border-color: transparent; color: #000; font-weight: 700; }
 
-  /* Arc diagram */
+  /* Hinge Kinematics Arc */
   #arc-diagram { display: block; margin: 4px auto 0; }
 
-  /* Part visibility */
-  .part-row {
+  /* Part List */
+  .part-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 7px 0;
-    border-bottom: 1px solid #1a1e28;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid transparent;
+    margin-bottom: 6px;
     font-size: 11px;
-  }
-  .part-row:last-child { border-bottom: none; }
-  .part-dot {
-    width: 8px; height: 8px;
-    border-radius: 2px;
-    margin-right: 8px;
-    flex-shrink: 0;
-  }
-  .part-name { display: flex; align-items: center; }
-
-  .toggle {
-    position: relative;
-    width: 32px; height: 16px;
-    flex-shrink: 0;
-  }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .toggle-slider {
-    position: absolute; inset: 0;
-    background: #1e2433;
-    border-radius: 16px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s;
   }
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 10px; height: 10px;
-    left: 3px; top: 3px;
-    background: var(--muted);
-    border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .toggle input:checked + .toggle-slider { background: rgba(79,124,255,0.3); }
-  .toggle input:checked + .toggle-slider::before {
-    transform: translateX(16px);
-    background: var(--accent);
-  }
+  .part-item:hover { background: rgba(0, 240, 255, 0.08); border-color: rgba(0, 240, 255, 0.2); }
+  .part-item.active { background: rgba(0, 240, 255, 0.15); border-color: var(--cyan); }
+  .part-left { display: flex; align-items: center; gap: 8px; }
+  .part-color-dot { width: 10px; height: 10px; border-radius: 3px; }
+  .part-title { font-weight: 500; }
+  .part-tris { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); }
 
   /* Specs */
-  .spec-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 5px 0;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1e28;
-  }
-  .spec-row:last-child { border-bottom: none; }
-  .spec-key { color: var(--muted); }
-  .spec-val { font-family: 'JetBrains Mono', monospace; color: var(--text); }
-  .spec-val.green { color: var(--green); }
-  .spec-val.accent { color: var(--cyan); }
+  .spec-grid { display: flex; flex-direction: column; gap: 6px; }
+  .spec-item { display: flex; justify-content: space-between; font-size: 11px; }
+  .spec-k { color: var(--muted); }
+  .spec-v { font-family: 'JetBrains Mono', monospace; color: var(--text); font-weight: 500; }
+  .spec-v.hl { color: var(--cyan); }
 </style>
 </head>
 <body>
 
-<!-- Top Bar -->
 <header id="topbar">
   <div class="logo-wrap">
     <span class="logo">KARMA</span>
-    <span class="badge">Physical Robot Assembly</span>
+    <span class="badge">Exotic Robot CAD</span>
   </div>
   <div class="sep"></div>
-  <span class="subtitle">Neck Hinge Articulation (90° Forward to 135° Downward)</span>
+  <span class="subtitle">Sculpted Cyber-Faceted Assembly & Synchronized Hinge Kinematics</span>
   <span id="status-badge">Loading STLs...</span>
   <div id="loading-bar"></div>
 </header>
 
-<!-- 3D Viewport -->
 <div id="canvas-wrap">
+  <!-- Interactive Part Inspector HUD -->
+  <div id="part-hud">
+    <div class="hud-title" id="hud-name">Base Front Chassis</div>
+    <div class="hud-group" id="hud-group">Base Module</div>
+    <div class="hud-row"><span class="hud-key">Material</span><span class="hud-val" id="hud-mat">PETG / ABS</span></div>
+    <div class="hud-row"><span class="hud-key">Infill</span><span class="hud-val" id="hud-infill">30% Gyroid</span></div>
+    <div class="hud-row"><span class="hud-key">Est. Weight</span><span class="hud-val" id="hud-weight">~480 g</span></div>
+    <div class="hud-row"><span class="hud-key">Fasteners</span><span class="hud-val" id="hud-hardware">4x M4 Inserts</span></div>
+  </div>
+
   <div class="viewport-overlay">
     <div class="view-presets">
       <button class="preset-btn active" onclick="setView('iso')">Isometric</button>
@@ -336,66 +334,82 @@
       <button class="preset-btn" onclick="setView('head')">Neck Pivot</button>
     </div>
     <div class="hint-badge">
-      Left Drag: Rotate • Right Drag / Scroll: Zoom • Middle Drag: Pan
+      Left Drag: Rotate • Right Drag / Scroll: Zoom • Middle Drag: Pan • Click Part: Inspect
     </div>
   </div>
 </div>
 
-<!-- Sidebar -->
 <aside id="sidebar">
 
-  <!-- Pitch Control -->
   <div class="card">
-    <div class="card-title">Neck Pitch Articulation</div>
-    <div class="tilt-value" id="tilt-display">90.0°</div>
-    <div class="tilt-label">Servo Pitch Angle from Horizontal</div>
-    <input type="range" id="tilt-slider" min="90" max="135" value="90" step="0.5">
-    <div class="range-labels"><span>90° (Eye Level)</span><span>135° (Desk Focus)</span></div>
+    <div class="card-title">Assembly & Kinematics</div>
+    
+    <!-- Exploded View -->
+    <div class="control-group">
+      <div class="control-header">
+        <span class="control-label">Exploded View Separation</span>
+        <span class="control-val" id="val-explode">0%</span>
+      </div>
+      <input type="range" id="slider-explode" min="0" max="100" value="0" step="1">
+    </div>
+
+    <!-- Pitch ROM Tilt -->
+    <div class="control-group">
+      <div class="control-header">
+        <span class="control-label">Head Pitch (Servo Tilt)</span>
+        <span class="control-val" id="val-pitch">90.0°</span>
+      </div>
+      <input type="range" id="slider-pitch" min="90" max="135" value="90" step="0.5">
+      <div class="range-labels"><span>90° (Eye Level)</span><span>135° (Desk Focus)</span></div>
+    </div>
+
     <div class="btn-row">
-      <button class="btn" id="btn-animate" onclick="toggleAnim()">⚡ Animate Pitch</button>
-      <button class="btn" onclick="resetView()">↺ Reset View</button>
+      <button class="btn" id="btn-anim" onclick="toggleTiltAnim()">⚡ Animate Pitch</button>
+      <button class="btn" onclick="resetAll()">↺ Reset</button>
     </div>
   </div>
 
-  <!-- Hinge Arc Diagram -->
+  <!-- Kinematics Arc SVG -->
   <div class="card">
     <div class="card-title">Hinge Kinematics Arc</div>
     <svg id="arc-diagram" width="240" height="130" viewBox="0 0 240 130">
       <defs>
         <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="#4f7cff" opacity="0.9"/>
+          <path d="M0,0 L6,3 L0,6 Z" fill="#00f0ff" opacity="0.9"/>
         </marker>
       </defs>
-      <path id="arc-band" d="" fill="rgba(79,124,255,0.12)" stroke="rgba(79,124,255,0.3)" stroke-width="1"/>
+      <path id="arc-band" d="" fill="rgba(0, 240, 255, 0.12)" stroke="rgba(0, 240, 255, 0.35)" stroke-width="1"/>
       <path id="arc-limit" d="" fill="none" stroke="#222530" stroke-width="1" stroke-dasharray="3,4"/>
       <circle id="hinge-dot" cx="120" cy="65" r="14" fill="none" stroke="#333" stroke-width="1.5"/>
-      <circle cx="120" cy="65" r="4" fill="#06b6d4"/>
-      <line id="angle-line" x1="120" y1="65" x2="178" y2="65" stroke="#4f7cff" stroke-width="2.5" marker-end="url(#arr)"/>
+      <circle cx="120" cy="65" r="4" fill="#00f0ff"/>
+      <line id="angle-line" x1="120" y1="65" x2="178" y2="65" stroke="#00f0ff" stroke-width="2.5" marker-end="url(#arr)"/>
       <text x="120" y="122" text-anchor="middle" fill="#64748b" font-size="9" font-family="JetBrains Mono">YZ cross-section at X=±40 mm</text>
-      <text id="angle-text" x="160" y="55" fill="#4f7cff" font-size="11" font-family="JetBrains Mono" font-weight="600">90°</text>
+      <text id="angle-text" x="160" y="55" fill="#00f0ff" font-size="11" font-family="JetBrains Mono" font-weight="600">90°</text>
     </svg>
   </div>
 
-  <!-- Part Visibility -->
+  <!-- Robot Parts List -->
   <div class="card">
-    <div class="card-title">Parts Visibility (9/9)</div>
-    <div id="parts-list"></div>
+    <div class="card-title">Robot Sub-Assemblies (9 STLs)</div>
+    <div id="part-list-container"></div>
   </div>
 
-  <!-- Mechanical Specs -->
+  <!-- Specifications -->
   <div class="card">
-    <div class="card-title">Mechanical Specifications</div>
-    <div class="spec-row"><span class="spec-key">Hinge Pivot Pin</span><span class="spec-val accent">Ø 7.0 mm (Steel Axle)</span></div>
-    <div class="spec-row"><span class="spec-key">Hinge Pin Boss</span><span class="spec-val">Ø 14.0 mm</span></div>
-    <div class="spec-row"><span class="spec-key">Pivot Axis X</span><span class="spec-val">± 40.0 mm</span></div>
-    <div class="spec-row"><span class="spec-key">Pivot Axis Z</span><span class="spec-val">750.0 mm (World)</span></div>
-    <div class="spec-row"><span class="spec-key">Clearance Sweep</span><span class="spec-val green">R = 20.0 mm (Zero Collision)</span></div>
-    <div class="spec-row"><span class="spec-key">Pitch ROM</span><span class="spec-val green">90° to 135° (45° Sweep)</span></div>
+    <div class="card-title">Exotic Architecture Specs</div>
+    <div class="spec-grid">
+      <div class="spec-item"><span class="spec-k">Total Height</span><span class="spec-v hl">940 mm</span></div>
+      <div class="spec-item"><span class="spec-k">Base Footprint</span><span class="spec-v">320 × 400 mm</span></div>
+      <div class="spec-item"><span class="spec-k">Torso Cross-Section</span><span class="spec-v">170 × 210 mm</span></div>
+      <div class="spec-item"><span class="spec-k">Hinge Axis World Z</span><span class="spec-v hl">750 mm (X=±40)</span></div>
+      <div class="spec-item"><span class="spec-k">Pitch ROM</span><span class="spec-v hl">90° – 135° (Zero Collision)</span></div>
+      <div class="spec-item"><span class="spec-k">Actuator</span><span class="spec-v">20kg Metal Servo</span></div>
+      <div class="spec-item"><span class="spec-k">Bearings</span><span class="spec-v">Dual 608ZZ</span></div>
+    </div>
   </div>
 
 </aside>
 
-<!-- Three.js + STLLoader via CDN -->
 <script type="importmap">
 {
   "imports": {
@@ -410,6 +424,132 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
+// --- Production Assembly Data ---
+const NECK_BASE_Z   = 700;
+const HINGE_LOCAL_Z = 50;
+const HINGE_WORLD_Z = NECK_BASE_Z + HINGE_LOCAL_Z; // = 750 mm
+const NECK_Y_OFFSET = 0;
+
+const PARTS = [
+  {
+    name: 'Base Front Chassis',
+    file: 'base_front.stl',
+    color: 0x1e2536,
+    baseOffset: [0, 0, 0],
+    explodeDir: [0, 90, 0],
+    group: 'Base Chassis',
+    isPivot: false,
+    mat: 'PETG / ABS',
+    infill: '30% Gyroid',
+    weight: '~480 g',
+    hardware: '8x M4 Inserts, 4x M3 Inserts'
+  },
+  {
+    name: 'Base Back Chassis',
+    file: 'base_back.stl',
+    color: 0x141a28,
+    baseOffset: [0, 0, 0],
+    explodeDir: [0, -90, 0],
+    group: 'Base Chassis',
+    isPivot: false,
+    mat: 'PETG / ABS',
+    infill: '30% Gyroid',
+    weight: '~420 g',
+    hardware: 'DC Power Port, Rocker Switch'
+  },
+  {
+    name: 'Column Front Torso',
+    file: 'column_front.stl',
+    color: 0x2b384e,
+    baseOffset: [0, 0, 220],
+    explodeDir: [0, 75, 0],
+    group: 'Column Torso',
+    isPivot: false,
+    mat: 'PETG / ABS',
+    infill: '25% Gyroid',
+    weight: '~560 g',
+    hardware: '2x 40mm Speakers, Mic'
+  },
+  {
+    name: 'Column Back Spine',
+    file: 'column_back.stl',
+    color: 0x1c2534,
+    baseOffset: [0, 0, 220],
+    explodeDir: [0, -75, 0],
+    group: 'Column Torso',
+    isPivot: false,
+    mat: 'PETG / ABS',
+    infill: '25% Gyroid',
+    weight: '~540 g',
+    hardware: 'Cooling Louvers, M4 Bolts'
+  },
+  {
+    name: 'Neck Front Cowling',
+    file: 'neck_front.stl',
+    color: 0x384c6c,
+    baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
+    explodeDir: [0, 50, 30],
+    group: 'Neck Assembly',
+    isPivot: false,
+    mat: 'PETG / PLA-CF',
+    infill: '40% Gyroid',
+    weight: '~160 g',
+    hardware: '20kg Servo, 2x 608ZZ'
+  },
+  {
+    name: 'Neck Back Cowling',
+    file: 'neck_back.stl',
+    color: 0x25344d,
+    baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
+    explodeDir: [0, -50, 30],
+    group: 'Neck Assembly',
+    isPivot: false,
+    mat: 'PETG / ABS',
+    infill: '30% Gyroid',
+    weight: '~110 g',
+    hardware: '4x M4 Bolts'
+  },
+  {
+    name: 'Steering Horn Linkage',
+    file: 'steering_arm.stl',
+    color: 0x00f0ff,
+    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
+    explodeDir: [50, 0, 20],
+    group: 'Neck Assembly',
+    isPivot: true,
+    mat: 'Nylon / PLA-CF',
+    infill: '100% Solid',
+    weight: '~25 g',
+    hardware: '25T Servo Spline, M3 Ball'
+  },
+  {
+    name: 'Head Display Front Visor',
+    file: 'head_window_half.stl',
+    color: 0x0c121e,
+    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
+    explodeDir: [0, 60, 60],
+    group: 'Head Assembly',
+    isPivot: true,
+    mat: 'PETG / Polycarbonate',
+    infill: '25% Gyroid',
+    weight: '~280 g',
+    hardware: '7"/10.1" Display, HD Cam'
+  },
+  {
+    name: 'Head Rear Aero Dome',
+    file: 'head_cover_half.stl',
+    color: 0xe2e8f0,
+    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
+    explodeDir: [0, -60, 60],
+    group: 'Head Assembly',
+    isPivot: true,
+    mat: 'PETG / ABS',
+    infill: '20% Gyroid',
+    weight: '~210 g',
+    hardware: '8x M3 Perimeter Bolts'
+  }
+];
+
 // --- Scene Setup ---
 const wrap = document.getElementById('canvas-wrap');
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -418,181 +558,258 @@ renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.25;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x080a0f);
-scene.fog = new THREE.FogExp2(0x080a0f, 0.0007);
+scene.background = new THREE.Color(0x06080d);
+scene.fog = new THREE.FogExp2(0x06080d, 0.0006);
 
 const camera = new THREE.PerspectiveCamera(42, wrap.clientWidth / wrap.clientHeight, 10, 8000);
 camera.up.set(0, 0, 1);
-camera.position.set(600, -900, 900);
+camera.position.set(650, -950, 920);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.minDistance = 100;
-controls.maxDistance = 3500;
-controls.target.set(0, 0, 700);
+controls.maxDistance = 4000;
+controls.target.set(0, 0, 520);
 controls.update();
 
 // Studio Lighting
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
-keyLight.position.set(600, -800, 1200);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
+keyLight.position.set(700, -850, 1300);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.width = 2048;
 keyLight.shadow.mapSize.height = 2048;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.7);
-fillLight.position.set(-600, 600, 600);
+const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.8);
+fillLight.position.set(-700, 650, 700);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.2);
-rimLight.position.set(0, 800, 500);
+const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.4);
+rimLight.position.set(0, 900, 600);
 scene.add(rimLight);
 
-const grid = new THREE.GridHelper(2000, 40, 0x1f2638, 0x0f1422);
+const grid = new THREE.GridHelper(2000, 40, 0x182236, 0x0a0f1a);
 grid.rotation.x = Math.PI / 2;
 grid.position.z = 0;
 scene.add(grid);
 
-// Hierarchy & Coordinates
-const NECK_BASE_Z   = 700;
-const HINGE_LOCAL_Z = 50;
-const HINGE_WORLD_Z = NECK_BASE_Z + HINGE_LOCAL_Z; // = 750 mm
-const NECK_Y_OFFSET = 0;
-
-const PARTS = [
-  { name:'Base Front',   file:'base_front.stl',      color:0x334460, offset:[0,0,0],                              group:'base',   neckPart:false },
-  { name:'Base Back',    file:'base_back.stl',        color:0x222d42, offset:[0,0,0],                              group:'base',   neckPart:false },
-  { name:'Column Front', file:'column_front.stl',     color:0x2a3a52, offset:[0,0,220],                            group:'column', neckPart:false },
-  { name:'Column Back',  file:'column_back.stl',      color:0x1e2a3c, offset:[0,0,220],                            group:'column', neckPart:false },
-  { name:'Neck Front',   file:'neck_front.stl',       color:0x3b82f6, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
-  { name:'Neck Back',    file:'neck_back.stl',        color:0x1d4ed8, offset:[0,NECK_Y_OFFSET,NECK_BASE_Z],        group:'neck',   neckPart:false },
-  { name:'Head Window',  file:'head_window_half.stl', color:0x38bdf8, offset:[0,NECK_Y_OFFSET-95,HINGE_WORLD_Z],   group:'head',   neckPart:true  },
-  { name:'Head Cover',   file:'head_cover_half.stl',  color:0x0284c7, offset:[0,NECK_Y_OFFSET-95,HINGE_WORLD_Z],   group:'head',   neckPart:true  },
-  { name:'Steering Arm', file:'steering_arm.stl',     color:0x10b981, offset:[0,NECK_Y_OFFSET,HINGE_WORLD_Z],       group:'neck',   neckPart:true },
-];
-
-const DOT_COLORS = { base: '#334460', column: '#2a3a52', neck: '#3b82f6', head: '#38bdf8' };
-
+// Assembly Pivot & Static Hierarchies
 const staticGroup = new THREE.Group();
 const pivotGroup  = new THREE.Group();
 pivotGroup.position.set(0, NECK_Y_OFFSET, HINGE_WORLD_Z);
 scene.add(staticGroup);
 scene.add(pivotGroup);
 
-// Hinge Pin Visual in Pivot Group (Moves with tilt)
+// Hinge Pin Visual in Pivot Group (Moves dynamically with tilt)
 const pinGeo = new THREE.CylinderGeometry(3.5, 3.5, 160, 24);
 pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
-const pinMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.2, metalness: 0.9 });
+const pinMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.15, metalness: 0.95 });
 const pinMesh = new THREE.Mesh(pinGeo, pinMat);
 pinMesh.position.set(0, 0, 0);
 pivotGroup.add(pinMesh);
 
-// Load STLs
+// --- STL Loading ---
 const loader = new STLLoader();
 const meshMap = {};
 let loadedCount = 0;
-const totalParts = PARTS.length;
+let explodeFactor = 0.0;
+let pitchAngle = 90.0;
+let isAnimatingTilt = false;
 
-function setProgress(n) {
-  document.getElementById('loading-bar').style.width = (n / totalParts * 100) + '%';
-}
-
-function makeMat(color, isWindow=false) {
+function createPBRMaterial(hexColor, isWindow = false) {
   if (isWindow) {
     return new THREE.MeshPhysicalMaterial({
-      color: 0x60a5fa,
-      metalness: 0.2,
-      roughness: 0.1,
-      transparent: true,
-      opacity: 0.55,
-      transmission: 0.4,
+      color: 0x090e18,
+      metalness: 0.8,
+      roughness: 0.15,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
       side: THREE.DoubleSide
     });
   }
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.35, side: THREE.DoubleSide });
-}
-
-function loadPart(pd) {
-  return new Promise((resolve) => {
-    loader.load(pd.file, (geo) => {
-      geo.computeVertexNormals();
-      const isWin = pd.name === 'Head Window';
-      const mat = makeMat(pd.color, isWin);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      if (pd.neckPart) {
-        const py = pd.offset[1] - NECK_Y_OFFSET;
-        const pz = pd.offset[2] - HINGE_WORLD_Z;
-        mesh.position.set(pd.offset[0], py, pz);
-        if (pd.group === 'head') {
-          mesh.scale.set(1, 1, -1);
-        }
-        pivotGroup.add(mesh);
-      } else {
-        mesh.position.set(...pd.offset);
-        staticGroup.add(mesh);
-      }
-
-      meshMap[pd.name] = mesh;
-      loadedCount++;
-      setProgress(loadedCount);
-      resolve();
-    }, undefined, (err) => {
-      console.warn('Failed to load', pd.file, err);
-      loadedCount++;
-      setProgress(loadedCount);
-      resolve();
-    });
+  return new THREE.MeshStandardMaterial({
+    color: hexColor,
+    roughness: 0.35,
+    metalness: 0.4,
+    side: THREE.DoubleSide
   });
 }
 
-Promise.all(PARTS.map(loadPart)).then(() => {
+function updateLoading(pct, text) {
+  document.getElementById('loading-bar').style.width = pct + '%';
   const badge = document.getElementById('status-badge');
-  badge.textContent = `● 9/9 Parts Ready`;
-  badge.className = 'ready';
-  document.getElementById('loading-bar').style.width = '100%';
-  setTimeout(() => { document.getElementById('loading-bar').style.opacity = '0'; }, 800);
-  buildPartsList();
-});
-
-// --- Kinematics & Tilt ---
-let currentAngle = 90.0;
-let animating = false;
-
-function setNeckAngle(deg) {
-  const rad = -THREE.MathUtils.degToRad(deg);
-  pivotGroup.rotation.x = rad;
-  updateArcDiagram(deg);
-  document.getElementById('tilt-display').textContent = deg.toFixed(1) + '°';
+  badge.textContent = text;
+  if (pct >= 100) badge.classList.add('ready');
 }
 
-document.getElementById('tilt-slider').addEventListener('input', (e) => {
-  currentAngle = parseFloat(e.target.value);
-  setNeckAngle(currentAngle);
+// Build Sidebar Component List
+const listContainer = document.getElementById('part-list-container');
+PARTS.forEach((p, idx) => {
+  const item = document.createElement('div');
+  item.className = 'part-item';
+  item.id = `part-item-${idx}`;
+  item.innerHTML = `
+    <div class="part-left">
+      <div class="part-color-dot" style="background: #${p.color.toString(16).padStart(6, '0')}"></div>
+      <span class="part-title">${p.name}</span>
+    </div>
+    <span class="part-tris">${p.group.split(' ')[0]}</span>
+  `;
+  item.onclick = () => selectPart(p.name);
+  listContainer.appendChild(item);
 });
 
-window.toggleAnim = function() {
-  animating = !animating;
-  const btn = document.getElementById('btn-animate');
-  btn.textContent = animating ? '⏸ Stop Animation' : '⚡ Animate Pitch';
-  btn.classList.toggle('active', animating);
+// Load all STLs
+PARTS.forEach((p, idx) => {
+  loader.load(p.file, (geom) => {
+    geom.computeVertexNormals();
+    const isWin = p.name.includes('Visor') || p.name.includes('Window');
+    const mat = createPBRMaterial(p.color, isWin);
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = { ...p, index: idx };
+
+    if (p.isPivot) {
+      mesh.userData.localOrigin = [0, 0, 0];
+      mesh.position.set(0, 0, 0);
+      pivotGroup.add(mesh);
+    } else {
+      mesh.userData.localOrigin = [...p.baseOffset];
+      mesh.position.set(...mesh.userData.localOrigin);
+      staticGroup.add(mesh);
+    }
+
+    meshMap[p.name] = mesh;
+    loadedCount++;
+    const pct = Math.round((loadedCount / PARTS.length) * 100);
+    updateLoading(pct, `Loaded ${loadedCount}/${PARTS.length} Parts (${pct}%)`);
+    if (loadedCount === PARTS.length) {
+      updateLoading(100, `● 9/9 Exotic STLs Ready`);
+    }
+  });
+});
+
+// --- Kinematics & Exploded View Engine ---
+function updateMeshPositions() {
+  PARTS.forEach(p => {
+    const mesh = meshMap[p.name];
+    if (!mesh) return;
+    const [ox, oy, oz] = mesh.userData.localOrigin;
+    const [ex, ey, ez] = p.explodeDir;
+    mesh.position.set(
+      ox + ex * (explodeFactor / 100),
+      oy + ey * (explodeFactor / 100),
+      oz + ez * (explodeFactor / 100)
+    );
+  });
+}
+
+function updatePitchRotation() {
+  const rad = THREE.MathUtils.degToRad(-(pitchAngle - 90.0));
+  pivotGroup.rotation.x = rad;
+  updateArcDiagram(pitchAngle);
+  document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
+}
+
+function selectPart(name) {
+  const p = PARTS.find(item => item.name === name);
+  if (!p) return;
+
+  const hud = document.getElementById('part-hud');
+  document.getElementById('hud-name').textContent = p.name;
+  document.getElementById('hud-group').textContent = p.group;
+  document.getElementById('hud-mat').textContent = p.mat;
+  document.getElementById('hud-infill').textContent = p.infill;
+  document.getElementById('hud-weight').textContent = p.weight;
+  document.getElementById('hud-hardware').textContent = p.hardware;
+  hud.classList.add('show');
+
+  document.querySelectorAll('.part-item').forEach(el => el.classList.remove('active'));
+  const idx = PARTS.findIndex(item => item.name === name);
+  if (idx >= 0) document.getElementById(`part-item-${idx}`).classList.add('active');
+
+  Object.values(meshMap).forEach(m => {
+    if (m.userData.name === name) {
+      m.material.emissive.setHex(0x00f0ff);
+      m.material.emissiveIntensity = 0.35;
+    } else {
+      m.material.emissive.setHex(0x000000);
+      m.material.emissiveIntensity = 0.0;
+    }
+  });
+}
+
+function deselectPart() {
+  document.getElementById('part-hud').classList.remove('show');
+  document.querySelectorAll('.part-item').forEach(el => el.classList.remove('active'));
+  Object.values(meshMap).forEach(m => {
+    m.material.emissive.setHex(0x000000);
+    m.material.emissiveIntensity = 0.0;
+  });
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener('click', (e) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const meshes = Object.values(meshMap);
+  const intersects = raycaster.intersectObjects(meshes, false);
+
+  if (intersects.length > 0) {
+    selectPart(intersects[0].object.userData.name);
+  } else {
+    deselectPart();
+  }
+});
+
+document.getElementById('slider-explode').addEventListener('input', (e) => {
+  explodeFactor = parseFloat(e.target.value);
+  document.getElementById('val-explode').textContent = Math.round(explodeFactor) + '%';
+  updateMeshPositions();
+});
+
+document.getElementById('slider-pitch').addEventListener('input', (e) => {
+  pitchAngle = parseFloat(e.target.value);
+  updatePitchRotation();
+});
+
+window.toggleTiltAnim = function() {
+  isAnimatingTilt = !isAnimatingTilt;
+  const btn = document.getElementById('btn-anim');
+  btn.classList.toggle('active', isAnimatingTilt);
+  btn.textContent = isAnimatingTilt ? '⏸ Stop Pitch' : '⚡ Animate Pitch';
 };
 
-window.resetView = function() {
-  camera.position.set(600, -900, 900);
-  controls.target.set(0, 0, 700);
-  controls.update();
+window.resetAll = function() {
+  explodeFactor = 0;
+  pitchAngle = 90;
+  isAnimatingTilt = false;
+  document.getElementById('slider-explode').value = 0;
+  document.getElementById('val-explode').textContent = '0%';
+  document.getElementById('slider-pitch').value = 90;
+  document.getElementById('val-pitch').textContent = '90.0°';
+  document.getElementById('btn-anim').classList.remove('active');
+  document.getElementById('btn-anim').textContent = '⚡ Animate Pitch';
+  updateMeshPositions();
+  updatePitchRotation();
+  deselectPart();
+  window.setView('iso');
 };
 
 window.setView = function(type) {
@@ -600,17 +817,17 @@ window.setView = function(type) {
   if (event && event.target) event.target.classList.add('active');
 
   if (type === 'iso') {
-    camera.position.set(600, -900, 900);
-    controls.target.set(0, 0, 700);
+    camera.position.set(650, -950, 920);
+    controls.target.set(0, 0, 520);
   } else if (type === 'front') {
-    camera.position.set(0, -1200, 700);
-    controls.target.set(0, 0, 700);
+    camera.position.set(0, -1300, 520);
+    controls.target.set(0, 0, 520);
   } else if (type === 'side') {
-    camera.position.set(1200, 0, 700);
-    controls.target.set(0, 0, 700);
+    camera.position.set(1300, 0, 520);
+    controls.target.set(0, 0, 520);
   } else if (type === 'top') {
     camera.position.set(0, 0, 1600);
-    controls.target.set(0, 0, 700);
+    controls.target.set(0, 0, 520);
   } else if (type === 'head') {
     camera.position.set(280, -420, 850);
     controls.target.set(0, 0, 750);
@@ -645,47 +862,22 @@ function updateArcDiagram(deg) {
   );
 }
 
-function buildPartsList() {
-  const container = document.getElementById('parts-list');
-  container.innerHTML = '';
-  PARTS.forEach(pd => {
-    const row = document.createElement('div');
-    row.className = 'part-row';
-    const color = DOT_COLORS[pd.group] || '#888';
-    row.innerHTML = `
-      <span class="part-name">
-        <span class="part-dot" style="background:${color}"></span>
-        ${pd.name}
-      </span>
-      <label class="toggle">
-        <input type="checkbox" checked onchange="togglePart('${pd.name}', this.checked)">
-        <span class="toggle-slider"></span>
-      </label>`;
-    container.appendChild(row);
-  });
-}
-
-window.togglePart = function(name, visible) {
-  if (meshMap[name]) meshMap[name].visible = visible;
-};
-
 window.addEventListener('resize', () => {
   camera.aspect = wrap.clientWidth / wrap.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 });
 
-// Animation Loop
-setNeckAngle(90);
+// Render Loop
 let animClock = 0;
 function animate() {
   requestAnimationFrame(animate);
 
-  if (animating) {
+  if (isAnimatingTilt) {
     animClock += 0.03;
-    currentAngle = 90.0 + (Math.sin(animClock) * 0.5 + 0.5) * 45.0;
-    document.getElementById('tilt-slider').value = currentAngle;
-    setNeckAngle(currentAngle);
+    pitchAngle = 90.0 + (Math.sin(animClock) * 0.5 + 0.5) * 45.0;
+    document.getElementById('slider-pitch').value = pitchAngle;
+    updatePitchRotation();
   }
 
   controls.update();
