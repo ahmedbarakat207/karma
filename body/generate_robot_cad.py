@@ -461,79 +461,127 @@ def build_steering_arm() -> List[Triangle]:
 
     return tris
 
+def loft_contours_y(layers: List[Tuple[float, List[Vec2]]], cap_back: bool = True, cap_front: bool = True) -> List[Triangle]:
+    """Lofts a series of 2D XZ cross-sectional contours along the Y axis."""
+    tris = []
+    num_layers = len(layers)
+    if num_layers < 2:
+        return tris
+
+    for l_idx in range(num_layers - 1):
+        y0, pts0 = layers[l_idx]
+        y1, pts1 = layers[l_idx + 1]
+        n_pts = min(len(pts0), len(pts1))
+        for i in range(n_pts):
+            j = (i + 1) % n_pts
+            v0 = (pts0[i][0], y0, pts0[i][1])
+            v1 = (pts0[j][0], y0, pts0[j][1])
+            v2 = (pts1[j][0], y1, pts1[j][1])
+            v3 = (pts1[i][0], y1, pts1[i][1])
+            tris.append((v0, v1, v2))
+            tris.append((v0, v2, v3))
+
+    # Back Cap (at y0, facing -Y)
+    if cap_back:
+        y0, pts0 = layers[0]
+        c_x = sum(p[0] for p in pts0) / len(pts0)
+        c_z = sum(p[1] for p in pts0) / len(pts0)
+        c_pt = (c_x, y0, c_z)
+        for i in range(len(pts0)):
+            j = (i + 1) % len(pts0)
+            tris.append((c_pt, (pts0[j][0], y0, pts0[j][1]), (pts0[i][0], y0, pts0[i][1])))
+
+    # Front Cap (at y1, facing +Y)
+    if cap_front:
+        y1, pts1 = layers[-1]
+        c_x = sum(p[0] for p in pts1) / len(pts1)
+        c_z = sum(p[1] for p in pts1) / len(pts1)
+        c_pt = (c_x, y1, c_z)
+        for i in range(len(pts1)):
+            j = (i + 1) % len(pts1)
+            tris.append((c_pt, (pts1[i][0], y1, pts1[i][1]), (pts1[j][0], y1, pts1[j][1])))
+
+    return tris
+
 # ---------------------------------------------------------------------------
-# 4. Head Assembly (Pill-Shaped Rounded Bezel & 3D Aerodynamic Dome)
+# 4. Head Assembly (Upright Front Bezel Looking Forward +Y & 3D Rear Dome)
 # ---------------------------------------------------------------------------
 
 def build_head_window_half() -> List[Triangle]:
     """
-    Head Display Front Bezel: X: [-150..150], Y: [-95..95], Z: [0..22.5]
+    Head Display Front Bezel (Upright Orientation facing FORWARD in +Y):
+    X: [-150..150] (300mm width)
+    Z: [0..190] (190mm height: Chin at Z=0, Top at Z=190)
+    Y: [0..22.5] (22.5mm thickness, facing forward +Y)
     Features:
-    - Elegant rounded corners (R=30mm) resembling modern smart displays (iPad/Tesla)
-    - Screen opening for 7" to 10.1" IPS displays (220x135mm active area)
-    - Top wide-angle camera housing & lens aperture (8mm)
-    - Bottom dual-shear hinge clevis ears (R=8mm axle)
+    - Elegant rounded corners (R=30mm) looking straight forward at eye level
+    - Top camera housing & lens aperture (8mm) at Z=175mm
+    - Bottom hinge pivot ears (Z=0, X=+/-40mm)
     """
     tris = []
     W = WALL_HEAD
 
-    # Sleek Rounded Front Bezel Frame (Z=0..22.5mm)
+    # Front Bezel Frame lofted along +Y (from mating seam Y=0 to front face Y=22.5mm)
     outer_layers = [
-        (0.0,  rounded_rect_2d(-150.0, 150.0, -95.0, 95.0, r=32.0, n_corner=8)),
-        (10.0, rounded_rect_2d(-148.0, 148.0, -93.0, 93.0, r=30.0, n_corner=8)),
-        (22.5, rounded_rect_2d(-145.0, 145.0, -90.0, 90.0, r=28.0, n_corner=8)),
+        (0.0,  rounded_rect_2d(-150.0, 150.0, 0.0, 190.0, r=32.0, n_corner=8)),
+        (12.0, rounded_rect_2d(-148.0, 148.0, 2.0, 188.0, r=30.0, n_corner=8)),
+        (22.5, rounded_rect_2d(-145.0, 145.0, 4.0, 186.0, r=28.0, n_corner=8)),
     ]
-    tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
+    tris += loft_contours_y(outer_layers, cap_back=True, cap_front=True)
 
-    # Top Camera Mount Housing (At X=0, Y=78mm, Z=0..15mm)
-    tris += hollow_cylinder_z(0.0, 78.0, 0.0, 15.0, 8.0, 4.0, segments=20)
-    for cx, cy in [(-14.0, 64.0), (14.0, 64.0), (-14.0, 92.0), (14.0, 92.0)]:
-        tris += hollow_cylinder_z(cx, cy, 0.0, 8.0, 3.0, M3_INSERT_R, segments=12)
+    # Top Camera Mount Housing (At X=0, Z=175mm, facing +Y)
+    tris += hollow_cylinder_y(0.0, 175.0, 15.0, 26.0, 8.0, 4.0, segments=20)
+    for cx, cz in [(-14.0, 165.0), (14.0, 165.0), (-14.0, 185.0), (14.0, 185.0)]:
+        tris += hollow_cylinder_y(cx, cz, 12.0, 22.5, 3.0, M3_INSERT_R, segments=12)
 
-    # Bottom Hinge Mounting Ears (At X=+/-40mm, Y=-95mm, mating to Neck Hinge Axis)
+    # Bottom Hinge Mounting Ears (At X=+/-40mm, Z=-15..0mm, mating to Neck Hinge Axis at Y=0)
     for hx in [-HINGE_X, HINGE_X]:
-        # Rigid dual-shear hinge clevis ear with rounded bottom
-        tris += box(hx - 5.0, hx + 5.0, -120.0, -95.0, 0.0, 22.5)
-        tris += hollow_cylinder_y(hx, 11.25, -120.0, -95.0, 9.0, BEARING_608_ID_R, segments=20)
+        # Clevis ears extending down from chin
+        tris += box(hx - 5.0, hx + 5.0, -10.0, 10.0, -15.0, 5.0)
+        # Steel axle pin hole along X
+        tris += hollow_cylinder_z(hx, 0.0, -15.0, 5.0, 8.0, BEARING_608_ID_R, segments=20)
 
-    # Perimeter M3 Assembly Posts (8x pattern)
-    posts = [(-135.0, -80.0), (135.0, -80.0), (-135.0, 80.0), (135.0, 80.0),
-             (-135.0, 0.0), (135.0, 0.0), (0.0, -85.0), (0.0, 85.0)]
-    for px, py in posts:
-        tris += hollow_cylinder_z(px, py, 0.0, 22.5, 4.0, M3_INSERT_R, segments=12)
+    # Perimeter M3 Assembly Posts
+    posts = [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
+             (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]
+    for px, pz in posts:
+        tris += hollow_cylinder_y(px, pz, 0.0, 22.5, 4.0, M3_INSERT_R, segments=12)
 
     return tris
 
 def build_head_cover_half() -> List[Triangle]:
     """
-    Head Rear Enclosure: X: [-150..150], Y: [-95..95], Z: [22.5..45.0]
+    Head Rear Enclosure:
+    X: [-150..150] (300mm width)
+    Z: [0..190] (190mm height)
+    Y: [-22.5..0] (22.5mm rear dome thickness, facing BACK in -Y)
     Features:
-    - 3D Aerodynamic Curved Parabolic Dome (curved in X, Y, and Z axes)
-    - Slanted horizontal ventilation gills for screen driver and camera heat exhaust
+    - 3D Aerodynamic Curved Parabolic Dome (curving backwards in -Y)
+    - Horizontal cooling gills
     - 8x M3 perimeter screw holes
     """
     tris = []
     W = WALL_HEAD
 
-    # 3D Parabolic Curved Aerodynamic Dome Lofting (Z=22.5 -> 45.0mm)
+    # 3D Parabolic Curved Dome lofted along -Y (from mating seam Y=0 to rear apex Y=-22.5mm)
     outer_layers = [
-        (22.5, rounded_rect_2d(-145.0, 145.0, -90.0, 90.0, r=28.0, n_corner=8)),
-        (30.0, rounded_rect_2d(-140.0, 140.0, -85.0, 85.0, r=32.0, n_corner=8)),
-        (38.0, rounded_rect_2d(-125.0, 125.0, -75.0, 75.0, r=36.0, n_corner=8)),
-        (43.0, rounded_rect_2d(-95.0,   95.0, -55.0, 55.0, r=40.0, n_corner=8)),
-        (45.0, rounded_rect_2d(-60.0,   60.0, -35.0, 35.0, r=30.0, n_corner=8)),
+        (0.0,   rounded_rect_2d(-150.0, 150.0, 0.0, 190.0, r=32.0, n_corner=8)),
+        (-8.0,  rounded_rect_2d(-145.0, 145.0, 5.0, 185.0, r=34.0, n_corner=8)),
+        (-16.0, rounded_rect_2d(-130.0, 130.0, 15.0, 175.0, r=36.0, n_corner=8)),
+        (-21.0, rounded_rect_2d(-100.0, 100.0, 30.0, 160.0, r=40.0, n_corner=8)),
+        (-22.5, rounded_rect_2d(-60.0,   60.0,  50.0, 140.0, r=30.0, n_corner=8)),
     ]
-    tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
+    tris += loft_contours_y(outer_layers, cap_back=True, cap_front=True)
 
     # Rear Exhaust Cooling Gills (Central rear dome)
-    for louver_y in range(-45, 45, 15):
-        tris += box(-50.0, 50.0, float(louver_y), float(louver_y + 5), 41.0, 44.5)
+    for louver_z in range(60, 140, 15):
+        tris += box(-50.0, 50.0, -22.0, -18.0, float(louver_z), float(louver_z + 6))
 
     # Perimeter M3 Screw Posts
-    posts = [(-135.0, -80.0), (135.0, -80.0), (-135.0, 80.0), (135.0, 80.0),
-             (-135.0, 0.0), (135.0, 0.0), (0.0, -85.0), (0.0, 85.0)]
-    for px, py in posts:
-        tris += hollow_cylinder_z(px, py, 22.5, 45.0, 4.0, M3_HOLE_R, segments=12)
+    posts = [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
+             (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]
+    for px, pz in posts:
+        tris += hollow_cylinder_y(px, pz, -22.5, 0.0, 4.0, M3_HOLE_R, segments=12)
 
     return tris
 

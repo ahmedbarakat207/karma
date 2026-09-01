@@ -725,8 +725,9 @@ function updateMeshPositions() {
 }
 
 function updatePitchRotation() {
-  // 90° = 0 rad relative (upright horizontal), 135° = 45° tilt down forward
-  const rad = THREE.MathUtils.degToRad(pitchAngle - 90.0);
+  // 90° = Upright level eye contact (0 rad, looking straight forward in +Y)
+  // 135° = 45° forward pitch down (looking down at the desk in +Y direction)
+  const rad = THREE.MathUtils.degToRad(-(pitchAngle - 90.0));
   pivotGroup.rotation.x = rad;
   document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
 }
