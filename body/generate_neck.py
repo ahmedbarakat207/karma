@@ -303,7 +303,7 @@ def build_neck_back():
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    out_dir = os.path.dirname(os.path.abspath(__file__))
+    out_dir = r'c:\Users\Administrator\karma\body'
 
     print("Generating neck STL files...")
     print(f"  Hinge pin axis : Y at X=+-{HINGE_X}, Z={HINGE_Z}")
