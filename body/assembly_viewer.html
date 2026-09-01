@@ -537,11 +537,11 @@ let animating = false;
 let animDir = 1;
 
 function setNeckAngle(deg) {
-  // 90 -> -90 (looking straight ahead, vertical)
-  // 135 -> -45 (nodding 45 down toward floor)
-  pivotGroup.rotation.x = -THREE.MathUtils.degToRad(180 - deg);
+  // 90 deg -> -90 deg (looking straight forward in +Y, vertical)
+  // 135 deg -> -135 deg (nodding 45 deg forward-downward toward floor)
+  pivotGroup.rotation.x = -THREE.MathUtils.degToRad(deg);
   updateArcDiagram(deg);
-  document.getElementById('tilt-display').textContent = deg.toFixed(1) + '';
+  document.getElementById('tilt-display').textContent = deg.toFixed(1) + '°';
 }
 
 document.getElementById('tilt-slider').addEventListener('input', (e) => {

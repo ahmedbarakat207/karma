@@ -303,17 +303,17 @@ def build_neck_back():
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    out_dir = r'c:\Users\Administrator\karma\body'
-
+    out_dir = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(out_dir, exist_ok=True)
     print("Generating neck STL files...")
     print(f"  Hinge pin axis : Y at X=+-{HINGE_X}, Z={HINGE_Z}")
     print(f"  ROM            : {ROM_START_DEG} deg (forward) -> {ROM_END_DEG} deg (down-fwd)")
     print(f"  Boss OD: {HINGE_BOSS*2} mm  hole: {HINGE_R*2} mm  arc-R: {ARC_R} mm")
 
     front_tris = build_neck_front()
-    back_tris  = build_neck_back()
-
     write_stl(os.path.join(out_dir, 'neck_front.stl'), front_tris)
-    write_stl(os.path.join(out_dir, 'neck_back.stl'),  back_tris)
 
-    print("Done.")
+    back_tris = build_neck_back()
+    write_stl(os.path.join(out_dir, 'neck_back.stl'), back_tris)
+
+    print("Done. Generated neck_front.stl and neck_back.stl.")
