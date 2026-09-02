@@ -22,6 +22,14 @@ def get_display_resolution() -> Tuple[int, int]:
     except Exception:
         pass
     try:
+        import subprocess
+        out = subprocess.check_output(["xdotool", "getdisplaygeometry"], text=True).strip()
+        parts = out.split()
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
+    except Exception:
+        pass
+    try:
         import tkinter as tk
         root = tk.Tk()
         root.withdraw()
@@ -30,7 +38,8 @@ def get_display_resolution() -> Tuple[int, int]:
         return w, h
     except Exception:
         pass
-    return 1920, 1080
+    # Default to the 7" 800x480 LCD Screen specified in PARTS.MD
+    return getattr(config, "DISPLAY_WIDTH", 800), getattr(config, "DISPLAY_HEIGHT", 480)
 
 
 def run_vision(memory, stop_event, speaking_event=None) -> None:
