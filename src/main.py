@@ -131,6 +131,8 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
 
     def listen_stdin():
+        if not sys.stdin or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+            return
         try:
             for line in sys.stdin:
                 cmd = line.strip().lower()

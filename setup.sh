@@ -53,6 +53,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     pkg-config \
     clang \
     llvm \
+    ninja-build \
     libopenblas-dev \
     libatlas-base-dev \
     liblapack-dev
@@ -79,8 +80,9 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     pulseaudio \
     pulseaudio-utils
 
-log_info "Installing Vision & Camera stack (libcamera, Picamera2, OpenCV deps)..."
+log_info "Installing Vision & Camera stack (libcamera, Picamera2, OpenCV GTK)..."
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-opencv \
     libcamera-dev \
     libcamera-tools \
     python3-libcamera \
@@ -195,6 +197,15 @@ if [ -f "$CMDLINE_TXT" ]; then
     fi
 fi
 
+# 7. Enable V4L2 kernel driver for Raspberry Pi Camera Module
+log_info "Enabling V4L2 CSI camera module driver..."
+sudo modprobe bcm2835-v4l2 2>/dev/null || true
+if [ -f "/etc/modules" ]; then
+    if ! grep -q "bcm2835-v4l2" /etc/modules; then
+        echo "bcm2835-v4l2" | sudo tee -a /etc/modules > /dev/null || true
+    fi
+fi
+
 log_success "Hardware firmware and overclock configured."
 
 # ------------------------------------------------------------------------------
@@ -236,8 +247,8 @@ log_info "Step 6/9: Installing optimized Python AI & Robotics packages..."
 
 pip install numpy scipy requests aiohttp fastapi uvicorn pydantic huggingface_hub
 
-# Install CPU PyTorch
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Install PyTorch (Pulls official ARM64 wheels from PyPI)
+pip install torch torchvision torchaudio || pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Audio Speech Pipeline
 pip install sounddevice soundfile pyaudio
@@ -245,8 +256,8 @@ pip install faster-whisper
 pip install onnxruntime
 pip install kokoro
 
-# Computer Vision & Gestures
-pip install opencv-python-headless
+# Computer Vision & Gestures (opencv-python uses system GTK bindings)
+pip install opencv-python || true
 pip install ultralytics
 pip install mediapipe
 
