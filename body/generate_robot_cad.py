@@ -403,25 +403,19 @@ def build_neck_front() -> List[Triangle]:
     """
     Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..46] (World Z: 700..746)
 
-    CLEARANCE ARC: The upper-front portion of the shell is progressively scooped
-    out to create a free-tilt opening for the head display (90° to 135° ROM).
+    CLEARANCE THROAT OPENING: The upper-front portion of the shell is contoured
+    with a wide scoop/throat (Y_max reduces to 8mm at top) providing free-tilt
+    clearance for the head display visor through the full 90° to 135° ROM.
 
-    Sweep geometry (neck local space, pivot at Y=0, Z=50):
-      At 45° tilt, the head bottom-front corner sweeps to (Y=+9.9, Z=40.1).
-      The opening from Z=28 to Z=46 reduces Y_max from 45mm down to 8mm,
-      giving the head’s bottom face a clear passage through the neck front.
-
-    Shell layers:
-      Z=0  -> full depth  Y_max=45  (base, full front face)
-      Z=14 -> full depth  Y_max=45
-      Z=28 -> start taper Y_max=38  (opening begins)
-      Z=38 -> mid taper   Y_max=20
-      Z=46 -> open        Y_max=8   (head swings freely above this)
+    Dual-Shear Center Lug (Tongue) at X = ±40mm:
+      Width: X: [bx - 3.5, bx + 3.5] (7mm thick), fits inside the head clevis's
+      9mm wide fork gap with 1mm clearance on both sides.
+      Pin bore: Ø3.1mm at Z=50mm.
 
     Features:
     - MG90S Micro Servo Mounting Bay with M2 screw bosses
-    - Dual Hinge Pin Pillow Blocks (Ø11mm, Ø3.1mm bore) at X=±40, Z=50
-    - Progressive arc clearance slot for 45° head tilt ROM
+    - Dual Hinge Pin Pillow Lugs (7mm tongue, Ø3.1mm bore) at X=±40, Z=50
+    - Wide throat opening for free 45° head tilt
     """
     tris = []
     W = WALL_NECK
@@ -429,18 +423,20 @@ def build_neck_front() -> List[Triangle]:
 
     # Progressive front-depth loft — Y_max reduces at top to carve arc clearance
     outer_layers = [
-        (0.0,  half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (14.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (28.0, half_contour_front(-78.0, 78.0, 0.0, 38.0, chamfer_front=14.0, n_per_seg=6)),
-        (38.0, half_contour_front(-76.0, 76.0, 0.0, 20.0, chamfer_front=8.0,  n_per_seg=6)),
-        (SHELL_TOP, half_contour_front(-74.0, 74.0, 0.0, 8.0, chamfer_front=4.0, n_per_seg=6)),
+        (0.0,       half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (14.0,      half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (28.0,      half_contour_front(-78.0, 78.0, 0.0, 36.0, chamfer_front=14.0, n_per_seg=6)),
+        (38.0,      half_contour_front(-76.0, 76.0, 0.0, 20.0, chamfer_front=8.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_front(-74.0, 74.0, 0.0, 8.0,  chamfer_front=4.0,  n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Dual Hinge Pin Pillow Blocks — protrude 4mm above shell into open arc space
+    # Dual Hinge Pin Center Lugs (Tongues at X=±40mm) — 7mm wide, fits into head fork
     for bx in [-HINGE_X, HINGE_X]:
-        tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 45.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
-        tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, 0.0, 45.0, 20.0, HINGE_Z)
+        # Pillow Lug Cylinder (Y: 0..7mm, outer radius 4.5mm, pin bore 1.55mm)
+        tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 7.0, 4.5, HINGE_PIN_R, segments=20)
+        # Structural support pillar rising from neck base up to hinge boss
+        tris += box(bx - 3.5, bx + 3.5, 0.0, 7.0, 15.0, HINGE_Z)
 
     # MG90S Micro Servo Mounting Cradle (X=6..30mm, Y=8..21mm, Z=10..33mm)
     servo_cx, servo_cy, servo_cz = 18.0, 15.0, 22.0
@@ -462,35 +458,26 @@ def build_neck_back() -> List[Triangle]:
     """
     Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..46]
 
-    Matching clearance arc on the back half: as the head tilts forward,
-    the back bottom corner of the head (head local Y=-22.5) moves backward
-    (toward -Y neck) and up. The back shell is tapered identically to prevent
-    the head rear dome from clipping the back cowling at any tilt angle.
-
-    Shell layers:
-      Z=0  -> full depth  Y_min=-45
-      Z=14 -> full depth  Y_min=-45
-      Z=28 -> taper start Y_min=-32
-      Z=38 -> mid taper   Y_min=-18
-      Z=46 -> open        Y_min=-8
+    Matching clearance throat on back half with 7mm rear hinge lugs and
+    wire exit conduit.
     """
     tris = []
     W = WALL_NECK
     SHELL_TOP = 46.0
 
     outer_layers = [
-        (0.0,  half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (14.0, half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (28.0, half_contour_back(-78.0, 78.0, -32.0, 0.0, chamfer_back=12.0, n_per_seg=6)),
-        (38.0, half_contour_back(-76.0, 76.0, -18.0, 0.0, chamfer_back=7.0,  n_per_seg=6)),
-        (SHELL_TOP, half_contour_back(-74.0, 74.0, -8.0, 0.0, chamfer_back=3.0, n_per_seg=6)),
+        (0.0,       half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (14.0,      half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (28.0,      half_contour_back(-78.0, 78.0, -32.0, 0.0, chamfer_back=12.0, n_per_seg=6)),
+        (38.0,      half_contour_back(-76.0, 76.0, -18.0, 0.0, chamfer_back=7.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_back(-74.0, 74.0, -8.0,  0.0, chamfer_back=3.0,  n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Rear Hinge Pin Bosses (protrude above shell into arc space)
+    # Rear Hinge Pin Center Lugs (Tongues at X=±40mm)
     for bx in [-HINGE_X, HINGE_X]:
-        tris += hollow_cylinder_y(bx, HINGE_Z, -45.0, 0.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
-        tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, -45.0, 0.0, 20.0, HINGE_Z)
+        tris += hollow_cylinder_y(bx, HINGE_Z, -7.0, 0.0, 4.5, HINGE_PIN_R, segments=20)
+        tris += box(bx - 3.5, bx + 3.5, -7.0, 0.0, 15.0, HINGE_Z)
 
     for bx in [-55.0, 55.0]:
         tris += mounting_boss_m4(bx, -25.0, W, W + 15.0, is_insert=False)
@@ -596,12 +583,15 @@ def build_head_window_half() -> List[Triangle]:
     # Integrated HD Camera Aperture (At X=0, Z=175mm)
     tris += hollow_cylinder_y(0.0, 175.0, 15.0, 22.5, 8.0, 4.0, segments=20)
 
-    # Dual-Shear Hinge Clevis Brackets (At X=+/-40mm, Z=0)
+    # Dual-Shear Hinge Clevis Fork Brackets (At X=+/-40mm, Z=0)
+    # Dual-ear fork with 9mm clear gap [hx - 4.5, hx + 4.5] straddling neck's 7mm tongue
     for hx in [-HINGE_X, HINGE_X]:
-        # Clevis ear wrapping around the hinge axle
-        tris += box(hx - 6.0, hx + 6.0, -10.0, 10.0, -14.0, 4.0)
-        # Ø3.1mm Pin Bore
-        tris += hollow_cylinder_y(hx, 0.0, -10.0, 10.0, HINGE_BOSS_R, HINGE_PIN_R, segments=20)
+        # Inner Ear (X: [hx - 7.5, hx - 4.5])
+        tris += box(hx - 7.5, hx - 4.5, -8.0, 8.0, -14.0, 4.0)
+        tris += hollow_cylinder_y(hx - 6.0, 0.0, -8.0, 8.0, 4.5, HINGE_PIN_R, segments=18)
+        # Outer Ear (X: [hx + 4.5, hx + 7.5])
+        tris += box(hx + 4.5, hx + 7.5, -8.0, 8.0, -14.0, 4.0)
+        tris += hollow_cylinder_y(hx + 6.0, 0.0, -8.0, 8.0, 4.5, HINGE_PIN_R, segments=18)
 
     # Internal Pushrod Driving Horn (At X=18mm, Z=-12mm)
     tris += box(14.0, 22.0, -5.0, 5.0, -15.0, 0.0)

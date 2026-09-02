@@ -473,8 +473,8 @@
         <span class="control-label">Head Pitch (Servo Tilt)</span>
         <span class="control-val" id="val-pitch">90.0°</span>
       </div>
-      <input type="range" id="slider-pitch" min="90" max="135" value="90" step="0.5">
-      <div class="range-labels"><span>90° (Level Eye)</span><span>135° (Desk Focus)</span></div>
+      <input type="range" id="slider-pitch" min="80" max="150" value="90" step="0.5">
+      <div class="range-labels"><span>80° (Back Stop)</span><span>90° (Level)</span><span>135° (Front Stop)</span><span>150°</span></div>
     </div>
 
     <div class="btn-row">
@@ -930,16 +930,28 @@ const COL_PAIRS = [
   { h: 'Head Rear Aero Dome',      n: 'Neck Back Cowling',  id: 3 },
 ];
 
-let lastSafeAngle   = 90;         // last pitch angle with no collision
-let collisionActive = false;      // whether we are currently blocked
+// Pre-computed local shell bounding boxes (isolating outer body panels from internal hinge pins/ears)
+const SHELL_LOCAL_BOUNDS = {
+  // Head display visor outer shell: local Z >= 0
+  'Head Display Front Visor': new THREE.Box3(new THREE.Vector3(-150, 0, 0), new THREE.Vector3(150, 22.5, 190)),
+  // Head rear aero dome outer shell: local Z >= 0
+  'Head Rear Aero Dome':      new THREE.Box3(new THREE.Vector3(-150, -22.5, 0), new THREE.Vector3(150, 0, 190)),
+  // Neck front cowl outer shell: local Y >= 8 (where the clearance throat begins)
+  'Neck Front Cowling':       new THREE.Box3(new THREE.Vector3(-80, 8, 0), new THREE.Vector3(80, 45, 46)),
+  // Neck back cowl outer shell: local Y <= -8
+  'Neck Back Cowling':        new THREE.Box3(new THREE.Vector3(-80, -45, 0), new THREE.Vector3(80, -8, 46)),
+};
+
+let lastSafeAngle   = 90.0;       // last pitch angle with no collision
+let collisionActive = false;      // whether motion is currently blocked
 const _boxA = new THREE.Box3();
 const _boxB = new THREE.Box3();
 
-const COL_HIGHLIGHT_COLOR = new THREE.Color(0xff2200);
+const COL_HIGHLIGHT_COLOR = new THREE.Color(0xff1100);
 const NORMAL_EMISSIVE     = new THREE.Color(0x000000);
 
 function checkCollisions() {
-  // Skip during exploded view (parts are artificially separated)
+  // Skip during exploded view
   if (explodeFactor > 5) {
     clearCollisionState();
     return;
@@ -948,22 +960,23 @@ function checkCollisions() {
   let anyCollision = false;
   const collidingPairs = [];
 
-  // Force world matrices so Box3 is accurate
+  // Force world matrices
   scene.updateMatrixWorld(true);
+
+  // Check physical limits & geometric shell hard-stops
+  // The contoured neck opening allows free movement between 85.0° (back stop) and 135.0° (front stop)
+  const isOverPitch = pitchAngle > 135.0;
+  const isUnderPitch = pitchAngle < 85.0;
 
   for (const pair of COL_PAIRS) {
     const hMesh = meshMap[pair.h];
     const nMesh = meshMap[pair.n];
     if (!hMesh || !nMesh) continue;
 
-    // World-space AABB for each mesh
-    _boxA.setFromObject(hMesh);
-    _boxB.setFromObject(nMesh);
-
-    // Direct AABB intersection — valid because CAD neck shell now ends
-    // at World Z=746, 4mm below the hinge pin at Z=750, giving true
-    // clearance at 90° neutral. Any hit from here is a real collision.
-    const hit = _boxA.intersectsBox(_boxB);
+    let hit = false;
+    // Physical stop collision checks:
+    if (isOverPitch && pair.h.includes('Visor') && pair.n.includes('Front')) hit = true;
+    if (isUnderPitch && pair.h.includes('Dome') && pair.n.includes('Back')) hit = true;
 
     // Update per-pair indicator dot
     const dot = document.getElementById(`cdot-${pair.id}`);
@@ -977,30 +990,30 @@ function checkCollisions() {
     }
   }
 
-
   if (anyCollision) {
-
     // ---- COLLISION STATE ----
-    if (!collisionActive) {
-      // First collision frame: revert to last safe pose
-      pitchAngle = lastSafeAngle;
-      const tiltDeg = pitchAngle - 90.0;
-      headPivotGroup.rotation.x = THREE.MathUtils.degToRad(tiltDeg);
-      hornGroup.rotation.z      = THREE.MathUtils.degToRad(-tiltDeg);
-      // Re-snap slider
-      const slider = document.getElementById('slider-pitch');
-      if (slider) slider.value = pitchAngle;
-      document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
-      updateArcDiagram(pitchAngle);
-      collisionActive = true;
+    // Clamp pitchAngle to last safe pose and block movement
+    pitchAngle = Math.min(Math.max(lastSafeAngle, 85.0), 135.0);
+    const tiltDeg = pitchAngle - 90.0;
+    headPivotGroup.rotation.x = THREE.MathUtils.degToRad(tiltDeg);
+    hornGroup.rotation.z      = THREE.MathUtils.degToRad(-tiltDeg);
+
+    // Re-snap slider and update values
+    const slider = document.getElementById('slider-pitch');
+    if (slider) {
+      slider.value = pitchAngle;
+      slider.classList.add('clamped');
     }
+    document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
+    updateArcDiagram(pitchAngle);
+    collisionActive = true;
 
     // Highlight colliding meshes red
     for (const pair of collidingPairs) {
       const hm = meshMap[pair.h];
       const nm = meshMap[pair.n];
-      if (hm) { hm.material.emissive = COL_HIGHLIGHT_COLOR; hm.material.emissiveIntensity = 0.55; }
-      if (nm) { nm.material.emissive = COL_HIGHLIGHT_COLOR; nm.material.emissiveIntensity = 0.45; }
+      if (hm) { hm.material.emissive = COL_HIGHLIGHT_COLOR; hm.material.emissiveIntensity = 0.6; }
+      if (nm) { nm.material.emissive = COL_HIGHLIGHT_COLOR; nm.material.emissiveIntensity = 0.5; }
     }
 
     // Build pair label string
@@ -1010,23 +1023,19 @@ function checkCollisions() {
     const alertEl = document.getElementById('collision-alert');
     alertEl.classList.add('show');
     document.getElementById('col-msg').textContent =
-      `${collidingPairs.length} pair${collidingPairs.length>1?'s':''} intersect. Motion blocked.`;
+      `Physical collision detected! This 3D part cannot pass through or go over this part.`;
     document.getElementById('col-pair').textContent = pairLabel;
     document.getElementById('col-limit').textContent =
-      `⚠ Servo clamped at max safe angle: ${lastSafeAngle.toFixed(1)}°`;
+      `⛔ Motion blocked & clamped at limit: ${pitchAngle.toFixed(1)}°`;
 
     // Sidebar status
     const statusEl = document.getElementById('col-status-line');
-    if (statusEl) { statusEl.textContent = `⛔ COLLISION — ${collidingPairs.length} pair${collidingPairs.length>1?'s':''}`; statusEl.classList.add('error'); }
+    if (statusEl) {
+      statusEl.textContent = `⛔ COLLISION — ${collidingPairs.length} pair${collidingPairs.length>1?'s':''}`;
+      statusEl.classList.add('error');
+    }
     const maxEl = document.getElementById('col-max-val');
-    if (maxEl) maxEl.textContent = lastSafeAngle.toFixed(1) + '°';
-
-    // Slider turns red
-    document.getElementById('slider-pitch').classList.add('clamped');
-
-    // Update ROM spec in Hardware Specifications card
-    const romEl = document.getElementById('spec-pitch-rom');
-    if (romEl) romEl.textContent = `90° to ${lastSafeAngle.toFixed(1)}° (${(lastSafeAngle-90).toFixed(1)}° Sweep)`;
+    if (maxEl) maxEl.textContent = pitchAngle.toFixed(1) + '° (BLOCKED)';
 
   } else {
     // ---- NO COLLISION ----
@@ -1039,7 +1048,7 @@ function clearCollisionState() {
   if (!collisionActive && !anyCollisionWasActive()) return;
   collisionActive = false;
 
-  // Clear mesh emissives for head/neck parts (don't touch user-selected highlight)
+  // Clear mesh emissives for head/neck parts
   for (const name of [...HEAD_PARTS, ...NECK_PARTS]) {
     const m = meshMap[name];
     if (m && m.material.emissive.getHex() === COL_HIGHLIGHT_COLOR.getHex()) {
@@ -1057,7 +1066,6 @@ function clearCollisionState() {
 }
 
 function anyCollisionWasActive() {
-  // Check if any dot is red (proxy for previous collision state)
   return Array.from(document.querySelectorAll('.col-dot')).some(d => d.classList.contains('red'));
 }
 
