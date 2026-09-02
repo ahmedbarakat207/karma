@@ -3,25 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Karma Robot — Exotic 3D Mechanical Assembly & Kinematics Viewer</title>
-<meta name="description" content="Exotic 3D mechanical assembly viewer for the Karma robot — inspect zero-collision neck hinge ROM from 90° to 135°.">
+<title>Karma Robot — Physical MG90S Hinge Mechanism & 3D Assembly</title>
+<meta name="description" content="Physical 3D assembly and kinematics viewer for the Karma robot — inspect authentic MG90S servo actuation, 4-bar pushrod linkage, and dual hinge bearings.">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:          #06080d;
-    --panel:       rgba(14, 18, 26, 0.88);
-    --panel-solid: #0e121a;
+    --bg:          #05070b;
+    --panel:       rgba(13, 17, 25, 0.88);
+    --panel-solid: #0d1119;
     --border:      rgba(255, 255, 255, 0.08);
-    --border-hl:   rgba(79, 124, 255, 0.4);
-    --accent:      #4f7cff;
-    --accent-glow: rgba(79, 124, 255, 0.35);
-    --accent2:     #8b5cf6;
+    --border-hl:   rgba(0, 240, 255, 0.4);
+    --accent:      #00f0ff;
+    --accent-glow: rgba(0, 240, 255, 0.35);
+    --blue:        #2563eb;
+    --servo-blue:  #1d4ed8;
+    --brass:       #f59e0b;
     --green:       #10b981;
-    --orange:      #f59e0b;
-    --cyan:        #00f0ff;
     --text:        #f1f5f9;
     --muted:       #64748b;
     --radius:      12px;
@@ -51,16 +51,12 @@
     position: relative;
     z-index: 10;
   }
-  #topbar .logo-wrap {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+  #topbar .logo-wrap { display: flex; align-items: center; gap: 10px; }
   #topbar .logo {
     font-size: 18px;
     font-weight: 800;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--cyan), var(--accent), var(--accent2));
+    background: linear-gradient(135deg, var(--accent), #3b82f6, #a855f7);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -71,7 +67,7 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(0, 240, 255, 0.12);
-    color: var(--cyan);
+    color: var(--accent);
     padding: 2px 8px;
     border-radius: 4px;
     border: 1px solid rgba(0, 240, 255, 0.3);
@@ -81,7 +77,7 @@
   #loading-bar {
     position: absolute; bottom: 0; left: 0;
     height: 2px;
-    background: linear-gradient(90deg, var(--cyan), var(--accent), var(--accent2));
+    background: linear-gradient(90deg, var(--accent), var(--blue), var(--brass));
     width: 0%;
     transition: width 0.3s ease;
   }
@@ -98,14 +94,14 @@
     align-items: center;
     gap: 6px;
   }
-  #status-badge.ready { color: var(--cyan); border-color: rgba(0, 240, 255, 0.4); box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); }
+  #status-badge.ready { color: var(--accent); border-color: var(--border-hl); box-shadow: 0 0 12px var(--accent-glow); }
 
   /* --- 3D Canvas --- */
   #canvas-wrap {
     grid-area: canvas;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(ellipse at 50% 30%, #0f1626 0%, #05070b 100%);
+    background: radial-gradient(ellipse at 50% 30%, #0d1320 0%, #030508 100%);
   }
   #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
 
@@ -139,7 +135,7 @@
     transition: all 0.2s;
   }
   .preset-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
-  .preset-btn.active { color: #fff; background: var(--accent); }
+  .preset-btn.active { color: #000; background: var(--accent); font-weight: 700; }
 
   .hint-badge {
     font-size: 11px;
@@ -169,7 +165,7 @@
   }
   #part-hud.show { display: block; animation: fadeIn 0.2s ease; }
   #part-hud .hud-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-  #part-hud .hud-group { font-size: 11px; color: var(--cyan); font-weight: 600; text-transform: uppercase; margin-bottom: 10px; }
+  #part-hud .hud-group { font-size: 11px; color: var(--accent); font-weight: 600; text-transform: uppercase; margin-bottom: 10px; }
   #part-hud .hud-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
   #part-hud .hud-key { color: var(--muted); }
   #part-hud .hud-val { font-family: 'JetBrains Mono', monospace; color: var(--text); }
@@ -191,7 +187,7 @@
   #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
   .card {
-    background: #0d1017;
+    background: #090d15;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 14px;
@@ -217,14 +213,14 @@
     margin-bottom: 6px;
   }
   .control-label { font-size: 11px; font-weight: 500; color: var(--text); }
-  .control-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--cyan); }
+  .control-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--accent); }
 
   input[type=range] {
     width: 100%;
     height: 6px;
     -webkit-appearance: none;
     appearance: none;
-    background: #1a202c;
+    background: #151b28;
     border-radius: 3px;
     outline: none;
     cursor: pointer;
@@ -233,7 +229,7 @@
     -webkit-appearance: none;
     width: 16px; height: 16px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--cyan), var(--accent));
+    background: linear-gradient(135deg, var(--accent), #3b82f6);
     box-shadow: 0 0 10px rgba(0, 240, 255, 0.7);
     cursor: grab;
     transition: transform 0.1s;
@@ -255,7 +251,7 @@
     padding: 8px 0;
     border-radius: 8px;
     border: 1px solid var(--border);
-    background: #151923;
+    background: #111622;
     color: var(--text);
     font-size: 11px;
     font-weight: 600;
@@ -266,8 +262,8 @@
     justify-content: center;
     gap: 6px;
   }
-  .btn:hover { background: #1e2433; border-color: var(--cyan); color: var(--cyan); }
-  .btn.active { background: linear-gradient(135deg, var(--cyan), var(--accent)); border-color: transparent; color: #000; font-weight: 700; }
+  .btn:hover { background: #1a2334; border-color: var(--accent); color: var(--accent); }
+  .btn.active { background: linear-gradient(135deg, var(--accent), #3b82f6); border-color: transparent; color: #000; font-weight: 700; }
 
   /* Hinge Kinematics Arc */
   #arc-diagram { display: block; margin: 4px auto 0; }
@@ -277,28 +273,28 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-radius: 8px;
     background: rgba(255,255,255,0.02);
     border: 1px solid transparent;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     font-size: 11px;
     cursor: pointer;
     transition: all 0.2s;
   }
   .part-item:hover { background: rgba(0, 240, 255, 0.08); border-color: rgba(0, 240, 255, 0.2); }
-  .part-item.active { background: rgba(0, 240, 255, 0.15); border-color: var(--cyan); }
+  .part-item.active { background: rgba(0, 240, 255, 0.15); border-color: var(--accent); }
   .part-left { display: flex; align-items: center; gap: 8px; }
   .part-color-dot { width: 10px; height: 10px; border-radius: 3px; }
   .part-title { font-weight: 500; }
-  .part-tris { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); }
+  .part-tag { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted); padding: 1px 5px; border-radius: 3px; background: rgba(255,255,255,0.05); }
 
   /* Specs */
-  .spec-grid { display: flex; flex-direction: column; gap: 6px; }
+  .spec-grid { display: flex; flex-direction: column; gap: 5px; }
   .spec-item { display: flex; justify-content: space-between; font-size: 11px; }
   .spec-k { color: var(--muted); }
   .spec-v { font-family: 'JetBrains Mono', monospace; color: var(--text); font-weight: 500; }
-  .spec-v.hl { color: var(--cyan); }
+  .spec-v.hl { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -306,10 +302,10 @@
 <header id="topbar">
   <div class="logo-wrap">
     <span class="logo">KARMA</span>
-    <span class="badge">Exotic Robot CAD</span>
+    <span class="badge">MG90S Servo Hinge</span>
   </div>
   <div class="sep"></div>
-  <span class="subtitle">Sculpted Cyber-Faceted Assembly & Synchronized Hinge Kinematics</span>
+  <span class="subtitle">Physical Metal-Gear Servo Actuation & 4-Bar Pushrod Kinematics</span>
   <span id="status-badge">Loading STLs...</span>
   <div id="loading-bar"></div>
 </header>
@@ -317,21 +313,21 @@
 <div id="canvas-wrap">
   <!-- Interactive Part Inspector HUD -->
   <div id="part-hud">
-    <div class="hud-title" id="hud-name">Base Front Chassis</div>
-    <div class="hud-group" id="hud-group">Base Module</div>
-    <div class="hud-row"><span class="hud-key">Material</span><span class="hud-val" id="hud-mat">PETG / ABS</span></div>
-    <div class="hud-row"><span class="hud-key">Infill</span><span class="hud-val" id="hud-infill">30% Gyroid</span></div>
-    <div class="hud-row"><span class="hud-key">Est. Weight</span><span class="hud-val" id="hud-weight">~480 g</span></div>
-    <div class="hud-row"><span class="hud-key">Fasteners</span><span class="hud-val" id="hud-hardware">4x M4 Inserts</span></div>
+    <div class="hud-title" id="hud-name">MG90S Micro Servo</div>
+    <div class="hud-group" id="hud-group">Actuation Hardware</div>
+    <div class="hud-row"><span class="hud-key">Component</span><span class="hud-val" id="hud-mat">Metal Gear Micro Servo</span></div>
+    <div class="hud-row"><span class="hud-key">Torque / Speed</span><span class="hud-val" id="hud-infill">2.2 kg·cm @ 6V (0.08s/60°)</span></div>
+    <div class="hud-row"><span class="hud-key">Weight</span><span class="hud-val" id="hud-weight">13.4 g</span></div>
+    <div class="hud-row"><span class="hud-key">Interface</span><span class="hud-val" id="hud-hardware">21T Spline, 2x M2 Screws</span></div>
   </div>
 
   <div class="viewport-overlay">
     <div class="view-presets">
-      <button class="preset-btn active" onclick="setView('iso')">Isometric</button>
+      <button class="preset-btn" onclick="setView('iso')">Isometric</button>
       <button class="preset-btn" onclick="setView('front')">Front</button>
       <button class="preset-btn" onclick="setView('side')">Side</button>
-      <button class="preset-btn" onclick="setView('top')">Top</button>
-      <button class="preset-btn" onclick="setView('head')">Neck Pivot</button>
+      <button class="preset-btn active" onclick="setView('mechanism')">Mechanism View</button>
+      <button class="preset-btn" id="btn-xray" onclick="toggleXRay()">🔍 X-Ray Shell</button>
     </div>
     <div class="hint-badge">
       Left Drag: Rotate • Right Drag / Scroll: Zoom • Middle Drag: Pan • Click Part: Inspect
@@ -342,7 +338,7 @@
 <aside id="sidebar">
 
   <div class="card">
-    <div class="card-title">Assembly & Kinematics</div>
+    <div class="card-title">Servo Kinematics & Linkage</div>
     
     <!-- Exploded View -->
     <div class="control-group">
@@ -360,7 +356,7 @@
         <span class="control-val" id="val-pitch">90.0°</span>
       </div>
       <input type="range" id="slider-pitch" min="90" max="135" value="90" step="0.5">
-      <div class="range-labels"><span>90° (Eye Level)</span><span>135° (Desk Focus)</span></div>
+      <div class="range-labels"><span>90° (Level Eye)</span><span>135° (Desk Focus)</span></div>
     </div>
 
     <div class="btn-row">
@@ -390,21 +386,21 @@
 
   <!-- Robot Parts List -->
   <div class="card">
-    <div class="card-title">Robot Sub-Assemblies (9 STLs)</div>
+    <div class="card-title">Physical Assembly (11 Components)</div>
     <div id="part-list-container"></div>
   </div>
 
-  <!-- Specifications -->
+  <!-- Mechanical Specs -->
   <div class="card">
-    <div class="card-title">Exotic Architecture Specs</div>
+    <div class="card-title">Hardware Specifications</div>
     <div class="spec-grid">
-      <div class="spec-item"><span class="spec-k">Total Height</span><span class="spec-v hl">940 mm</span></div>
-      <div class="spec-item"><span class="spec-k">Base Footprint</span><span class="spec-v">320 × 400 mm</span></div>
-      <div class="spec-item"><span class="spec-k">Torso Cross-Section</span><span class="spec-v">170 × 210 mm</span></div>
-      <div class="spec-item"><span class="spec-k">Hinge Axis World Z</span><span class="spec-v hl">750 mm (X=±40)</span></div>
-      <div class="spec-item"><span class="spec-k">Pitch ROM</span><span class="spec-v hl">90° – 135° (Zero Collision)</span></div>
-      <div class="spec-item"><span class="spec-k">Actuator</span><span class="spec-v">20kg Metal Servo</span></div>
-      <div class="spec-item"><span class="spec-k">Bearings</span><span class="spec-v">Dual 608ZZ</span></div>
+      <div class="spec-item"><span class="spec-k">Servo Model</span><span class="spec-v hl">TowerPro MG90S</span></div>
+      <div class="spec-item"><span class="spec-k">Servo Spline</span><span class="spec-v">21T Micro Spline</span></div>
+      <div class="spec-item"><span class="spec-k">Linkage Mechanism</span><span class="spec-v hl">4-Bar Articulated Pushrod</span></div>
+      <div class="spec-item"><span class="spec-k">Hinge Axles</span><span class="spec-v">2x Ø3.0 × 20mm Steel Pins</span></div>
+      <div class="spec-item"><span class="spec-k">Pivot Axis</span><span class="spec-v hl">X=±40 mm, World Z=750 mm</span></div>
+      <div class="spec-item"><span class="spec-k">Head Pitch ROM</span><span class="spec-v hl">90° to 135° (45° Sweep)</span></div>
+      <div class="spec-item"><span class="spec-k">Fasteners</span><span class="spec-v">M2 / M3 / M4 Heat-Set Brass</span></div>
     </div>
   </div>
 
@@ -424,11 +420,17 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-// --- Production Assembly Data ---
+// --- Kinematics & World Coordinates ---
 const NECK_BASE_Z   = 700;
 const HINGE_LOCAL_Z = 50;
 const HINGE_WORLD_Z = NECK_BASE_Z + HINGE_LOCAL_Z; // = 750 mm
 const NECK_Y_OFFSET = 0;
+
+// MG90S Physical Position in World:
+// Servo mounted inside Neck Front cavity: X = 18mm, Y = 15mm, Z = NECK_BASE_Z + 22 = 722mm
+// Output spline shaft center: X = 18 + 5.8 = 23.8mm, Y = 15mm, Z = 722 + 27.5 = 749.5mm
+const SERVO_POS   = [18.0, 15.0, 722.0];
+const SPLINE_POS  = [23.8, 15.0, 749.5];
 
 const PARTS = [
   {
@@ -438,7 +440,7 @@ const PARTS = [
     baseOffset: [0, 0, 0],
     explodeDir: [0, 90, 0],
     group: 'Base Chassis',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / ABS',
     infill: '30% Gyroid',
     weight: '~480 g',
@@ -451,7 +453,7 @@ const PARTS = [
     baseOffset: [0, 0, 0],
     explodeDir: [0, -90, 0],
     group: 'Base Chassis',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / ABS',
     infill: '30% Gyroid',
     weight: '~420 g',
@@ -464,7 +466,7 @@ const PARTS = [
     baseOffset: [0, 0, 220],
     explodeDir: [0, 75, 0],
     group: 'Column Torso',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / ABS',
     infill: '25% Gyroid',
     weight: '~560 g',
@@ -477,7 +479,7 @@ const PARTS = [
     baseOffset: [0, 0, 220],
     explodeDir: [0, -75, 0],
     group: 'Column Torso',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / ABS',
     infill: '25% Gyroid',
     weight: '~540 g',
@@ -490,11 +492,11 @@ const PARTS = [
     baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
     explodeDir: [0, 50, 30],
     group: 'Neck Assembly',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / PLA-CF',
     infill: '40% Gyroid',
     weight: '~160 g',
-    hardware: '20kg Servo, 2x 608ZZ'
+    hardware: 'MG90S Servo Cradle, 2x M2 Posts'
   },
   {
     name: 'Neck Back Cowling',
@@ -503,24 +505,50 @@ const PARTS = [
     baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
     explodeDir: [0, -50, 30],
     group: 'Neck Assembly',
-    isPivot: false,
+    type: 'static',
     mat: 'PETG / ABS',
     infill: '30% Gyroid',
     weight: '~110 g',
-    hardware: '4x M4 Bolts'
+    hardware: '4x M4 Bolts, Wire Exit'
   },
   {
-    name: 'Steering Horn Linkage',
+    name: 'MG90S Micro Servo',
+    file: 'mg90s_servo.stl',
+    color: 0x1d4ed8,
+    baseOffset: [...SERVO_POS],
+    explodeDir: [0, 30, 20],
+    group: 'Actuation Mechanism',
+    type: 'static',
+    mat: 'Polycarbonate + Metal Gears',
+    infill: 'Injection Molded',
+    weight: '13.4 g',
+    hardware: '2x M2 Mounting Screws'
+  },
+  {
+    name: 'MG90S 21T Servo Horn',
+    file: 'servo_horn.stl',
+    color: 0xf8fafc,
+    baseOffset: [...SPLINE_POS],
+    explodeDir: [25, 0, 15],
+    group: 'Actuation Mechanism',
+    type: 'servo_horn',
+    mat: 'Nylon / Carbon Fiber',
+    infill: '100% Solid',
+    weight: '~1.5 g',
+    hardware: '21T Spline, M2 Linkage Eyelet'
+  },
+  {
+    name: 'Articulated Pushrod',
     file: 'steering_arm.stl',
     color: 0x00f0ff,
-    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
-    explodeDir: [50, 0, 20],
-    group: 'Neck Assembly',
-    isPivot: true,
-    mat: 'Nylon / PLA-CF',
+    baseOffset: [SPLINE_POS[0], SPLINE_POS[1] + 12, SPLINE_POS[2]],
+    explodeDir: [35, 0, 20],
+    group: 'Actuation Mechanism',
+    type: 'pushrod',
+    mat: 'PETG / Aluminum',
     infill: '100% Solid',
-    weight: '~25 g',
-    hardware: '25T Servo Spline, M3 Ball'
+    weight: '~4.0 g',
+    hardware: '2x M2 Ball-Joint Screws'
   },
   {
     name: 'Head Display Front Visor',
@@ -529,11 +557,11 @@ const PARTS = [
     baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
     explodeDir: [0, 60, 60],
     group: 'Head Assembly',
-    isPivot: true,
+    type: 'pivot',
     mat: 'PETG / Polycarbonate',
     infill: '25% Gyroid',
     weight: '~280 g',
-    hardware: '7"/10.1" Display, HD Cam'
+    hardware: 'Dual Hinge Clevis, 7" Display'
   },
   {
     name: 'Head Rear Aero Dome',
@@ -542,7 +570,7 @@ const PARTS = [
     baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
     explodeDir: [0, -60, 60],
     group: 'Head Assembly',
-    isPivot: true,
+    type: 'pivot',
     mat: 'PETG / ABS',
     infill: '20% Gyroid',
     weight: '~210 g',
@@ -562,26 +590,26 @@ renderer.toneMappingExposure = 1.25;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x06080d);
-scene.fog = new THREE.FogExp2(0x06080d, 0.0006);
+scene.background = new THREE.Color(0x05070b);
+scene.fog = new THREE.FogExp2(0x05070b, 0.0006);
 
-const camera = new THREE.PerspectiveCamera(42, wrap.clientWidth / wrap.clientHeight, 10, 8000);
+const camera = new THREE.PerspectiveCamera(38, wrap.clientWidth / wrap.clientHeight, 10, 8000);
 camera.up.set(0, 0, 1);
-camera.position.set(650, -950, 920);
+camera.position.set(120, -180, 780); // Close-up on the MG90S mechanism
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.minDistance = 100;
+controls.minDistance = 20;
 controls.maxDistance = 4000;
-controls.target.set(0, 0, 520);
+controls.target.set(0, 0, 745);
 controls.update();
 
 // Studio Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
 keyLight.position.set(700, -850, 1300);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.width = 2048;
@@ -589,11 +617,11 @@ keyLight.shadow.mapSize.height = 2048;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.8);
+const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.85);
 fillLight.position.set(-700, 650, 700);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.4);
+const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.5);
 rimLight.position.set(0, 900, 600);
 scene.add(rimLight);
 
@@ -602,20 +630,30 @@ grid.rotation.x = Math.PI / 2;
 grid.position.z = 0;
 scene.add(grid);
 
-// Assembly Pivot & Static Hierarchies
+// Dynamic Hierarchy Groups
 const staticGroup = new THREE.Group();
 const pivotGroup  = new THREE.Group();
+const servoGroup  = new THREE.Group();
+const hornGroup   = new THREE.Group();
+const pushrodGroup = new THREE.Group();
+
 pivotGroup.position.set(0, NECK_Y_OFFSET, HINGE_WORLD_Z);
+hornGroup.position.set(SPLINE_POS[0], SPLINE_POS[1], SPLINE_POS[2]);
+
 scene.add(staticGroup);
 scene.add(pivotGroup);
+scene.add(hornGroup);
+scene.add(pushrodGroup);
 
-// Hinge Pin Visual in Pivot Group (Moves dynamically with tilt)
-const pinGeo = new THREE.CylinderGeometry(3.5, 3.5, 160, 24);
-pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
-const pinMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.15, metalness: 0.95 });
-const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-pinMesh.position.set(0, 0, 0);
-pivotGroup.add(pinMesh);
+// Dual Stainless Steel Hinge Pins (X = -40 and X = +40)
+for (let hx of [-40, 40]) {
+  const pinGeo = new THREE.CylinderGeometry(1.5, 1.5, 24, 20);
+  pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+  const pinMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.15, metalness: 0.95 });
+  const pinMesh = new THREE.Mesh(pinGeo, pinMat);
+  pinMesh.position.set(hx, 0, 0);
+  pivotGroup.add(pinMesh);
+}
 
 // --- STL Loading ---
 const loader = new STLLoader();
@@ -625,10 +663,10 @@ let explodeFactor = 0.0;
 let pitchAngle = 90.0;
 let isAnimatingTilt = false;
 
-function createPBRMaterial(hexColor, isWindow = false) {
-  if (isWindow) {
+function createPBRMaterial(p) {
+  if (p.name.includes('Visor') || p.name.includes('Window')) {
     return new THREE.MeshPhysicalMaterial({
-      color: 0x090e18,
+      color: 0x0a101d,
       metalness: 0.8,
       roughness: 0.15,
       clearcoat: 1.0,
@@ -636,8 +674,17 @@ function createPBRMaterial(hexColor, isWindow = false) {
       side: THREE.DoubleSide
     });
   }
+  if (p.name.includes('Servo')) {
+    return new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+  }
+  if (p.name.includes('Horn')) {
+    return new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide });
+  }
+  if (p.name.includes('Pushrod')) {
+    return new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.15, metalness: 0.9, side: THREE.DoubleSide });
+  }
   return new THREE.MeshStandardMaterial({
-    color: hexColor,
+    color: p.color,
     roughness: 0.35,
     metalness: 0.4,
     side: THREE.DoubleSide
@@ -662,7 +709,7 @@ PARTS.forEach((p, idx) => {
       <div class="part-color-dot" style="background: #${p.color.toString(16).padStart(6, '0')}"></div>
       <span class="part-title">${p.name}</span>
     </div>
-    <span class="part-tris">${p.group.split(' ')[0]}</span>
+    <span class="part-tag">${p.group.split(' ')[0]}</span>
   `;
   item.onclick = () => selectPart(p.name);
   listContainer.appendChild(item);
@@ -672,17 +719,24 @@ PARTS.forEach((p, idx) => {
 PARTS.forEach((p, idx) => {
   loader.load(p.file, (geom) => {
     geom.computeVertexNormals();
-    const isWin = p.name.includes('Visor') || p.name.includes('Window');
-    const mat = createPBRMaterial(p.color, isWin);
+    const mat = createPBRMaterial(p);
     const mesh = new THREE.Mesh(geom, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData = { ...p, index: idx };
 
-    if (p.isPivot) {
+    if (p.type === 'pivot') {
       mesh.userData.localOrigin = [0, 0, 0];
       mesh.position.set(0, 0, 0);
       pivotGroup.add(mesh);
+    } else if (p.type === 'servo_horn') {
+      mesh.userData.localOrigin = [0, 0, 0];
+      mesh.position.set(0, 0, 0);
+      hornGroup.add(mesh);
+    } else if (p.type === 'pushrod') {
+      mesh.userData.localOrigin = [0, 0, 0];
+      mesh.position.set(0, 0, 0);
+      pushrodGroup.add(mesh);
     } else {
       mesh.userData.localOrigin = [...p.baseOffset];
       mesh.position.set(...mesh.userData.localOrigin);
@@ -694,13 +748,56 @@ PARTS.forEach((p, idx) => {
     const pct = Math.round((loadedCount / PARTS.length) * 100);
     updateLoading(pct, `Loaded ${loadedCount}/${PARTS.length} Parts (${pct}%)`);
     if (loadedCount === PARTS.length) {
-      updateLoading(100, `● 9/9 Exotic STLs Ready`);
+      updateLoading(100, `● 11/11 Physical Parts Ready`);
+      updateKinematics();
     }
   });
 });
 
-// --- Kinematics & Exploded View Engine ---
-function updateMeshPositions() {
+// --- 4-Bar Mechanism Kinematics Engine ---
+function updateKinematics() {
+  const tiltRad = THREE.MathUtils.degToRad(-(pitchAngle - 90.0));
+  pivotGroup.rotation.x = tiltRad;
+
+  // 1. Servo Horn Rotation around spline Z-axis (Rotates proportionally to pitch)
+  const servoAngleRad = (pitchAngle - 90.0) * (Math.PI / 45.0); // 0 at 90 deg -> PI at 135 deg
+  hornGroup.rotation.z = -servoAngleRad;
+
+  // 2. Position of Horn Eyelet in World Coordinates
+  // Horn arm length R = 12mm pointing along +Y in local frame
+  const hornEyeletLocal = new THREE.Vector3(0, 12, 2.5);
+  hornEyeletLocal.applyEuler(hornGroup.rotation);
+  const hornEyeletWorld = hornGroup.position.clone().add(hornEyeletLocal);
+
+  // 3. Position of Head Driving Horn Clevis in World Coordinates
+  // Clevis is on head at local X = 18mm, Y = 0mm, Z = -12mm relative to hinge pivot
+  const headClevisLocal = new THREE.Vector3(18.0, 0.0, -12.0);
+  headClevisLocal.applyEuler(pivotGroup.rotation);
+  const headClevisWorld = pivotGroup.position.clone().add(headClevisLocal);
+
+  // 4. Orient & Position Pushrod Linkage Between Horn Eyelet and Head Clevis
+  const pushrodMesh = meshMap['Articulated Pushrod'];
+  if (pushrodMesh) {
+    pushrodGroup.position.copy(hornEyeletWorld);
+    
+    // Direction vector from horn eyelet to head clevis
+    const dir = headClevisWorld.clone().sub(hornEyeletWorld);
+    const len = dir.length();
+    
+    // Orient pushrod toward target
+    const up = new THREE.Vector3(0, 0, 1);
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    pushrodGroup.quaternion.copy(quat);
+    
+    // Scale length to bridge connection
+    pushrodGroup.scale.set(1, len / 30.0, 1);
+  }
+
+  updateArcDiagram(pitchAngle);
+  document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
+}
+
+function updateExplodedView() {
   PARTS.forEach(p => {
     const mesh = meshMap[p.name];
     if (!mesh) return;
@@ -712,13 +809,6 @@ function updateMeshPositions() {
       oz + ez * (explodeFactor / 100)
     );
   });
-}
-
-function updatePitchRotation() {
-  const rad = THREE.MathUtils.degToRad(-(pitchAngle - 90.0));
-  pivotGroup.rotation.x = rad;
-  updateArcDiagram(pitchAngle);
-  document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
 }
 
 function selectPart(name) {
@@ -741,7 +831,7 @@ function selectPart(name) {
   Object.values(meshMap).forEach(m => {
     if (m.userData.name === name) {
       m.material.emissive.setHex(0x00f0ff);
-      m.material.emissiveIntensity = 0.35;
+      m.material.emissiveIntensity = 0.4;
     } else {
       m.material.emissive.setHex(0x000000);
       m.material.emissiveIntensity = 0.0;
@@ -781,12 +871,12 @@ window.addEventListener('click', (e) => {
 document.getElementById('slider-explode').addEventListener('input', (e) => {
   explodeFactor = parseFloat(e.target.value);
   document.getElementById('val-explode').textContent = Math.round(explodeFactor) + '%';
-  updateMeshPositions();
+  updateExplodedView();
 });
 
 document.getElementById('slider-pitch').addEventListener('input', (e) => {
   pitchAngle = parseFloat(e.target.value);
-  updatePitchRotation();
+  updateKinematics();
 });
 
 window.toggleTiltAnim = function() {
@@ -806,15 +896,17 @@ window.resetAll = function() {
   document.getElementById('val-pitch').textContent = '90.0°';
   document.getElementById('btn-anim').classList.remove('active');
   document.getElementById('btn-anim').textContent = '⚡ Animate Pitch';
-  updateMeshPositions();
-  updatePitchRotation();
+  updateExplodedView();
+  updateKinematics();
   deselectPart();
-  window.setView('iso');
+  window.setView('mechanism');
 };
 
 window.setView = function(type) {
-  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-  if (event && event.target) event.target.classList.add('active');
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    if (b.id !== 'btn-xray') b.classList.remove('active');
+  });
+  if (event && event.target && event.target.id !== 'btn-xray') event.target.classList.add('active');
 
   if (type === 'iso') {
     camera.position.set(650, -950, 920);
@@ -825,14 +917,26 @@ window.setView = function(type) {
   } else if (type === 'side') {
     camera.position.set(1300, 0, 520);
     controls.target.set(0, 0, 520);
-  } else if (type === 'top') {
-    camera.position.set(0, 0, 1600);
-    controls.target.set(0, 0, 520);
-  } else if (type === 'head') {
-    camera.position.set(280, -420, 850);
-    controls.target.set(0, 0, 750);
+  } else if (type === 'mechanism') {
+    camera.position.set(160, -260, 810);
+    controls.target.set(10, 10, 745);
   }
   controls.update();
+};
+
+let isXRay = false;
+window.toggleXRay = function() {
+  isXRay = !isXRay;
+  const btn = document.getElementById('btn-xray');
+  btn.classList.toggle('active', isXRay);
+  const shellParts = ['Neck Front Cowling', 'Neck Back Cowling', 'Column Front Torso', 'Column Back Spine'];
+  shellParts.forEach(name => {
+    const m = meshMap[name];
+    if (m) {
+      m.material.transparent = isXRay;
+      m.material.opacity = isXRay ? 0.35 : 1.0;
+    }
+  });
 };
 
 function updateArcDiagram(deg) {
@@ -868,16 +972,16 @@ window.addEventListener('resize', () => {
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 });
 
-// Render Loop
+// Animation Loop
 let animClock = 0;
 function animate() {
   requestAnimationFrame(animate);
 
   if (isAnimatingTilt) {
-    animClock += 0.03;
+    animClock += 0.025;
     pitchAngle = 90.0 + (Math.sin(animClock) * 0.5 + 0.5) * 45.0;
     document.getElementById('slider-pitch').value = pitchAngle;
-    updatePitchRotation();
+    updateKinematics();
   }
 
   controls.update();

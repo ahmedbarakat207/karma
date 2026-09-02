@@ -1,22 +1,19 @@
 """
 generate_robot_cad.py
 =====================
-Exotic Cyber-Industrial CAD Generator for the Karma Multimodal AI Companion Robot.
-Continuous-Wall Seamless Assembly with Zero Seam Notches and 100% Connected Sides.
+Physical 3D-Printable CAD Generation Suite for the Karma Robot.
+Features an authentic MG90S Metal-Gear Micro Servo Actuation Mechanism,
+4-bar pushrod linkage, dual-shear hinge brackets, and seamless cyber bodywork.
 
-Form Factor Specifications (Exact Match to Architecture):
-- Base Chassis:   320 x 400 x 220 mm (X: [-160..160], Y: [-190..210], Z: [0..220])
-- Column Torso:   170 x 210 x 480 mm (X: [-85..85],   Y: [-115..95],  Z: [0..480] -> World Z: 220..700)
-- Neck Module:    160 x 90  x 60  mm (X: [-80..80],   Y: [-45..45],   Z: [0..60]  -> World Z: 700..760)
-- Head Visor:     300 x 190 x 45  mm (X: [-150..150], Y: [-95..95],   Z: [0..45]  -> World Z: 750..940)
-- Pivot Axis:     X = +/-40 mm, World Z = 750 mm (ROM: 90° level to 135° down-forward)
+Bill of Materials (BOM) & Hardware Interfaces:
+1. Actuator: TowerPro / Generic MG90S Micro Servo (22.8 x 12.2 x 28.5 mm, 21T spline)
+2. Hinge Pins: 2x Ø3.0 mm x 20 mm Stainless Steel Dowel Pins (or M3x20mm bolts)
+3. Bearings: 2x 683ZZ / MR63ZZ Ball Bearings (Ø3.0mm ID, Ø6.0mm/Ø7.0mm OD)
+4. Linkage: M2 Turnbuckle / 3D Printed Pushrod with M2 Ball-Joints
+5. Fasteners: M3 / M4 Heat-Set Brass Threaded Inserts (Ruthex / standard)
+6. Slicing: Optimized for 0.2mm layer height, 3-4 perimeters, 25-30% Gyroid infill in PETG/ABS
 
-Design Highlights:
-- 100% Connected, continuous, flush side panels across all split seams
-- Internal structural mounting bosses (all M3/M4 fasteners are inside the enclosures)
-- Aggressive cyber-faceted stance with smooth G2 corner fillets
-- Zero mesh collisions across the entire 90° - 135° pitch range
-- 100% 3D-printable with self-supporting draft angles & flat parting planes
+Units: Millimetres (mm)
 """
 
 import math
@@ -25,26 +22,36 @@ import os
 from typing import List, Tuple, Sequence
 
 # ---------------------------------------------------------------------------
-# Global Manufacturing Constants
+# Global Manufacturing & Hardware Constants
 # ---------------------------------------------------------------------------
 WALL_BASE     = 3.5      # Base structural wall thickness (mm)
 WALL_COLUMN   = 3.5      # Column structural wall thickness (mm)
 WALL_NECK     = 3.0      # Neck structural wall thickness (mm)
 WALL_HEAD     = 3.0      # Head enclosure wall thickness (mm)
 
-# Fasteners & Bearings
-M3_HOLE_R     = 1.7      # M3 clearance hole radius (3.4mm diameter)
-M3_INSERT_R   = 2.1      # M3 heat-set insert pocket radius (4.2mm diameter)
-M4_HOLE_R     = 2.25     # M4 clearance hole radius (4.5mm diameter)
-M4_INSERT_R   = 2.9      # M4 heat-set insert pocket radius (5.8mm diameter)
+# Fasteners & Fastener Pockets
+M2_HOLE_R     = 1.1      # M2 clearance hole (2.2mm diameter)
+M2_INSERT_R   = 1.6      # M2 heat-set insert pocket (3.2mm diameter)
+M3_HOLE_R     = 1.7      # M3 clearance hole (3.4mm diameter)
+M3_INSERT_R   = 2.1      # M3 heat-set insert pocket (4.2mm diameter)
+M4_HOLE_R     = 2.25     # M4 clearance hole (4.5mm diameter)
+M4_INSERT_R   = 2.9      # M4 heat-set insert pocket (5.8mm diameter)
 M4_BOSS_OD    = 10.0     # M4 structural boss outer diameter (mm)
 
-BEARING_608_OD_R = 11.1  # 608ZZ outer radius (22.2mm diameter)
-BEARING_608_ID_R = 4.0   # 608ZZ inner shaft radius (8.0mm diameter)
-HINGE_X          = 40.0  # Hinge pin X offset (+/- 40mm)
-HINGE_Z          = 50.0  # Hinge pin Z height within neck (50mm local / 750mm world)
-SERVO_W          = 40.5  # Standard servo width (mm)
-SERVO_D          = 20.2  # Standard servo depth (mm)
+# MG90S Servo Specifications (Real-World Standards)
+MG90S_L       = 23.0     # Pocket Length (mm)
+MG90S_W       = 12.5     # Pocket Width (mm)
+MG90S_H       = 23.0     # Pocket Depth / Body Height (mm)
+MG90S_FLANGE_L= 32.5     # Flange overall length (mm)
+MG90S_HOLE_DIST=28.0     # Distance between M2 mounting hole centers (mm)
+MG90S_SPLINE_R= 2.4      # 21-tooth micro spline radius (4.8mm diameter)
+MG90S_SPLINE_H= 4.5      # Spline shaft height (mm)
+
+# Hinge Pivot Axle
+HINGE_X       = 40.0     # Hinge pin X offset (+/- 40mm)
+HINGE_Z       = 50.0     # Hinge pin Z height within neck (50mm local / 750mm world)
+HINGE_PIN_R   = 1.55     # Ø3.0mm stainless steel pin clearance hole (3.1mm diameter)
+HINGE_BOSS_R  = 5.5      # Structural hinge boss outer radius (11mm diameter)
 
 # ---------------------------------------------------------------------------
 # 3D Geometry Core Math
@@ -65,7 +72,7 @@ def _calc_normal(v1: Vec3, v2: Vec3, v3: Vec3) -> Vec3:
 def write_binary_stl(path: str, triangles: Sequence[Triangle]):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, 'wb') as f:
-        header = f"Karma Exotic Robot STL - {os.path.basename(path)}".encode('ascii')[:80].ljust(80, b'\x00')
+        header = f"Karma Physical Robot STL - {os.path.basename(path)}".encode('ascii')[:80].ljust(80, b'\x00')
         f.write(header)
         f.write(struct.pack('<I', len(triangles)))
         for v1, v2, v3 in triangles:
@@ -91,7 +98,6 @@ def box(x0: float, x1: float, y0: float, y1: float, z0: float, z1: float) -> Lis
     return tris
 
 def half_contour_front(x0: float, x1: float, y_split: float, y_max: float, chamfer_front: float = 35.0, n_per_seg: int = 6) -> List[Vec2]:
-    """Front half contour: perfectly flat flush edge at y_split (Y=0) with corner chamfers ONLY at front (y_max)."""
     c = min(chamfer_front, (x1 - x0) / 3.0, (y_max - y_split) / 2.0)
     poly = [
         (x1, y_split),
@@ -111,7 +117,6 @@ def half_contour_front(x0: float, x1: float, y_split: float, y_max: float, chamf
     return pts
 
 def half_contour_back(x0: float, x1: float, y_min: float, y_split: float, chamfer_back: float = 35.0, n_per_seg: int = 6) -> List[Vec2]:
-    """Back half contour: perfectly flat flush edge at y_split (Y=0) with corner chamfers ONLY at rear (y_min)."""
     c = min(chamfer_back, (x1 - x0) / 3.0, (y_split - y_min) / 2.0)
     poly = [
         (x0, y_split),
@@ -131,14 +136,13 @@ def half_contour_back(x0: float, x1: float, y_min: float, y_split: float, chamfe
     return pts
 
 def filleted_rect_xz(x0: float, x1: float, z0: float, z1: float, r: float = 25.0, n_per_corner: int = 8) -> List[Vec2]:
-    """Generates continuous 2D rounded rectangle in XZ coordinates (32 vertices) for the Head module."""
     cr = min(r, (x1 - x0) / 3.0, (z1 - z0) / 3.0)
     pts = []
     corners = [
-        (x1 - cr, z1 - cr, 0.0),           # Top-right
-        (x0 + cr, z1 - cr, math.pi / 2),    # Top-left
-        (x0 + cr, z0 + cr, math.pi),        # Bottom-left
-        (x1 - cr, z0 + cr, 3 * math.pi / 2) # Bottom-right
+        (x1 - cr, z1 - cr, 0.0),
+        (x0 + cr, z1 - cr, math.pi / 2),
+        (x0 + cr, z0 + cr, math.pi),
+        (x1 - cr, z0 + cr, 3 * math.pi / 2)
     ]
     for cx, cz, start_ang in corners:
         for i in range(n_per_corner):
@@ -245,6 +249,21 @@ def hollow_cylinder_z(cx: float, cy: float, z0: float, z1: float,
         tris += quad(outer_top[i], outer_top[j], inner_top[j], inner_top[i])
     return tris
 
+def solid_cylinder_z(cx: float, cy: float, z0: float, z1: float, r: float, segments: int = 20) -> List[Triangle]:
+    tris = []
+    bot_pts, top_pts = [], []
+    for i in range(segments):
+        theta = 2.0 * math.pi * i / segments
+        cos_t, sin_t = math.cos(theta), math.sin(theta)
+        bot_pts.append((cx + r * cos_t, cy + r * sin_t, z0))
+        top_pts.append((cx + r * cos_t, cy + r * sin_t, z1))
+    for i in range(segments):
+        j = (i + 1) % segments
+        tris += quad(bot_pts[i], bot_pts[j], top_pts[j], top_pts[i])
+        tris.append(((cx, cy, z0), bot_pts[j], bot_pts[i]))
+        tris.append(((cx, cy, z1), top_pts[i], top_pts[j]))
+    return tris
+
 def hollow_cylinder_y(cx: float, cz: float, y0: float, y1: float,
                        outer_r: float, inner_r: float, segments: int = 24) -> List[Triangle]:
     tris = []
@@ -266,56 +285,52 @@ def hollow_cylinder_y(cx: float, cz: float, y0: float, y1: float,
         tris += quad(outer_1[i], outer_1[j], inner_1[j], inner_1[i])
     return tris
 
+def solid_cylinder_y(cx: float, cz: float, y0: float, y1: float, r: float, segments: int = 20) -> List[Triangle]:
+    tris = []
+    pts_0, pts_1 = [], []
+    for i in range(segments):
+        theta = 2.0 * math.pi * i / segments
+        cos_t, sin_t = math.cos(theta), math.sin(theta)
+        pts_0.append((cx + r * cos_t, y0, cz + r * sin_t))
+        pts_1.append((cx + r * cos_t, y1, cz + r * sin_t))
+    for i in range(segments):
+        j = (i + 1) % segments
+        tris += quad(pts_0[i], pts_0[j], pts_1[j], pts_1[i])
+        tris.append(((cx, y0, cz), pts_0[j], pts_0[i]))
+        tris.append(((cx, y1, cz), pts_1[i], pts_1[j]))
+    return tris
+
 def mounting_boss_m4(cx: float, cy: float, z0: float, z1: float, is_insert: bool = True) -> List[Triangle]:
     inner_r = M4_INSERT_R if is_insert else M4_HOLE_R
     return hollow_cylinder_z(cx, cy, z0, z1, M4_BOSS_OD / 2.0, inner_r, segments=16)
 
 # ---------------------------------------------------------------------------
-# 1. Base Assembly (320 x 400 x 220 mm Seamless Stance)
+# 1. Base Assembly (320 x 400 x 220 mm)
 # ---------------------------------------------------------------------------
 
 def build_base_front() -> List[Triangle]:
-    """
-    Exotic Base Front: X: [-160..160], Y: [0..210], Z: [0..220]
-    Features 100% continuous flush sides across the seam at Y=0.
-    """
     tris = []
     W = WALL_BASE
-
     outer_layers = [
         (0.0,   half_contour_front(-160.0, 160.0, 0.0, 210.0, chamfer_front=45.0, n_per_seg=6)),
         (40.0,  half_contour_front(-158.0, 158.0, 0.0, 206.0, chamfer_front=44.0, n_per_seg=6)),
         (110.0, half_contour_front(-145.0, 145.0, 0.0, 185.0, chamfer_front=38.0, n_per_seg=6)),
         (180.0, half_contour_front(-115.0, 115.0, 0.0, 140.0, chamfer_front=30.0, n_per_seg=6)),
-        (220.0, half_contour_front(-85.0,   85.0, 0.0,  95.0, chamfer_front=22.0, n_per_seg=6)), # Column Interface
+        (220.0, half_contour_front(-85.0,   85.0, 0.0,  95.0, chamfer_front=22.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
-
-    # 4x Column M4 Attachment Bosses (Z=220mm)
     for bx, by in [(-65.0, 20.0), (65.0, 20.0), (-65.0, 75.0), (65.0, 75.0)]:
         tris += mounting_boss_m4(bx, by, 190.0, 220.0 - W, is_insert=True)
-
-    # Compute Sled Rails (Raspberry Pi 5 / Jetson grid)
     for cx, cy in [(-29.0, 100.0), (29.0, 100.0), (-29.0, 158.0), (29.0, 158.0)]:
         tris += hollow_cylinder_z(cx, cy, W, W + 8.0, 4.0, M3_INSERT_R, segments=12)
-
-    # Internal Seam Clamping Bosses along Y=0
     for sx in [-120.0, -45.0, 45.0, 120.0]:
         tris += mounting_boss_m4(sx, 12.0, W, 220.0 - W, is_insert=True)
-
-    # Central wiring conduit chimney
     tris += hollow_cylinder_z(0.0, 20.0, 220.0 - W, 220.0, 22.0, 18.0, segments=20)
-
     return tris
 
 def build_base_back() -> List[Triangle]:
-    """
-    Exotic Base Back: X: [-160..160], Y: [-190..0], Z: [0..220]
-    Features 100% continuous flush sides across the seam at Y=0.
-    """
     tris = []
     W = WALL_BASE
-
     outer_layers = [
         (0.0,   half_contour_back(-160.0, 160.0, -190.0, 0.0, chamfer_back=45.0, n_per_seg=6)),
         (40.0,  half_contour_back(-158.0, 158.0, -186.0, 0.0, chamfer_back=44.0, n_per_seg=6)),
@@ -324,72 +339,44 @@ def build_base_back() -> List[Triangle]:
         (220.0, half_contour_back(-85.0,   85.0, -115.0, 0.0, chamfer_back=22.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
-
-    # 4x Column M4 Attachment Bosses
     for bx, by in [(-65.0, -20.0), (65.0, -20.0), (-65.0, -95.0), (65.0, -95.0)]:
         tris += mounting_boss_m4(bx, by, 190.0, 220.0 - W, is_insert=True)
-
-    # Battery bay retention ribs (150x65mm bay)
     tris += box(-75.0, 75.0, -140.0, -135.0, W, W + 35.0)
     tris += box(-75.0, 75.0, -60.0, -55.0, W, W + 35.0)
-
-    # Internal Seam Clamping Bosses along Y=0
     for sx in [-120.0, -45.0, 45.0, 120.0]:
         tris += mounting_boss_m4(sx, -12.0, W, 220.0 - W, is_insert=False)
-
     return tris
 
 # ---------------------------------------------------------------------------
-# 2. Column / Torso Assembly (170 x 210 x 480 mm Seamless Muscular Torso)
+# 2. Column Torso Assembly (170 x 210 x 480 mm)
 # ---------------------------------------------------------------------------
 
 def build_column_front() -> List[Triangle]:
-    """
-    Exotic Column Front: X: [-85..85], Y: [0..95], Z: [0..480] (World Z: 220..700)
-    Features 100% continuous flush sides with dual acoustic speaker nacelles.
-    """
     tris = []
     W = WALL_COLUMN
-
     outer_layers = [
-        (0.0,   half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)), # Base Interface
-        (120.0, half_contour_front(-80.0, 80.0, 0.0, 90.0, chamfer_front=20.0, n_per_seg=6)), # Lower Torso
-        (200.0, half_contour_front(-74.0, 74.0, 0.0, 82.0, chamfer_front=18.0, n_per_seg=6)), # Muscular Waist
-        (320.0, half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)), # Chest
-        (420.0, half_contour_front(-82.0, 82.0, 0.0, 88.0, chamfer_front=20.0, n_per_seg=6)), # Shoulders
-        (480.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)), # Neck Interface
+        (0.0,   half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)),
+        (120.0, half_contour_front(-80.0, 80.0, 0.0, 90.0, chamfer_front=20.0, n_per_seg=6)),
+        (200.0, half_contour_front(-74.0, 74.0, 0.0, 82.0, chamfer_front=18.0, n_per_seg=6)),
+        (320.0, half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)),
+        (420.0, half_contour_front(-82.0, 82.0, 0.0, 88.0, chamfer_front=20.0, n_per_seg=6)),
+        (480.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
-
-    # Base Bottom Bosses
     for bx, by in [(-65.0, 20.0), (65.0, 20.0), (-65.0, 75.0), (65.0, 75.0)]:
         tris += mounting_boss_m4(bx, by, W, W + 25.0, is_insert=False)
-
-    # Neck Top Bosses (Matching Neck Z=700)
     for bx, by in [(-55.0, 25.0), (55.0, 25.0)]:
         tris += mounting_boss_m4(bx, by, 480.0 - 25.0, 480.0 - W, is_insert=True)
-
-    # Dual Acoustic Speaker Nacelles (Left X=-48, Right X=+48, Z=300mm)
     for spk_x in [-48.0, 48.0]:
         tris += hollow_cylinder_y(spk_x, 300.0, 88.0, 95.0, 24.0, 20.0, segments=24)
         tris += box(spk_x - 25.0, spk_x + 25.0, 50.0, 90.0, 275.0, 325.0)
-
-    # Center Microphone Port (Z=450mm)
     tris += box(-15.0, 15.0, 80.0, 88.0, 442.0, 458.0)
-
-    # Central Wiring Conduit
     tris += hollow_cylinder_z(0.0, 20.0, W, 480.0 - W, 22.0, 19.0, segments=20)
-
     return tris
 
 def build_column_back() -> List[Triangle]:
-    """
-    Exotic Column Back Spine: X: [-85..85], Y: [-115..0], Z: [0..480]
-    Features 100% continuous flush sides with exo-spine cooling ribs.
-    """
     tris = []
     W = WALL_COLUMN
-
     outer_layers = [
         (0.0,   half_contour_back(-85.0, 85.0, -115.0, 0.0, chamfer_back=22.0, n_per_seg=6)),
         (120.0, half_contour_back(-80.0, 80.0, -108.0, 0.0, chamfer_back=20.0, n_per_seg=6)),
@@ -399,30 +386,26 @@ def build_column_back() -> List[Triangle]:
         (480.0, half_contour_back(-80.0, 80.0, -45.0,  0.0, chamfer_back=18.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
-
-    # Base Bottom Bosses
     for bx, by in [(-65.0, -20.0), (65.0, -20.0), (-65.0, -95.0), (65.0, -95.0)]:
         tris += mounting_boss_m4(bx, by, W, W + 25.0, is_insert=False)
-
-    # Neck Top Bosses
     for bx, by in [(-55.0, -25.0), (55.0, -25.0)]:
         tris += mounting_boss_m4(bx, by, 480.0 - 25.0, 480.0 - W, is_insert=True)
-
-    # Internal Vertical Seam Clamping Posts (Inside cavity)
     for seam_z in [80.0, 180.0, 280.0, 380.0]:
         tris += mounting_boss_m4(-65.0, -12.0, seam_z - 12.0, seam_z + 12.0, is_insert=True)
         tris += mounting_boss_m4( 65.0, -12.0, seam_z - 12.0, seam_z + 12.0, is_insert=True)
-
     return tris
 
 # ---------------------------------------------------------------------------
-# 3. Neck Actuation Module (160 x 90 x 60 mm Seamless Titanium Cowl)
+# 3. Neck Actuation Module with MG90S Servo Cradle & Dual Hinge Bearings
 # ---------------------------------------------------------------------------
 
 def build_neck_front() -> List[Triangle]:
     """
     Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..60] (World Z: 700..760)
-    Features 100% continuous flush sides with bearing housings & servo cradle.
+    Features:
+    - Dedicated MG90S Micro Servo Mounting Bay with M2 mounting screw posts
+    - Dual Hinge Pin Pillow Blocks with Ø3.0mm stainless steel pin bores (at X=+/-40mm, Z=50mm)
+    - Top arc clearance slot for pushrod linkage travel (90° to 135° ROM)
     """
     tris = []
     W = WALL_NECK
@@ -434,17 +417,22 @@ def build_neck_front() -> List[Triangle]:
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Dual 608ZZ Bearing Housings (At X=+/-40mm, Z=50mm)
+    # Dual Hinge Pin Pillow Blocks (At X=+/-40mm, Z=50mm)
     for bx in [-HINGE_X, HINGE_X]:
-        tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 45.0, 14.0, BEARING_608_OD_R, segments=24)
-        tris += hollow_cylinder_y(bx, HINGE_Z, 42.0, 45.0, BEARING_608_OD_R, BEARING_608_ID_R, segments=24)
+        # Pillow Block Cylinder with Ø3.1mm Pin Bore & Ø11mm Boss
+        tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 45.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
+        # Structural gusset connecting pillow block to neck shell
+        tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, 0.0, 45.0, 20.0, HINGE_Z)
 
-    # 20kg Standard Servo Cradle
-    tris += box(-SERVO_W/2.0 - 2.0, SERVO_W/2.0 + 2.0, 8.0, 10.0, W, W + 38.0)
-    tris += box(-SERVO_W/2.0 - 2.0, SERVO_W/2.0 + 2.0, 31.0, 33.0, W, W + 38.0)
-    for ex in [-24.25, 24.25]:
-        tris += hollow_cylinder_z(ex, 14.0, W, W + 38.0, 3.5, M3_INSERT_R, segments=12)
-        tris += hollow_cylinder_z(ex, 27.0, W, W + 38.0, 3.5, M3_INSERT_R, segments=12)
+    # MG90S Micro Servo Mounting Cradle (Positioned at X=0..25mm, Y=8..21mm, Z=10..33mm)
+    servo_cx, servo_cy, servo_cz = 18.0, 15.0, 22.0
+    # Servo cradle support walls
+    tris += box(servo_cx - MG90S_L/2.0 - 2.0, servo_cx + MG90S_L/2.0 + 2.0,
+                servo_cy - MG90S_W/2.0 - 2.0, servo_cy + MG90S_W/2.0 + 2.0,
+                W, servo_cz + 8.0)
+    # M2 Servo Mounting Screw Bosses (28mm pitch)
+    for m2_x in [servo_cx - MG90S_HOLE_DIST/2.0, servo_cx + MG90S_HOLE_DIST/2.0]:
+        tris += hollow_cylinder_z(m2_x, servo_cy, W, servo_cz + 8.0, 3.2, M2_INSERT_R, segments=12)
 
     # Base attachment bolt holes
     for fx in [-55.0, 55.0]:
@@ -455,7 +443,7 @@ def build_neck_front() -> List[Triangle]:
 def build_neck_back() -> List[Triangle]:
     """
     Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..60]
-    Features 100% continuous flush sides.
+    Features rear bearing retainer cups and wire exit grommet.
     """
     tris = []
     W = WALL_NECK
@@ -467,64 +455,128 @@ def build_neck_back() -> List[Triangle]:
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
+    # Rear Hinge Pin Support Bosses
     for bx in [-HINGE_X, HINGE_X]:
-        tris += hollow_cylinder_y(bx, HINGE_Z, -45.0, 0.0, 14.0, BEARING_608_ID_R, segments=24)
+        tris += hollow_cylinder_y(bx, HINGE_Z, -45.0, 0.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
+        tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, -45.0, 0.0, 20.0, HINGE_Z)
 
     for bx in [-55.0, 55.0]:
         tris += mounting_boss_m4(bx, -25.0, W, W + 15.0, is_insert=False)
 
+    # Wire Exit Conduit
     tris += hollow_cylinder_z(0.0, -15.0, W, 60.0 - W, 16.0, 13.0, segments=16)
+
+    return tris
+
+# ---------------------------------------------------------------------------
+# 4. MG90S Micro Servo & Mechanical Linkage CAD
+# ---------------------------------------------------------------------------
+
+def build_mg90s_servo() -> List[Triangle]:
+    """
+    Authentic MG90S Metal-Gear Micro Servo 3D Model:
+    - Main Polycarbonate Housing: 22.8 x 12.2 x 22.5 mm
+    - Top Metal Gear Tower & 21T Brass Spline Output Shaft
+    - Mounting Flanges with 2x M2 Eyelets
+    """
+    tris = []
+    # Main Body Housing (Local origin centered at body base)
+    tris += box(-11.4, 11.4, -6.1, 6.1, 0.0, 22.5)
+
+    # Top Gear Head Cover
+    tris += box(-11.4, 11.4, -6.1, 6.1, 22.5, 25.5)
+
+    # Output Spline Shaft & Brass Bushing (Offset +5.8mm toward one end)
+    spline_x = 5.8
+    tris += solid_cylinder_z(spline_x, 0.0, 25.5, 27.5, 5.5, segments=20) # Top gear casing
+    tris += solid_cylinder_z(spline_x, 0.0, 27.5, 30.0, MG90S_SPLINE_R, segments=18) # 21T Spline
+
+    # Mounting Flanges (Ear to Ear: 32.5mm)
+    tris += box(-16.25, 16.25, -6.1, 6.1, 16.0, 18.5)
+    # 2x M2 Mounting Eyelets
+    for fx in [-14.0, 14.0]:
+        tris += hollow_cylinder_z(fx, 0.0, 16.0, 18.5, 2.5, M2_HOLE_R, segments=12)
+
+    # 3-Pin Wire Exit Grommet
+    tris += box(-11.4, -8.0, -4.0, 4.0, 2.0, 6.0)
+
+    return tris
+
+def build_servo_horn() -> List[Triangle]:
+    """
+    Standard MG90S 21T Single-Arm Servo Horn:
+    - Spline Hub: Ø7.0mm OD, 4.0mm height
+    - Tapered Linkage Arm: Length 15.0mm with M2 linkage pivot hole at R=12.0mm
+    """
+    tris = []
+    # Spline Hub
+    tris += hollow_cylinder_z(0.0, 0.0, 0.0, 4.0, 3.5, MG90S_SPLINE_R, segments=20)
+
+    # Tapered Actuation Arm (pointing along +Y)
+    layers = [
+        (1.5, [(-3.0, 0.0), (3.0, 0.0), (1.5, 15.0), (-1.5, 15.0)]),
+        (3.5, [(-3.0, 0.0), (3.0, 0.0), (1.5, 15.0), (-1.5, 15.0)]),
+    ]
+    tris += loft_contours_z(layers, cap_bottom=True, cap_top=True)
+
+    # M2 Pivot Linkage Eyelet (At Y=12.0mm)
+    tris += hollow_cylinder_z(0.0, 12.0, 1.5, 3.5, 2.5, M2_HOLE_R, segments=16)
 
     return tris
 
 def build_steering_arm() -> List[Triangle]:
     """
-    Exotic Precision Servo Linkage Arm (Length 45mm, Width 14mm, Height 6mm).
+    Articulated Turnbuckle Pushrod Linkage (Length 35mm, Width 6mm, Thickness 4mm):
+    - Connecting Servo Horn Eyelet to Head Pitch Bracket
     """
     tris = []
-    layers = [
-        (0.0, [(-10.0, -7.0), (35.0, -7.0), (35.0, 7.0), (-10.0, 7.0)]),
-        (6.0, [(-10.0, -7.0), (35.0, -7.0), (35.0, 7.0), (-10.0, 7.0)]),
-    ]
-    tris += loft_contours_z(layers, cap_bottom=True, cap_top=True)
-    tris += hollow_cylinder_z(0.0, 0.0, -15.0, 6.0, 7.0, M3_HOLE_R, segments=20)
-    tris += hollow_cylinder_z(25.0, 0.0, 0.0, 6.0, 6.0, M3_INSERT_R, segments=16)
+    # Main Rod Shank
+    tris += box(-2.5, 2.5, 0.0, 30.0, -2.0, 2.0)
+    # End Eyelet 1 (Servo Horn Side: Y=0)
+    tris += hollow_cylinder_z(0.0, 0.0, -2.0, 2.0, 4.5, M2_HOLE_R, segments=16)
+    # End Eyelet 2 (Head Clevis Side: Y=30)
+    tris += hollow_cylinder_z(0.0, 30.0, -2.0, 2.0, 4.5, M2_HOLE_R, segments=16)
     return tris
 
 # ---------------------------------------------------------------------------
-# 4. Head Visor Assembly (300 x 190 x 45 mm Seamless Supercar Visor & Rear Dome)
+# 5. Head Visor Assembly with Dual Hinge Clevis & Internal Pushrod Horn
 # ---------------------------------------------------------------------------
 
 def build_head_window_half() -> List[Triangle]:
     """
-    Exotic Head Front Visor: X: [-150..150] (300mm), Z: [0..190] (190mm), Y: [0..22.5] (22.5mm)
-    Features 100% continuous, flush, smooth bezel meeting the rear cover seamlessly at Y=0.
-    All mounting bosses are completely INTERNAL.
+    Exotic Head Front Visor: X: [-150..150], Z: [0..190], Y: [0..22.5]
+    Features:
+    - Seamless Bezel meeting the rear dome at Y=0
+    - Dual-Shear Hinge Clevis Brackets at X=+/-40mm, Z=0 (Ø3.0mm Stainless Steel Pin Bores)
+    - Internal M2 Pushrod Actuation Horn
     """
     tris = []
     W = WALL_HEAD
 
-    # Front Visor Frame lofted forward along +Y (Y = 0 -> 22.5mm)
-    # At Y=0, matches the EXACT rectangular filleted contour as the rear half!
     outer_layers = [
-        (0.0,  filleted_rect_xz(-150.0, 150.0, 0.0, 190.0, r=25.0, n_per_corner=8)), # Seamless Seam Interface
+        (0.0,  filleted_rect_xz(-150.0, 150.0, 0.0, 190.0, r=25.0, n_per_corner=8)),
         (12.0, filleted_rect_xz(-148.0, 148.0, 2.0, 188.0, r=24.0, n_per_corner=8)),
-        (22.5, filleted_rect_xz(-145.0, 145.0, 4.0, 186.0, r=22.0, n_per_corner=8)), # Front Bezel Face
+        (22.5, filleted_rect_xz(-145.0, 145.0, 4.0, 186.0, r=22.0, n_per_corner=8)),
     ]
     tris += loft_contours_y(outer_layers, cap_back=True, cap_front=True)
 
-    # Top Center Integrated Camera Nacelle (At X=0, Z=175mm, facing +Y)
+    # Integrated HD Camera Aperture (At X=0, Z=175mm)
     tris += hollow_cylinder_y(0.0, 175.0, 15.0, 22.5, 8.0, 4.0, segments=20)
 
-    # Bottom Hinge Mounting Ears (At X=+/-40mm, Z=-15..0mm, mating with Neck Hinge Axis)
+    # Dual-Shear Hinge Clevis Brackets (At X=+/-40mm, Z=0)
     for hx in [-HINGE_X, HINGE_X]:
-        tris += box(hx - 5.0, hx + 5.0, -8.0, 8.0, -15.0, 5.0)
-        tris += hollow_cylinder_z(hx, 0.0, -15.0, 5.0, 8.0, BEARING_608_ID_R, segments=20)
+        # Clevis ear wrapping around the hinge axle
+        tris += box(hx - 6.0, hx + 6.0, -10.0, 10.0, -14.0, 4.0)
+        # Ø3.1mm Pin Bore
+        tris += hollow_cylinder_y(hx, 0.0, -10.0, 10.0, HINGE_BOSS_R, HINGE_PIN_R, segments=20)
 
-    # INTERNAL Perimeter M3 Assembly Bosses (Invisible from outside)
-    posts = [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
-             (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]
-    for px, pz in posts:
+    # Internal Pushrod Driving Horn (At X=18mm, Z=-12mm)
+    tris += box(14.0, 22.0, -5.0, 5.0, -15.0, 0.0)
+    tris += hollow_cylinder_y(18.0, -12.0, -5.0, 5.0, 3.5, M2_HOLE_R, segments=16)
+
+    # Internal M3 Assembly Bosses
+    for px, pz in [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
+                   (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]:
         tris += hollow_cylinder_y(px, pz, 2.0, 18.0, 3.5, M3_INSERT_R, segments=12)
 
     return tris
@@ -532,31 +584,25 @@ def build_head_window_half() -> List[Triangle]:
 def build_head_cover_half() -> List[Triangle]:
     """
     Exotic Head Rear Aero Dome: X: [-150..150], Z: [0..190], Y: [-22.5..0]
-    Features 100% continuous, flush, smooth bezel meeting the front visor seamlessly at Y=0.
-    All mounting bosses are completely INTERNAL.
+    Features 3D aerodynamic cooling diffusers and internal M3 screw posts.
     """
     tris = []
     W = WALL_HEAD
 
-    # 3D Aerodynamic Dome lofted backward along -Y (Y = 0 -> -22.5mm)
-    # At Y=0, matches the EXACT rectangular filleted contour as the front visor!
     outer_layers = [
-        (0.0,   filleted_rect_xz(-150.0, 150.0, 0.0, 190.0, r=25.0, n_per_corner=8)), # Seamless Seam Interface
+        (0.0,   filleted_rect_xz(-150.0, 150.0, 0.0, 190.0, r=25.0, n_per_corner=8)),
         (-8.0,  filleted_rect_xz(-146.0, 146.0, 4.0, 186.0, r=26.0, n_per_corner=8)),
         (-16.0, filleted_rect_xz(-135.0, 135.0, 12.0, 178.0, r=28.0, n_per_corner=8)),
         (-21.0, filleted_rect_xz(-110.0, 110.0, 25.0, 165.0, r=30.0, n_per_corner=8)),
-        (-22.5, filleted_rect_xz(-70.0,   70.0, 45.0, 145.0, r=25.0, n_per_corner=8)), # Aero Apex
+        (-22.5, filleted_rect_xz(-70.0,   70.0, 45.0, 145.0, r=25.0, n_per_corner=8)),
     ]
     tris += loft_contours_y(outer_layers, cap_back=True, cap_front=True)
 
-    # Rear Aero Diffuser Louvers / Cooling Gills
     for louver_z in range(60, 135, 15):
         tris += box(-45.0, 45.0, -22.0, -19.0, float(louver_z), float(louver_z + 6))
 
-    # INTERNAL Perimeter M3 Screw Bosses (Invisible from outside)
-    posts = [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
-             (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]
-    for px, pz in posts:
+    for px, pz in [(-135.0, 20.0), (135.0, 20.0), (-135.0, 170.0), (135.0, 170.0),
+                   (-135.0, 95.0), (135.0, 95.0), (0.0, 15.0), (0.0, 175.0)]:
         tris += hollow_cylinder_y(px, pz, -18.0, -2.0, 3.5, M3_HOLE_R, segments=12)
 
     return tris
@@ -568,8 +614,8 @@ def build_head_cover_half() -> List[Triangle]:
 def generate_all_production_cad(out_dir: str):
     os.makedirs(out_dir, exist_ok=True)
     print("=" * 75)
-    print("🚀 Karma Seamless Exotic Cyber-Industrial CAD Generation Suite")
-    print(f"📦 Target Output Directory: {os.path.abspath(out_dir)}")
+    print("🚀 Karma Physical 3D-Printable CAD Suite with MG90S Mechanism")
+    print(f"📦 Output Directory: {os.path.abspath(out_dir)}")
     print("=" * 75)
 
     generators = [
@@ -579,7 +625,9 @@ def generate_all_production_cad(out_dir: str):
         ("Column Back Spine",        "column_back.stl",       build_column_back),
         ("Neck Front Cowling",       "neck_front.stl",        build_neck_front),
         ("Neck Back Cowling",        "neck_back.stl",         build_neck_back),
-        ("Steering Horn Linkage",    "steering_arm.stl",      build_steering_arm),
+        ("MG90S Micro Servo",        "mg90s_servo.stl",       build_mg90s_servo),
+        ("MG90S 21T Servo Horn",     "servo_horn.stl",        build_servo_horn),
+        ("Articulated Pushrod",      "steering_arm.stl",      build_steering_arm),
         ("Head Display Front Visor", "head_window_half.stl",  build_head_window_half),
         ("Head Rear Aero Dome",      "head_cover_half.stl",   build_head_cover_half),
     ]
@@ -592,7 +640,7 @@ def generate_all_production_cad(out_dir: str):
         total_tris += len(tris)
 
     print("=" * 75)
-    print(f"✨ Successfully generated all 9 seamless exotic STLs! Total triangles: {total_tris:,}")
+    print(f"✨ Successfully generated all {len(generators)} Production STLs! Total triangles: {total_tris:,}")
     print("=" * 75)
 
 if __name__ == "__main__":
