@@ -603,18 +603,18 @@ const CLEVIS_HX = 18.0;  // same X as servo
 const CLEVIS_HY = 0.0;
 const CLEVIS_HZ = -12.0; // 12mm below the pivot = behind the pivot in Z-local
 
-// Parts definition
+// Parts definition (All in Pure White / Satin Off-White)
 const PARTS = [
-  { name: 'Base Front Chassis',    file: 'base_front.stl',    color: 0x1e2536, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,100,0],  mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~480 g', hardware: '8x M4 Inserts, 4x M3 Inserts' },
-  { name: 'Base Back Chassis',     file: 'base_back.stl',     color: 0x141a28, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,-100,0], mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~420 g', hardware: 'DC Power Port, Rocker Switch' },
-  { name: 'Column Front Torso',    file: 'column_front.stl',  color: 0x2b384e, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,80,0],   mat: 'PETG / ABS',             infill: '25% Gyroid',     weight: '~560 g', hardware: '2x 40mm Speakers, Mic' },
-  { name: 'Column Back Spine',     file: 'column_back.stl',   color: 0x1c2534, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,-80,0],  mat: 'PETG / ABS',             infill: '25% Gyroid',     weight: '~540 g', hardware: 'Cooling Louvers, M4 Bolts' },
-  { name: 'Neck Front Cowling',    file: 'neck_front.stl',    color: 0x3a506e, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,55,30],  mat: 'PETG / PLA-CF',          infill: '40% Gyroid',     weight: '~160 g', hardware: 'MG90S Cradle, 2x M2 Posts' },
-  { name: 'Neck Back Cowling',     file: 'neck_back.stl',     color: 0x25344d, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,-55,30], mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~110 g', hardware: '4x M4 Bolts, Wire Exit Grommet' },
-  { name: 'MG90S Micro Servo',     file: 'mg90s_servo.stl',   color: 0x1d4ed8, group: 'Actuation Mechanism', type: 'neck-child', lPos: [6.6, 8.9, 10],   explodeDir: [0,35,25],  mat: 'Polycarbonate + Metal Gears', infill: 'Injection Molded', weight: '13.4 g', hardware: '2x M2 Mounting Screws' },
-  { name: 'MG90S 21T Servo Horn',  file: 'servo_horn.stl',    color: 0xf5f5f0, group: 'Actuation Mechanism', type: 'horn',  lPos: [SPLINE_LX, SPLINE_LY, SPLINE_LZ], explodeDir: [30,0,15], mat: 'Nylon / Carbon Fiber', infill: '100% Solid', weight: '~1.5 g', hardware: '21T Spline, M2 Linkage Eyelet' },
-  { name: 'Head Display Front Visor', file: 'head_window_half.stl', color: 0x0c121e, group: 'Head Assembly', type: 'head-child', lPos: [0,0,0], explodeDir: [0,65,65], mat: 'PETG / Polycarbonate', infill: '25% Gyroid', weight: '~280 g', hardware: 'Dual Hinge Clevis, 7" Display' },
-  { name: 'Head Rear Aero Dome',   file: 'head_cover_half.stl', color: 0xdde3ea, group: 'Head Assembly',   type: 'head-child', lPos: [0,0,0], explodeDir: [0,-65,65], mat: 'PETG / ABS', infill: '20% Gyroid', weight: '~210 g', hardware: '8x M3 Perimeter Bolts' },
+  { name: 'Base Front Chassis',       file: 'base_front.stl',       color: 0xffffff, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,100,0],  mat: 'White PETG / ABS',        infill: '30% Gyroid',     weight: '~480 g', hardware: '8x M4 Inserts, 4x M3 Inserts' },
+  { name: 'Base Back Chassis',        file: 'base_back.stl',        color: 0xf8fafc, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,-100,0], mat: 'White PETG / ABS',        infill: '30% Gyroid',     weight: '~420 g', hardware: 'DC Power Port, Rocker Switch' },
+  { name: 'Column Front Torso',       file: 'column_front.stl',     color: 0xffffff, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,80,0],   mat: 'White PETG / ABS',        infill: '25% Gyroid',     weight: '~560 g', hardware: 'RPi 4, USB Cutouts, Speakers' },
+  { name: 'Column Back Spine',        file: 'column_back.stl',      color: 0xf8fafc, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,-80,0],  mat: 'White PETG / ABS',        infill: '25% Gyroid',     weight: '~540 g', hardware: 'Cooling Louvers, M4 Bolts' },
+  { name: 'Neck Front Cowling',       file: 'neck_front.stl',       color: 0xffffff, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,55,30],  mat: 'White PETG / PLA-CF',     infill: '40% Gyroid',     weight: '~160 g', hardware: 'MG90S Cradle, 2x M2 Posts' },
+  { name: 'Neck Back Cowling',        file: 'neck_back.stl',        color: 0xf8fafc, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,-55,30], mat: 'White PETG / ABS',        infill: '30% Gyroid',     weight: '~110 g', hardware: '4x M4 Bolts, Wire Exit Conduit' },
+  { name: 'MG90S Micro Servo',        file: 'mg90s_servo.stl',      color: 0xf1f5f9, group: 'Actuation Mechanism', type: 'neck-child', lPos: [6.6, 8.9, 10],   explodeDir: [0,35,25],  mat: 'White Polycarbonate + Gears', infill: 'Injection Molded', weight: '13.4 g', hardware: '2x M2 Mounting Screws' },
+  { name: 'MG90S 21T Servo Horn',     file: 'servo_horn.stl',       color: 0xffffff, group: 'Actuation Mechanism', type: 'horn',  lPos: [SPLINE_LX, SPLINE_LY, SPLINE_LZ], explodeDir: [30,0,15], mat: 'White Nylon / Carbon', infill: '100% Solid', weight: '~1.5 g', hardware: '21T Spline, M2 Linkage Eyelet' },
+  { name: 'Head Display Front Visor', file: 'head_window_half.stl', color: 0xffffff, group: 'Head Assembly',      type: 'head-child', lPos: [0,0,0], explodeDir: [0,65,65], mat: 'White PETG / Polycarbonate', infill: '25% Gyroid', weight: '~280 g', hardware: '7" Display Frame, Camera Aperture' },
+  { name: 'Head Rear Aero Dome',      file: 'head_cover_half.stl',  color: 0xf8fafc, group: 'Head Assembly',      type: 'head-child', lPos: [0,0,0], explodeDir: [0,-65,65], mat: 'White PETG / ABS', infill: '20% Gyroid', weight: '~210 g', hardware: '8x M3 Perimeter Bolts' },
 ];
 
 // --- Scene ---
@@ -625,12 +625,12 @@ renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
+renderer.toneMappingExposure = 1.25;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05070b);
-scene.fog = new THREE.FogExp2(0x05070b, 0.00055);
+scene.background = new THREE.Color(0x06080d);
+scene.fog = new THREE.FogExp2(0x06080d, 0.00045);
 
 const camera = new THREE.PerspectiveCamera(42, wrap.clientWidth / wrap.clientHeight, 5, 8000);
 camera.up.set(0, 0, 1);
@@ -644,18 +644,18 @@ controls.maxDistance = 4000;
 controls.target.set(15, 5, 755);
 controls.update();
 
-// Lighting
-scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+// Lighting (Optimized for Pure White Ceramic Materials)
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
 keyLight.position.set(600, -900, 1400);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
-const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.9);
+const fillLight = new THREE.DirectionalLight(0xe0f2fe, 0.85);
 fillLight.position.set(-700, 600, 800);
 scene.add(fillLight);
-const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.6);
+const rimLight = new THREE.DirectionalLight(0xf8fafc, 1.3);
 rimLight.position.set(0, 1000, 600);
 scene.add(rimLight);
 
@@ -697,8 +697,7 @@ for (const hx of [-40, 40]) {
   const pinGeo = new THREE.CylinderGeometry(1.5, 1.5, 50, 20);
   pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
   const pinMesh = new THREE.Mesh(pinGeo,
-    new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.12, metalness: 0.96 }));
-  // In neckGroup local space, hinge pin is at X=hx, Y=0, Z=HINGE_LOCAL_Z=50
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.15, metalness: 0.90 }));
   pinMesh.position.set(hx, 0, HINGE_LOCAL_Z);
   neckGroup.add(pinMesh);
 }
@@ -706,20 +705,19 @@ for (const hx of [-40, 40]) {
 // === Horn tip and Head clevis marker spheres (for debugging attachment points) ===
 const hornTipMarker = new THREE.Mesh(
   new THREE.SphereGeometry(2.5, 10, 10),
-  new THREE.MeshStandardMaterial({ color: 0xffff00, roughness: 0.3, metalness: 0.1 })
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 })
 );
 scene.add(hornTipMarker);
 
 const clevisMarker = new THREE.Mesh(
   new THREE.SphereGeometry(2.5, 10, 10),
-  new THREE.MeshStandardMaterial({ color: 0xff4400, roughness: 0.3, metalness: 0.1 })
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 })
 );
 scene.add(clevisMarker);
 
 // === Procedural pushrod (rebuilt every frame) ===
-// We use a CylinderGeometry but replace it each update with correct length & orientation
 let pushrodMesh = null;
-const pushrodMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.12, metalness: 0.92 });
+const pushrodMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.20, metalness: 0.75 });
 
 function buildPushrod(pA, pB) {
   if (pushrodMesh) { scene.remove(pushrodMesh); pushrodMesh.geometry.dispose(); }
@@ -727,9 +725,7 @@ function buildPushrod(pA, pB) {
   if (len < 1) return;
   const geo = new THREE.CylinderGeometry(1.5, 1.5, len, 10);
   pushrodMesh = new THREE.Mesh(geo, pushrodMat);
-  // Position at midpoint
   pushrodMesh.position.copy(pA).lerp(pB, 0.5);
-  // Orient along the vector from A to B (cylinder default axis is +Y)
   pushrodMesh.quaternion.setFromUnitVectors(
     new THREE.Vector3(0, 1, 0),
     pB.clone().sub(pA).normalize()
@@ -740,11 +736,11 @@ function buildPushrod(pA, pB) {
 // === Ball-joint end caps on pushrod ===
 const hornEyeletSphere = new THREE.Mesh(
   new THREE.SphereGeometry(2.8, 10, 10),
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 })
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.6 })
 );
 const clevisEyeletSphere = new THREE.Mesh(
   new THREE.SphereGeometry(2.8, 10, 10),
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 })
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.6 })
 );
 scene.add(hornEyeletSphere);
 scene.add(clevisEyeletSphere);
@@ -760,16 +756,12 @@ let pitchAngle   = 90;
 let isAnimating  = false;
 
 function makeMat(p) {
-  if (p.name.includes('Visor') || p.name.includes('Window')) {
-    return new THREE.MeshPhysicalMaterial({ color: 0x080e1a, metalness: 0.7, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide });
-  }
-  if (p.name.includes('Servo')) {
-    return new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.25, metalness: 0.15, side: THREE.DoubleSide });
-  }
-  if (p.name.includes('Horn')) {
-    return new THREE.MeshStandardMaterial({ color: 0xf5f5f0, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
-  }
-  return new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.35, metalness: 0.42, side: THREE.DoubleSide });
+  return new THREE.MeshStandardMaterial({
+    color: p.color || 0xffffff,
+    roughness: 0.30,
+    metalness: 0.08,
+    side: THREE.DoubleSide
+  });
 }
 
 function updateLoadingUI(pct, text) {
