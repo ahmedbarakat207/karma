@@ -402,67 +402,92 @@ def build_column_back() -> List[Triangle]:
 def build_neck_front() -> List[Triangle]:
     """
     Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..46] (World Z: 700..746)
-    Outer shell STOPS at Z=46 (4mm below hinge pin center at Z=50).
-    This gives the dual-shear head clevis full clearance to wrap around
-    the Ø11mm pillow block at Z=50 without the shell blocking it.
-    The pillow blocks (Z=0..50) protrude above the shell top by 4mm.
+
+    CLEARANCE ARC: The upper-front portion of the shell is progressively scooped
+    out to create a free-tilt opening for the head display (90° to 135° ROM).
+
+    Sweep geometry (neck local space, pivot at Y=0, Z=50):
+      At 45° tilt, the head bottom-front corner sweeps to (Y=+9.9, Z=40.1).
+      The opening from Z=28 to Z=46 reduces Y_max from 45mm down to 8mm,
+      giving the head’s bottom face a clear passage through the neck front.
+
+    Shell layers:
+      Z=0  -> full depth  Y_max=45  (base, full front face)
+      Z=14 -> full depth  Y_max=45
+      Z=28 -> start taper Y_max=38  (opening begins)
+      Z=38 -> mid taper   Y_max=20
+      Z=46 -> open        Y_max=8   (head swings freely above this)
+
     Features:
-    - Dedicated MG90S Micro Servo Mounting Bay with M2 mounting screw posts
-    - Dual Hinge Pin Pillow Blocks with Ø3.0mm stainless steel pin bores (at X=+/-40mm, Z=50mm)
-    - Top arc clearance slot for pushrod linkage travel (90° to 135° ROM)
+    - MG90S Micro Servo Mounting Bay with M2 screw bosses
+    - Dual Hinge Pin Pillow Blocks (Ø11mm, Ø3.1mm bore) at X=±40, Z=50
+    - Progressive arc clearance slot for 45° head tilt ROM
     """
     tris = []
     W = WALL_NECK
-    SHELL_TOP = 46.0   # Shell stops 4mm below hinge pin — clevis slides over pillow block above
+    SHELL_TOP = 46.0
 
+    # Progressive front-depth loft — Y_max reduces at top to carve arc clearance
     outer_layers = [
-        (0.0,      half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (SHELL_TOP / 2, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (SHELL_TOP,    half_contour_front(-76.0, 76.0, 0.0, 42.0, chamfer_front=16.0, n_per_seg=6)),
+        (0.0,  half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (14.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (28.0, half_contour_front(-78.0, 78.0, 0.0, 38.0, chamfer_front=14.0, n_per_seg=6)),
+        (38.0, half_contour_front(-76.0, 76.0, 0.0, 20.0, chamfer_front=8.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_front(-74.0, 74.0, 0.0, 8.0, chamfer_front=4.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Dual Hinge Pin Pillow Blocks (At X=+/-40mm, Z=50mm)
-    # These protrude 4mm above the shell top so the head clevis can grip them
+    # Dual Hinge Pin Pillow Blocks — protrude 4mm above shell into open arc space
     for bx in [-HINGE_X, HINGE_X]:
         tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 45.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
         tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, 0.0, 45.0, 20.0, HINGE_Z)
 
-    # MG90S Micro Servo Mounting Cradle (Positioned at X=0..25mm, Y=8..21mm, Z=10..33mm)
+    # MG90S Micro Servo Mounting Cradle (X=6..30mm, Y=8..21mm, Z=10..33mm)
     servo_cx, servo_cy, servo_cz = 18.0, 15.0, 22.0
-    # Servo cradle support walls
     tris += box(servo_cx - MG90S_L/2.0 - 2.0, servo_cx + MG90S_L/2.0 + 2.0,
                 servo_cy - MG90S_W/2.0 - 2.0, servo_cy + MG90S_W/2.0 + 2.0,
                 W, servo_cz + 8.0)
-    # M2 Servo Mounting Screw Bosses (28mm pitch)
     for m2_x in [servo_cx - MG90S_HOLE_DIST/2.0, servo_cx + MG90S_HOLE_DIST/2.0]:
         tris += hollow_cylinder_z(m2_x, servo_cy, W, servo_cz + 8.0, 3.2, M2_INSERT_R, segments=12)
 
-    # Base attachment bolt holes
+    # Base attachment M4 bosses
     for fx in [-55.0, 55.0]:
         tris += mounting_boss_m4(fx, 25.0, W, W + 15.0, is_insert=False)
 
     return tris
 
 
+
 def build_neck_back() -> List[Triangle]:
     """
     Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..46]
-    Shell stops at Z=46 (matching front) so hinge pillow blocks protrude
-    above the shell for clevis clearance. Wire exit conduit at base.
+
+    Matching clearance arc on the back half: as the head tilts forward,
+    the back bottom corner of the head (head local Y=-22.5) moves backward
+    (toward -Y neck) and up. The back shell is tapered identically to prevent
+    the head rear dome from clipping the back cowling at any tilt angle.
+
+    Shell layers:
+      Z=0  -> full depth  Y_min=-45
+      Z=14 -> full depth  Y_min=-45
+      Z=28 -> taper start Y_min=-32
+      Z=38 -> mid taper   Y_min=-18
+      Z=46 -> open        Y_min=-8
     """
     tris = []
     W = WALL_NECK
     SHELL_TOP = 46.0
 
     outer_layers = [
-        (0.0,      half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (SHELL_TOP / 2, half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (SHELL_TOP,    half_contour_back(-76.0, 76.0, -42.0, 0.0, chamfer_back=16.0, n_per_seg=6)),
+        (0.0,  half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (14.0, half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (28.0, half_contour_back(-78.0, 78.0, -32.0, 0.0, chamfer_back=12.0, n_per_seg=6)),
+        (38.0, half_contour_back(-76.0, 76.0, -18.0, 0.0, chamfer_back=7.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_back(-74.0, 74.0, -8.0, 0.0, chamfer_back=3.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Rear Hinge Pin Support Bosses (protrude 4mm above shell)
+    # Rear Hinge Pin Bosses (protrude above shell into arc space)
     for bx in [-HINGE_X, HINGE_X]:
         tris += hollow_cylinder_y(bx, HINGE_Z, -45.0, 0.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
         tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, -45.0, 0.0, 20.0, HINGE_Z)
