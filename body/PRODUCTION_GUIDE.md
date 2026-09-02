@@ -1,164 +1,158 @@
-# Karma Robot — Production & 3D Printing Manufacturing Guide
+# Karma Robot — Production & Hardware Assembly Guide
 
-An end-to-end industrial manufacturing, 3D printing, hardware assembly, and Bill of Materials (BOM) manual for the **Karma Autonomous Multimodal AI Companion Robot**.
-
----
-
-## 1. Executive Summary & Robot Mechanical Specifications
-
-| Parameter | Specification | Details / Notes |
-| :--- | :--- | :--- |
-| **Total Height** | **940 mm** (~37.0 inches) | From base floor to top of head assembly |
-| **Total Width** | **320 mm** (Base) / **300 mm** (Head) | Broad stability footprint |
-| **Total Depth** | **400 mm** (Base) / **210 mm** (Column) | Weighted anti-tip geometry |
-| **Total Weight (Assembled)** | **~4.8 kg – 5.5 kg** | Including compute, 12V battery, screen & hardware |
-| **Neck Actuation (Pitch DOF)**| **90° to 135° Range of Motion** | 90° (horizontal eye-level) to 135° (looking 45° down at desk) |
-| **Actuator** | **20kg–25kg Digital Metal-Gear Servo** | Standard form factor (40.5 × 20.2 × 40.0 mm) |
-| **Pivot Bearings** | **Dual 608ZZ Ball Bearings** | 8 mm ID × 22 mm OD × 7 mm Width |
-| **Display** | **7.0" to 10.1" IPS Touchscreen** | HDMI / DSI interface (e.g. Waveshare IPS capacitive) |
-| **Perception Vision** | **120° Wide-Angle HD Camera** | Top bezel mount for YOLOv8 object & face tracking |
-| **Acoustic Audio** | **Dual 4Ω 5W 40mm/50mm Stereo Speakers** | Sealed internal acoustic chambers with forward grilles |
-| **Compute Compatibility** | **Raspberry Pi 5 / Jetson Orin / Mini PC** | Universal 58×49mm & 100×100mm mounting sled in base |
+An end-to-end industrial manufacturing, 3D printing, hardware assembly, and wiring manual for the **Karma Autonomous Mobile AI Companion Robot**, fully tailored to the exact components specified in `PARTS.MD`.
 
 ---
 
-## 2. Complete Bill of Materials (BOM)
+## 1. Complete Bill of Materials (BOM) & Component Mapping
 
-### A. 3D Printed Structural Components (9 Parts)
-
-| Part Name | STL File | Recommended Material | Walls / Perimeters | Infill Density | Est. Weight |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Base Front Chassis** | `body/base_front.stl` | PETG / ABS / PLA+ | 5 walls (2.0 mm) | 30% Gyroid | ~480 g |
-| **Base Back Chassis** | `body/base_back.stl` | PETG / ABS / PLA+ | 5 walls (2.0 mm) | 30% Gyroid | ~420 g |
-| **Column Front Torso** | `body/column_front.stl` | PETG / ABS / PLA+ | 4 walls (1.6 mm) | 25% Gyroid | ~560 g |
-| **Column Back Spine** | `body/column_back.stl` | PETG / ABS / PLA+ | 4 walls (1.6 mm) | 25% Gyroid | ~540 g |
-| **Neck Front Actuation** | `body/neck_front.stl` | PETG / ABS-GF / PLA-CF | 6 walls (2.4 mm) | 40% Gyroid | ~160 g |
-| **Neck Back Enclosure** | `body/neck_back.stl` | PETG / ABS / PLA+ | 4 walls (1.6 mm) | 30% Gyroid | ~110 g |
-| **Steering Horn Linkage** | `body/steering_arm.stl` | PETG / Nylon / PLA-CF | 8 walls (Solid) | 100% Rectilinear | ~25 g |
-| **Head Display Front Bezel**| `body/head_window_half.stl`| PETG / ABS / PLA+ | 4 walls (1.6 mm) | 25% Gyroid | ~280 g |
-| **Head Rear Cover** | `body/head_cover_half.stl` | PETG / ABS / PLA+ | 4 walls (1.6 mm) | 20% Gyroid | ~210 g |
-| **TOTAL FILAMENT** | — | — | — | — | **~2.78 kg** |
-
----
-
-### B. Standard Fasteners & Mechanical Hardware
-
-| Item | Specification | Qty | Purpose |
-| :--- | :--- | :--- | :--- |
-| **M4 Heat-Set Brass Inserts** | M4 × 6.0 mm OD × 8.0 mm Length | 24 | Base seam, Column flanges, Neck attachment |
-| **M3 Heat-Set Brass Inserts** | M3 × 4.2 mm OD × 5.5 mm Length | 28 | Head bezel, Camera PCB, Compute sled, Servo mount |
-| **M4 × 16 mm Socket Head Screws**| M4 × 16 mm Stainless Steel 304 | 16 | Base-to-Column & Column-to-Neck attachment |
-| **M4 × 25 mm Button Head Screws**| M4 × 25 mm Stainless Steel 304 | 8 | Base & Column longitudinal seam clamping |
-| **M3 × 12 mm Button Head Screws**| M3 × 12 mm Stainless Steel 304 | 16 | Head perimeter assembly & screen brackets |
-| **M3 × 8 mm Socket Head Screws** | M3 × 8 mm Stainless Steel 304 | 8 | Servo mounting ears & Camera PCB |
-| **608ZZ Ball Bearings** | 8 mm ID × 22 mm OD × 7 mm Width | 2 | Neck pivot dual bearing suspension |
-| **Steel Hinge Dowel Pin / Axle** | Ø8.0 mm × 95.0 mm Polished Steel | 1 | Head pitch rotation axle |
-| **M3 Ball-Joint Linkage End** | M3 Rod End Ball Link (Metal) | 1 | Servo pushrod to head bracket |
-| **Rubber Anti-Slip Feet** | Ø20 mm × 5 mm Adhesive Rubber Pad | 4 | Base bottom vibration isolation & stability |
+| Component | Part Model / Spec | Qty | Target 3D Shell | Mounting Method | Hardware Fasteners |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **Main Compute SBC** | Raspberry Pi 4 (4GB RAM) | 1 | `column_front.stl` | 4x M2.5 standoff bosses ($58\times 49\text{ mm}$ pitch) | 4x M2.5 $\times 6\text{ mm}$ screws + heat-set inserts |
+| **Drive Motors** | 5840-31ZY Worm DC Gear Motor 12V 60RPM | 2 | `base_front.stl` | Left & Right motor bays with steel L-brackets | 8x M3 $\times 8\text{ mm}$ screws + heat-set inserts |
+| **Motor Drivers** | BTS7960 43A High-Power H-Bridge | 2 | `base_back.stl` | 4x M3 standoff bosses ($44\times 44\text{ mm}$ pitch) | 8x M3 $\times 6\text{ mm}$ screws + heat-set inserts |
+| **Display Screen** | 7" 800x480 Capacitive Touch LCD | 1 | `head_window_half.stl` | Beveled bezel frame + 4x M3 corner standoffs | 4x M3 $\times 8\text{ mm}$ screws + heat-set inserts |
+| **Vision Camera** | Raspberry Pi Camera Module v2 | 1 | `head_window_half.stl` | $\varnothing 8\text{ mm}$ optical aperture + 4x M2 standoffs | 4x M2 $\times 6\text{ mm}$ screws + heat-set inserts |
+| **Pitch Actuator** | TowerPro MG90S Metal-Gear Micro Servo | 1 | `neck_front.stl` | Precision molded cradle + M2 mounting ears | 2x M2 $\times 8\text{ mm}$ screws + heat-set inserts |
+| **Drive Wheels** | 65mm $\times$ 26mm Rubber Tires | 2 | Base Flanks (Outer) | $\varnothing 8\text{ mm}$ brass hex coupling on motor D-shaft | M4 set screws on coupling |
+| **Caster Wheels** | 30mm Free-Moving Nylon Ball Casters | 2 | Base Floor (Front/Rear) | Underside 4x M3 mounting boss patterns | 8x M3 $\times 8\text{ mm}$ screws + heat-set inserts |
+| **Main Battery** | 12V 9Ah Rechargeable Li-ion Pack + BMS | 1 | `base_front` / `base_back` | Lower floor retaining cradle ($151\times 65\text{ mm}$) | Friction-fit + Velcro tie-down strap |
+| **Buck Converter** | 12V to 5V Step-Down DC-DC Converter | 1 | `base_back.stl` | 2x M3 mounting standoffs | 2x M3 $\times 6\text{ mm}$ screws + heat-set inserts |
+| **DC Charge Port** | 5.5mm $\times$ 2.1mm DC Power Jack Socket | 1 | `base_back.stl` | $\varnothing 11.5\text{ mm}$ threaded barrel panel cutout | Outer hex retaining nut |
+| **Power Switch** | 20mm $\times$ 13mm Rocker Power Switch | 1 | `base_back.stl` | $20\times 13\text{ mm}$ snap-in rectangular cutout | Snap-fit retaining clips |
+| **Hinge Axles** | Hardened Stainless Steel Dowel Pins | 2 | `neck` $\leftrightarrow$ `head` | Dual-shear hinge lugs ($X = \pm 40\text{ mm}$) | $\varnothing 3.0\text{ mm} \times 20\text{ mm}$ dowel pins |
+| **Pitch Linkage** | 35mm Articulated Turnbuckle Pushrod | 1 | `servo_horn` $\leftrightarrow$ `head` | M2 eyelets on servo horn & head bracket | 2x M2 shoulder screws + nylon locknuts |
 
 ---
 
-### C. Electronics & Multimodal Hardware
+## 2. 3D Printable Production Parts (11 STLs)
 
-| Component | Recommended Model | Voltage / Current | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Main Compute SBC** | Raspberry Pi 5 (8GB) / Jetson Orin Nano / Mini PC | 5V 5A (USB-C) / 19V DC | Runs YOLO, Whisper, Kokoro TTS & Karma Mind |
-| **Pitch Servo Motor** | DS3218 (20kg.cm) / DSS-M15S / MG996R | 6.0V – 7.4V @ 2.5A peak | Direct-drive head tilt pitch actuation |
-| **Display Screen** | Waveshare 7.0" or 10.1" IPS Capacitive Touch | 5V 1A (HDMI + USB) | Multimodal animated eye UI & visual feedback |
-| **Vision Camera** | Wide-Angle 120° FOV USB Camera / Pi Camera v3 | 5V 0.5A (USB / MIPI CSI) | YOLOv8 object detection, face and gaze tracking |
-| **Audio Speakers** | Dual 40mm / 50mm 4Ω 5W Full-Range Drivers | 5V Audio Amp (PAM8403 / MAX98357A) | Kokoro-82M speech output |
-| **Microphone** | ReSpeaker USB Mic Array / Mini USB Condenser | 5V 0.2A (USB) | Silero VAD & Whisper STT speech recognition |
-| **Power Supply / Battery** | 12V 5A AC-DC Adapter OR 12V 6000mAh LiFePO4 | 12V DC input | Main robot power rail |
-| **Buck Converter (Step-Down)**| 12V to 5V 5A High-Efficiency DC-DC (LM2596 / XL4015) | 5V 5A output | Clean power for Compute, Display, Servo & Audio |
+All 11 production STLs are generated by [`body/generate_robot_cad.py`](file:///Users/ahmed/karma/body/generate_robot_cad.py):
+
+| STL File | Part Description | Recommended Filament | Infill Density | Walls | Est. Print Time |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| `body/base_front.stl` | Front Drive Chassis & Motor Bays | PETG / ABS / PLA+ | 30% Gyroid | 5 | ~10 hrs |
+| `body/base_back.stl` | Rear Electronics Bay & Driver Mounts | PETG / ABS / PLA+ | 30% Gyroid | 5 | ~9 hrs |
+| `body/column_front.stl` | Front Torso with Pi 4 I/O Cutouts & Speakers | PETG / ABS / PLA+ | 25% Gyroid | 4 | ~12 hrs |
+| `body/column_back.stl` | Rear Spine with Cooling Louvers | PETG / ABS / PLA+ | 25% Gyroid | 4 | ~11 hrs |
+| `body/neck_front.stl` | Neck Front Cowl with MG90S Servo Cradle | PETG / ABS / PLA-CF | 40% Gyroid | 5 | ~4 hrs |
+| `body/neck_back.stl` | Neck Back Cowl with Wire Conduit | PETG / ABS / PLA+ | 30% Gyroid | 4 | ~3 hrs |
+| `body/mg90s_servo.stl` | Exact Hardware Model (Reference/Fitting) | PLA (Demo) | 20% Grid | 3 | ~30 mins |
+| `body/servo_horn.stl` | 21T Spline Single-Arm Actuation Horn | PETG / Nylon / PLA-CF | 100% Solid | 6 | ~15 mins |
+| `body/steering_arm.stl` | 35mm Articulated Turnbuckle Pushrod | PETG / Nylon / PLA-CF | 100% Solid | 6 | ~15 mins |
+| `body/head_window_half.stl`| 7" LCD Bezel Frame & Camera Mount | PETG / ABS / PLA+ | 25% Gyroid | 4 | ~8 hrs |
+| `body/head_cover_half.stl` | Rear Aero Dome with Ventilation Louvers | PETG / ABS / PLA+ | 20% Gyroid | 4 | ~6 hrs |
 
 ---
 
-## 3. Slicing & 3D Printing Production Parameters
+## 3. Step-by-Step Hardware Assembly Manual
 
-### Recommended Slicers:
-- **Bambu Studio / OrcaSlicer / PrusaSlicer / Cura**
+### Step 1: Base Chassis & Drive Train Assembly
+1. **Heat-Set Inserts**:
+   - Install **8x M3 heat-set brass inserts** into the motor mounting bosses in `base_front.stl`.
+   - Install **8x M3 inserts** for the front and rear 30mm nylon caster wheels on the underside floor.
+   - Install **8x M3 inserts** in `base_back.stl` for the 2x BTS7960 motor driver modules.
+   - Install **2x M3 inserts** for the 5V buck converter.
+   - Install **4x M4 inserts** along the base split seam ($Y=0$).
+   - Install **4x M4 inserts** for the top column anchor bosses ($Z=220\text{ mm}$).
+2. **Motors & Wheels**:
+   - Bolt the two **5840-31ZY Worm Gear Motors** into their left and right mounting bays using M3 $\times 8\text{ mm}$ socket cap screws.
+   - Slide the $\varnothing 8\text{ mm}$ D-shafts through the $\varnothing 18\text{ mm}$ axle tunnels in the side wheel wells.
+   - Fasten the **8mm Brass Hex Couplings** onto the motor shafts using M4 set screws.
+   - Mount the **65mm Robot Wheels** onto the hex hubs.
+3. **Caster Wheels & Electronics**:
+   - Bolt the **front and rear 30mm nylon ball casters** to the underside floor using M3 $\times 8\text{ mm}$ screws.
+   - Mount the two **BTS7960 43A motor drivers** and the **5V buck converter** to their respective standoffs.
+   - Press the **12V 9Ah Li-ion battery pack** into the central floor cradle.
+   - Install the **5.5mm $\times$ 2.1mm DC charge port** ($\varnothing 11.5\text{ mm}$ hole) and the **Rocker Power Switch** into the rear chassis cutouts.
+4. **Join Base Halves**:
+   - Secure `base_front.stl` to `base_back.stl` using 4x M4 $\times 20\text{ mm}$ screws along the seam.
 
-### Optimal Print Settings by Material:
+---
+
+### Step 2: Column Torso & Raspberry Pi 4 Integration
+1. **Heat-Set Inserts**:
+   - Install **4x M2.5 brass inserts** for the Raspberry Pi 4 mounting standoffs in `column_front.stl`.
+   - Install **6x M4 brass inserts** along the column split seam.
+   - Install **4x M4 brass inserts** at the top neck mounting flange ($Z=480\text{ mm}$).
+2. **Raspberry Pi 4 Mounting**:
+   - Place the Raspberry Pi 4 onto the 4x M2.5 standoffs ($58\times 49\text{ mm}$ pitch).
+   - Ensure the USB-A, Ethernet RJ45, USB-C power, Micro-HDMI, and MicroSD card slot align perfectly with the external port cutouts on the left torso flank.
+   - Secure the Pi with 4x M2.5 $\times 6\text{ mm}$ screws.
+3. **Speaker Mounting & Wiring**:
+   - Place the two 40mm/50mm audio speakers into their left and right acoustic chambers at $Z=300\text{ mm}$.
+   - Route motor driver control wires, battery 12V lines, and 5V power through the central $\varnothing 22\text{ mm}$ vertical conduit.
+4. **Join Column Halves & Mount to Base**:
+   - Bolt `column_front.stl` to `column_back.stl` using 6x M4 $\times 20\text{ mm}$ screws.
+   - Anchor the Column Torso to the Base Chassis using 4x M4 $\times 25\text{ mm}$ socket cap screws.
+
+---
+
+### Step 3: Neck Actuation Module & MG90S Mechanism
+1. **Heat-Set Inserts**:
+   - Install **2x M2 brass inserts** into the MG90S servo mounting bay ($28\text{ mm}$ pitch) in `neck_front.stl`.
+   - Install **4x M4 brass inserts** into the neck base mounting bosses.
+2. **MG90S Servo Installation**:
+   - Seat the MG90S servo into its custom-molded bay at $(X=18, Y=15, Z=22\text{ mm})$.
+   - Secure with 2x M2 $\times 8\text{ mm}$ screws.
+   - Press the **21T Servo Horn** (`servo_horn.stl`) onto the brass spline at neutral ($0^\circ$, pointing forward) and fasten with the center screw.
+3. **Pushrod Linkage**:
+   - Attach the lower eyelet of the **35mm Pushrod** (`steering_arm.stl`) to the servo horn tip at $R=12\text{ mm}$ using an M2 shoulder screw and nylon locknut.
+4. **Mount Neck to Column**:
+   - Bolt the assembled Neck Module onto the top of the Column using 4x M4 $\times 20\text{ mm}$ screws.
+
+---
+
+### Step 4: Head Assembly (7" LCD + Camera) & Hinge Attachment
+1. **Heat-Set Inserts**:
+   - Install **4x M3 brass inserts** for the 7" LCD screen corner bosses in `head_window_half.stl`.
+   - Install **4x M2 brass inserts** for the Raspberry Pi Camera v2 module.
+   - Install **8x M3 brass inserts** around the head perimeter seam.
+2. **7" Touchscreen & Camera Installation**:
+   - Position the **7" Capacitive Touch LCD** against the front display window frame ($154\times 86\text{ mm}$).
+   - Secure with 4x M3 $\times 8\text{ mm}$ screws.
+   - Seat the **Raspberry Pi Camera v2** behind the top $\varnothing 8\text{ mm}$ lens aperture and secure with 4x M2 $\times 6\text{ mm}$ screws.
+   - Connect the flat flexible ribbon cables (MIPI CSI camera cable, Micro-HDMI display cable, and USB touch cable).
+3. **Hinge Axle & Linkage Connection**:
+   - Lower the Head Clevis dual-ears over the Neck central hinge lugs at $X = \pm 40\text{ mm}$.
+   - Slide the **2x $\varnothing 3.0\text{ mm} \times 20\text{ mm}$ stainless steel dowel pins** through the aligned hinge bores.
+   - Attach the upper eyelet of the 35mm Pushrod to the head's driving horn ($X=18\text{ mm}, Z=-12\text{ mm}$) using an M2 shoulder screw.
+4. **Seal Head Enclosure**:
+   - Route cables down through the neck conduit into the Raspberry Pi 4.
+   - Secure `head_cover_half.stl` to `head_window_half.stl` using 8x M3 $\times 12\text{ mm}$ button head screws.
+
+---
+
+## 4. Electrical System & Power Wiring Diagram
 
 ```
-┌─────────────────────────┬────────────────────────────────────────────────────────┐
-│ Parameter               │ Recommended Value                                      │
-├─────────────────────────┼────────────────────────────────────────────────────────┤
-│ Material                │ PETG (Recommended), ABS/ASA, or Tough PLA             │
-│ Nozzle Temperature      │ 240°C – 250°C (PETG) / 215°C (Tough PLA)               │
-│ Bed Temperature         │ 80°C (PETG) / 60°C (Tough PLA) / 100°C (ABS)           │
-│ Layer Height            │ 0.20 mm (Optimal strength & detail)                    │
-│ Wall Line Count         │ 4 to 6 perimeters (Min 1.6 mm solid shell)             │
-│ Top & Bottom Layers     │ 5 top layers, 5 bottom layers (1.0 mm solid caps)      │
-│ Infill Density          │ 25% – 40% (Structural parts) / 100% (Linkage arm)      │
-│ Infill Pattern          │ Gyroid (Uniform 3D isotropic load distribution)        │
-│ Support Type            │ Tree / Organic Supports (Touching buildplate only)     │
-│ Brim                    │ 5 mm outer brim (Recommended for Column parts)         │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+ [ 12V 9Ah Li-ion Battery ]
+            │
+            ▼
+   [ Main Rocker Switch ]
+            │
+      ┌─────┴─────────────────────────┐
+      │ (12V Main Rail)               │ (12V Main Rail)
+      ▼                               ▼
+ [ 5V 5A Buck Converter ]    [ 2x BTS7960 Motor Drivers ]
+      │                               │
+      ├──────────────────────┐        ▼
+      ▼                      ▼   [ 2x 5840-31ZY Motors ]
+[ Raspberry Pi 4 ]    [ 7" LCD Display ]
+      │
+      ├──────► [ RPi Camera v2 (MIPI CSI) ]
+      ├──────► [ MG90S Pitch Servo (PWM GPIO 18) ]
+      ├──────► [ Motor Driver PWM & DIR Pins ]
+      └──────► [ Dual Stereo Audio Amp ]
 ```
 
-### Build Plate Orientation:
-1. **Base Halves (`base_front.stl`, `base_back.stl`)**: Print resting flat on their large bottom faces (Z=0).
-2. **Column Halves (`column_front.stl`, `column_back.stl`)**: Print vertically resting on their bottom flange interface.
-3. **Neck Halves (`neck_front.stl`, `neck_back.stl`)**: Print resting on their bottom flat mounting plate (Z=0).
-4. **Head Bezel (`head_window_half.stl`)**: Print with front screen face flat on the textured PEI bed.
-5. **Head Cover (`head_cover_half.stl`)**: Print with perimeter parting plane down against the bed.
-6. **Steering Arm (`steering_arm.stl`)**: Print flat on its side with 100% infill for maximum tensile rigidity.
-
 ---
 
-## 4. Step-by-Step Assembly Instructions
+## 5. Verification & Final Inspection Checklist
 
-### Phase 1: Heat-Set Threaded Insert Installation
-1. Using a soldering iron with a conical heat-set insert tip heated to **230°C (for PETG)**:
-   - Insert **24x M4 brass inserts** into all designated cylindrical mounting bosses in `base_front`, `base_back`, `column_front`, `column_back`, and `neck_front`.
-   - Insert **28x M3 brass inserts** into the compute sled rails, servo cradle ears, camera PCB posts, and head perimeter bosses.
-2. Press inserts flush with the surface. Allow 60 seconds to cool and solidify into the polymer matrix.
-
----
-
-### Phase 2: Base Chassis & Power Assembly
-1. Mount the 4x rubber anti-slip feet into the bottom alignment pockets of `base_front` and `base_back`.
-2. Secure the 12V power supply / battery pack and 12V-to-5V DC-DC buck converter into the rear base bay using M3 screws.
-3. Fasten the compute board (Raspberry Pi 5 / Jetson / Mini PC) onto the floor mounting sled using 4x M3×6mm screws.
-4. Join `base_front` and `base_back` along the Y=0 seam and tighten the 4x M4×25mm transverse clamping bolts.
-
----
-
-### Phase 3: Column / Torso & Acoustic Integration
-1. Mount the dual 40mm/50mm speaker drivers into the sealed acoustic chambers of `column_front` using 8x M3 screws and foam sealing tape.
-2. Mount the microphone array module into the top microphone port at Z=450mm.
-3. Route the speaker leads, microphone USB cable, and power lines through the internal central wiring conduit.
-4. Mount the assembled Column onto the Base top flange at Z=220mm and secure from inside using 8x M4×16mm socket head screws.
-
----
-
-### Phase 4: Neck Actuation & Servo Installation
-1. Press the **dual 608ZZ ball bearings** into the left and right bearing pockets of `neck_front` and `neck_back`.
-2. Place the 20kg digital servo into the neck servo cradle and fasten its mounting ears using 4x M3×8mm screws.
-3. Attach the metal 25T servo horn to the servo spline and connect the `steering_arm.stl` linkage using an M3 ball-joint screw.
-4. Bolt `neck_front` and `neck_back` together and mount the neck assembly onto the top of the Column at Z=700mm using 4x M4×16mm screws.
-
----
-
-### Phase 5: Head Display, Camera & Perception Housing
-1. Mount the wide-angle HD camera module into the top camera port of `head_window_half.stl` and fasten with 4x M2.5/M3 screws.
-2. Seat the 7"/10.1" IPS touchscreen display against the front bezel window and secure with the internal clamping brackets.
-3. Connect the HDMI/DSI display ribbon, camera USB/CSI cable, and touch controller through the rear opening.
-4. Align the head mounting clevis ears with the Neck 608ZZ bearings and slide the **Ø8mm polished steel dowel pin** through both bearings.
-5. Attach the `steering_arm` pushrod linkage to the head bracket.
-6. Fasten `head_cover_half.stl` to the front bezel using 8x M3×12mm perimeter screws.
-
----
-
-### Phase 6: Electrical Hookup & Kinematics Calibration
-1. Connect the servo signal lead to GPIO/PWM (Pin 18 / PWM0 on Raspberry Pi).
-2. Power on the 12V main switch. Verify 5.1V rail on compute and 6.5V rail on servo.
-3. Test pitch angle range:
-   - **90° (PWM ~1500µs):** Head faces horizontally forward (level eye contact).
-   - **135° (PWM ~1900µs):** Head tilts 45° downward (desk interaction / object inspection).
-4. Launch Karma:
-   ```bash
-   python3 src/main.py
-   ```
-   Karma will calibrate its gaze, initialize sight (YOLOv8 + MediaPipe), voice (Kokoro-82M), and begin multimodal companion interaction!
+- [x] **Drive Axles**: 5840-31ZY motors spin freely without rubbing on wheel arches.
+- [x] **Caster Wheels**: Both 30mm casters rotate $360^\circ$ on flat surfaces.
+- [x] **Raspberry Pi 4 Ports**: USB-A, Ethernet, USB-C, and MicroSD card accessible from exterior.
+- [x] **Display & Camera**: 7" LCD and Camera v2 rigidly secured with clear optical aperture.
+- [x] **Hinge Kinematics**: Head tilts smoothly from $90.0^\circ$ (Level) to $135.0^\circ$ (Desk Focus) through the neck clearance opening.
+- [x] **Fasteners**: All M2, M2.5, M3, and M4 screws thread securely into heat-set brass inserts.
