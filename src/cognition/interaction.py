@@ -240,7 +240,17 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
     mem_ctx = retrieve_memories(speech_text, store, embedder, k=2)
     mem_section = f"Relevant past memories:\n{mem_ctx}\n" if mem_ctx else ""
 
+    # Document RAG context (PDF manuals, reference books, notes)
+    doc_ctx = ""
+    try:
+        from src.memory.rag import retrieve_document_context
+        doc_ctx = retrieve_document_context(speech_text, store, embedder, k=2)
+    except Exception:
+        pass
+    doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
+
     prompt_parts = []
+    if doc_section: prompt_parts.append(doc_section)
     if mem_section: prompt_parts.append(mem_section)
     if vision_ctx: prompt_parts.append(vision_ctx)
     if conv_section: prompt_parts.append(conv_section)

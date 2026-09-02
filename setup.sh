@@ -261,8 +261,9 @@ pip install opencv-python || true
 pip install ultralytics
 pip install mediapipe
 
-# SQLite Vector & Embeddings
+# SQLite Vector, Embeddings & PDF RAG (MarkItDown)
 pip install sentence-transformers sqlean.py sqlite-vec
+pip install "markitdown[pdf]"
 
 # UI Rendering
 pip install pygame

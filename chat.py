@@ -129,13 +129,22 @@ def run_validation(llm):
     print("=" * 65 + "\n")
 
 
-def interactive_chat(llm, system_prompt: str, temperature: float = 0.7, max_tokens: int = 256,
-                     repeat_penalty: float = getattr(config, "DEFAULT_REPEAT_PENALTY", 1.05),
-                     top_p: float = getattr(config, "DEFAULT_TOP_P", 0.9)):
-    """Interactive streaming chat loop."""
+
+def interactive_chat(
+    llm,
+    system_prompt: str,
+    temperature: float = 0.7,
+    max_tokens: int = 256,
+    repeat_penalty: float = 1.05,
+    top_p: float = 0.9,
+    rag_engine=None
+):
+    """Runs high-performance streaming terminal chat loop with optional RAG."""
     print("=" * 65)
-    print("💬 Karma Interactive Chat")
-    print("   Commands: /clear (reset memory), /exit (quit)")
+    print("💬 Interactive Conversation Mode (Qwen 2.5 0.5B Instruct)")
+    print("   Commands: /exit (quit) | /clear (reset history)")
+    if rag_engine:
+        print("   RAG Commands: /pdf <path> (index PDF) | /docs (list documents)")
     print("=" * 65)
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -153,8 +162,43 @@ def interactive_chat(llm, system_prompt: str, temperature: float = 0.7, max_toke
                 messages = [{"role": "system", "content": system_prompt}]
                 print("🧹 Conversation memory cleared.")
                 continue
+            elif user_input.lower() == "/docs":
+                if rag_engine:
+                    docs = rag_engine.list_documents()
+                    if not docs:
+                        print("No documents indexed.")
+                    else:
+                        print("📚 Indexed Documents:")
+                        for d in docs:
+                            print(f"  • {d['source']}: {d['count']} chunks")
+                else:
+                    print("RAG engine not loaded.")
+                continue
+            elif user_input.lower().startswith("/pdf "):
+                pdf_target = user_input[5:].strip()
+                if not rag_engine:
+                    from src.memory.rag import DocumentRAG
+                    rag_engine = DocumentRAG()
+                try:
+                    c = rag_engine.ingest_pdf(pdf_target)
+                    print(f"✓ Indexed '{pdf_target}' ({c} chunks). Ready for Q&A!")
+                except Exception as e:
+                    print(f"⚠️ Error ingesting PDF: {e}")
+                continue
 
-            messages.append({"role": "user", "content": user_input})
+            # RAG semantic context retrieval
+            doc_context = ""
+            if rag_engine:
+                doc_context = rag_engine.get_rag_context(user_input, k=2)
+
+            augmented_user_input = user_input
+            if doc_context:
+                augmented_user_input = (
+                    f"Reference Knowledge:\n{doc_context}\n\n"
+                    f"Question: {user_input}"
+                )
+
+            messages.append({"role": "user", "content": augmented_user_input})
 
             # Format ChatML prompt
             prompt = ""
@@ -211,10 +255,17 @@ def main():
     parser.add_argument("--top-p", type=float, default=getattr(config, "DEFAULT_TOP_P", 0.9), help="Top-p nucleus sampling")
     parser.add_argument("--repeat-penalty", type=float, default=getattr(config, "DEFAULT_REPEAT_PENALTY", 1.05), help="Repetition penalty (1.05 recommended for Qwen 2.5)")
     parser.add_argument("--max-tokens", type=int, default=256, help="Max response tokens")
+    parser.add_argument("--pdf", "-p", type=str, default=None, help="Path to PDF document to ingest into RAG before chat")
     parser.add_argument("--validate", "-v", action="store_true", help="Run automated validation test suite")
     parser.add_argument("--system-prompt", "-s", type=str, default=getattr(config, "PERSONA_SYSTEM_PROMPT", "You are Karma, a witty human friend."), help="System persona")
 
     args = parser.parse_args()
+
+    rag_engine = None
+    if args.pdf:
+        from src.memory.rag import DocumentRAG
+        rag_engine = DocumentRAG()
+        rag_engine.ingest_pdf(args.pdf)
 
     llm = load_engine(args.model, ctx_size=args.ctx_size, threads=args.threads)
 
@@ -227,7 +278,8 @@ def main():
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             repeat_penalty=args.repeat_penalty,
-            top_p=args.top_p
+            top_p=args.top_p,
+            rag_engine=rag_engine
         )
 
 

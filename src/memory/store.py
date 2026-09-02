@@ -33,24 +33,33 @@ class MemoryStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts REAL,
                     kind TEXT,
-                    text TEXT
+                    text TEXT,
+                    source TEXT
                 )
             """)
+            # Migration check: Ensure source column exists on existing databases
+            cols = [col[1] for col in self.db.execute("PRAGMA table_info(memories)").fetchall()]
+            if "source" not in cols:
+                try:
+                    self.db.execute("ALTER TABLE memories ADD COLUMN source TEXT")
+                except Exception:
+                    pass
+
             self.db.execute(f"""
                 CREATE VIRTUAL TABLE IF NOT EXISTS vec_items
                 USING vec0(embedding float[{self.dim}])
             """)
 
     def add(self, text: str, embedding: List[float], kind: str = "episodic_summary",
-            ts: Optional[float] = None) -> int:
-        """Insert a memory and its corresponding vector embedding."""
+            ts: Optional[float] = None, source: Optional[str] = None) -> int:
+        """Insert a memory or document chunk and its corresponding vector embedding."""
         ts = ts or time.time()
         serialized = sqlite_vec.serialize_float32(embedding)
 
         with self.db:
             cur = self.db.execute(
-                "INSERT INTO memories (ts, kind, text) VALUES (?, ?, ?)",
-                (ts, kind, text),
+                "INSERT INTO memories (ts, kind, text, source) VALUES (?, ?, ?, ?)",
+                (ts, kind, text, source),
             )
             row_id = cur.lastrowid
             self.db.execute(
@@ -59,24 +68,74 @@ class MemoryStore:
             )
         return row_id
 
-    def query(self, embedding: List[float], k: int = 5) -> List[Dict[str, Any]]:
-        """Perform K-Nearest Neighbors (KNN) search over memories."""
+    def query(self, embedding: List[float], k: int = 5, kind: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Perform K-Nearest Neighbors (KNN) search over memories with optional kind filter."""
         serialized = sqlite_vec.serialize_float32(embedding)
-        rows = self.db.execute(
-            """
-            SELECT m.text, m.ts, m.kind, v.distance
-            FROM vec_items v
-            JOIN memories m ON m.id = v.rowid
-            WHERE v.embedding MATCH ? AND k = ?
-            ORDER BY v.distance
-            """,
-            (serialized, k),
-        ).fetchall()
+        if kind:
+            fetch_k = max(k * 4, 20)
+            rows = self.db.execute(
+                """
+                SELECT m.text, m.ts, m.kind, v.distance, m.source, m.id
+                FROM vec_items v
+                JOIN memories m ON m.id = v.rowid
+                WHERE v.embedding MATCH ? AND k = ? AND m.kind = ?
+                ORDER BY v.distance
+                LIMIT ?
+                """,
+                (serialized, fetch_k, kind, k),
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                """
+                SELECT m.text, m.ts, m.kind, v.distance, m.source, m.id
+                FROM vec_items v
+                JOIN memories m ON m.id = v.rowid
+                WHERE v.embedding MATCH ? AND k = ?
+                ORDER BY v.distance
+                """,
+                (serialized, k),
+            ).fetchall()
 
         return [
-            {"text": r[0], "ts": r[1], "kind": r[2], "distance": float(r[3])}
+            {
+                "text": r[0],
+                "ts": r[1],
+                "kind": r[2],
+                "distance": float(r[3]),
+                "source": r[4] if len(r) > 4 else None,
+                "id": r[5] if len(r) > 5 else None,
+            }
             for r in rows
         ]
+
+    def delete_by_source(self, source: str) -> int:
+        """Delete all records with the specified source tag (e.g. filename)."""
+        with self.db:
+            rows = self.db.execute("SELECT id FROM memories WHERE source = ?", (source,)).fetchall()
+            for (r_id,) in rows:
+                self.db.execute("DELETE FROM memories WHERE id = ?", (r_id,))
+                self.db.execute("DELETE FROM vec_items WHERE rowid = ?", (r_id,))
+        return len(rows)
+
+    def delete_by_kind(self, kind: str) -> int:
+        """Delete all records of a specific kind (e.g. document)."""
+        with self.db:
+            rows = self.db.execute("SELECT id FROM memories WHERE kind = ?", (kind,)).fetchall()
+            for (r_id,) in rows:
+                self.db.execute("DELETE FROM memories WHERE id = ?", (r_id,))
+                self.db.execute("DELETE FROM vec_items WHERE rowid = ?", (r_id,))
+        return len(rows)
+
+    def list_sources(self, kind: Optional[str] = "document") -> List[Dict[str, Any]]:
+        """List distinct sources and their item counts."""
+        query = "SELECT source, COUNT(*) FROM memories WHERE source IS NOT NULL"
+        params = []
+        if kind:
+            query += " AND kind = ?"
+            params.append(kind)
+        query += " GROUP BY source ORDER BY source"
+        rows = self.db.execute(query, params).fetchall()
+        return [{"source": r[0], "count": r[1]} for r in rows]
 
     def prune_memories(self, max_age_days: int = 60, max_total_records: int = 1500) -> int:
         """Prunes memories older than cutoff or exceeding max total count."""
