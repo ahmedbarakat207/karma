@@ -386,31 +386,30 @@ def mounting_boss_m4(cx: float, cy: float, z0: float, z1: float, is_insert: bool
 def build_base_front() -> List[Triangle]:
     """
     Exotic Base Front Chassis:
+    - Broad wheeled stance tapering up to meet the sleek thin column waist
     - 2x 5840-31ZY Worm DC Gear Motor Mounting Bays & Ø18mm Axle Pass-Through Tunnels
     - Front 30mm Nylon Caster Wheel 4x M3 Mounting Bosses
     - 12V 9Ah Li-ion Battery Compartment Front Retaining Walls
     - 4x M4 Perimeter Seam Fasteners & 4x M4 Column Anchor Bosses
-    - Central Ø24mm Wire Routing Conduit
+    - Central Ø22mm Wire Routing Conduit
     """
     tris = []
     W = WALL_BASE
 
     outer_layers = [
         (0.0,   half_contour_front(-160.0, 160.0, 0.0, 210.0, chamfer_front=45.0, n_per_seg=6)),
-        (40.0,  half_contour_front(-158.0, 158.0, 0.0, 206.0, chamfer_front=44.0, n_per_seg=6)),
-        (110.0, half_contour_front(-145.0, 145.0, 0.0, 185.0, chamfer_front=38.0, n_per_seg=6)),
-        (180.0, half_contour_front(-115.0, 115.0, 0.0, 140.0, chamfer_front=30.0, n_per_seg=6)),
-        (220.0, half_contour_front(-85.0,   85.0, 0.0,  95.0, chamfer_front=22.0, n_per_seg=6)),
+        (40.0,  half_contour_front(-155.0, 155.0, 0.0, 195.0, chamfer_front=42.0, n_per_seg=6)),
+        (100.0, half_contour_front(-130.0, 130.0, 0.0, 150.0, chamfer_front=32.0, n_per_seg=6)),
+        (160.0, half_contour_front(-95.0,   95.0, 0.0,  95.0, chamfer_front=24.0, n_per_seg=6)),
+        (220.0, half_contour_front(-65.0,   65.0, 0.0,  52.0, chamfer_front=16.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
     # 1. 2x 5840-31ZY Worm DC Gear Motor Mounting Brackets (Left & Right)
     for mx in [-105.0, 105.0]:
-        # Motor L-Bracket M3 Mounting Bosses (30mm x 40mm hole pitch)
         for hx in [mx - MOTOR_HOLE_DX/2.0, mx + MOTOR_HOLE_DX/2.0]:
             for hy in [15.0, 15.0 + MOTOR_HOLE_DY]:
                 tris += mounting_boss_m3(hx, hy, W, W + 12.0, is_insert=True)
-        # Ø18mm Motor D-Shaft / Brass Hex Coupling Tunnel through outer wheel well
         tunnel_x0 = 135.0 if mx > 0 else -160.0
         tunnel_x1 = 160.0 if mx > 0 else -135.0
         tris += hollow_cylinder_x(35.0, 45.0, tunnel_x0, tunnel_x1, 12.0, 9.0, segments=20)
@@ -424,15 +423,15 @@ def build_base_front() -> List[Triangle]:
     tris += box(-BATT_L/2.0 - 2.0, BATT_L/2.0 + 2.0, 0.0, BATT_W/2.0 + 2.0, W, W + 25.0)
 
     # 4. Column Anchor Structural Bosses (4x M4 connecting Base to Column)
-    for bx, by in [(-65.0, 20.0), (65.0, 20.0), (-65.0, 75.0), (65.0, 75.0)]:
+    for bx, by in [(-45.0, 22.0), (45.0, 22.0)]:
         tris += mounting_boss_m4(bx, by, 190.0, 220.0 - W, is_insert=True)
 
     # 5. Base Perimeter Seam Fasteners (4x M4 connecting front to back half)
     for sx in [-130.0, -50.0, 50.0, 130.0]:
         tris += mounting_boss_m4(sx, 10.0, W, 220.0 - W, is_insert=True)
 
-    # 6. Central Wire Routing Conduit (Ø24mm rising to Column)
-    tris += hollow_cylinder_z(0.0, 20.0, 190.0, 220.0, 14.0, 12.0, segments=20)
+    # 6. Central Wire Routing Conduit (Ø22mm rising to Column)
+    tris += hollow_cylinder_z(0.0, 12.0, 190.0, 220.0, 13.0, 11.0, segments=20)
 
     return tris
 
@@ -452,10 +451,10 @@ def build_base_back() -> List[Triangle]:
 
     outer_layers = [
         (0.0,   half_contour_back(-160.0, 160.0, -190.0, 0.0, chamfer_back=45.0, n_per_seg=6)),
-        (40.0,  half_contour_back(-158.0, 158.0, -186.0, 0.0, chamfer_back=44.0, n_per_seg=6)),
-        (110.0, half_contour_back(-145.0, 145.0, -165.0, 0.0, chamfer_back=38.0, n_per_seg=6)),
-        (180.0, half_contour_back(-115.0, 115.0, -130.0, 0.0, chamfer_back=30.0, n_per_seg=6)),
-        (220.0, half_contour_back(-85.0,   85.0, -115.0, 0.0, chamfer_back=22.0, n_per_seg=6)),
+        (40.0,  half_contour_back(-155.0, 155.0, -175.0, 0.0, chamfer_back=42.0, n_per_seg=6)),
+        (100.0, half_contour_back(-130.0, 130.0, -140.0, 0.0, chamfer_back=32.0, n_per_seg=6)),
+        (160.0, half_contour_back(-95.0,   95.0,  -95.0, 0.0, chamfer_back=24.0, n_per_seg=6)),
+        (220.0, half_contour_back(-65.0,   65.0,  -58.0, 0.0, chamfer_back=16.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
@@ -484,7 +483,7 @@ def build_base_back() -> List[Triangle]:
     tris += box(35.0, 55.0, -190.0, -180.0, 43.5, 56.5)
 
     # 7. Column Anchor Structural Bosses (4x M4 connecting Base to Column)
-    for bx, by in [(-65.0, -20.0), (65.0, -20.0), (-65.0, -75.0), (65.0, -75.0)]:
+    for bx, by in [(-45.0, -22.0), (45.0, -22.0)]:
         tris += mounting_boss_m4(bx, by, 190.0, 220.0 - W, is_insert=True)
 
     # 8. Base Perimeter Seam Fasteners (4x M4 connecting back to front half)
@@ -494,72 +493,65 @@ def build_base_back() -> List[Triangle]:
     return tris
 
 # ---------------------------------------------------------------------------
-# 2. Column Torso Assembly (170 x 210 x 480 mm)
+# 2. Sleek Slim Column Torso Assembly (96-130 mm Width, 80-110 mm Depth)
 # ---------------------------------------------------------------------------
 
 def build_column_front() -> List[Triangle]:
     """
-    Exotic Column Front Torso:
+    Exotic Thin Column Front Torso:
+    - Slim, sculpted waist (tapers from 130mm down to 96mm at mid-torso)
     - Raspberry Pi 4 (4GB) 4x M2.5 Standoff Mounting Bay (58x49mm pitch)
     - External I/O Port Openings: 4x USB-A, 1x RJ45 Gigabit Ethernet, 1x USB-C Power, 2x Micro-HDMI, MicroSD Slot
     - Dual Speaker Acoustic Chambers with Front Acoustic Sound Louvers
-    - Continuous Central Ø22mm Wire Routing Conduit
-    - Base Attachment (4x M4) and Neck Mounting (4x M4) Bosses
+    - Continuous Central Ø18mm Wire Routing Conduit
+    - Base Attachment (2x M4) and Neck Mounting (2x M4) Bosses
     """
     tris = []
     W = WALL_COLUMN
 
     outer_layers = [
-        (0.0,   half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)),
-        (120.0, half_contour_front(-80.0, 80.0, 0.0, 90.0, chamfer_front=20.0, n_per_seg=6)),
-        (200.0, half_contour_front(-74.0, 74.0, 0.0, 82.0, chamfer_front=18.0, n_per_seg=6)),
-        (320.0, half_contour_front(-85.0, 85.0, 0.0, 95.0, chamfer_front=22.0, n_per_seg=6)),
-        (420.0, half_contour_front(-82.0, 82.0, 0.0, 88.0, chamfer_front=20.0, n_per_seg=6)),
-        (480.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (0.0,   half_contour_front(-65.0, 65.0, 0.0, 52.0, chamfer_front=16.0, n_per_seg=6)),
+        (100.0, half_contour_front(-56.0, 56.0, 0.0, 44.0, chamfer_front=13.0, n_per_seg=6)),
+        (220.0, half_contour_front(-48.0, 48.0, 0.0, 36.0, chamfer_front=10.0, n_per_seg=6)), # Slim waist!
+        (340.0, half_contour_front(-54.0, 54.0, 0.0, 40.0, chamfer_front=12.0, n_per_seg=6)),
+        (420.0, half_contour_front(-60.0, 60.0, 0.0, 44.0, chamfer_front=14.0, n_per_seg=6)),
+        (480.0, half_contour_front(-65.0, 65.0, 0.0, 42.0, chamfer_front=14.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
     # 1. Raspberry Pi 4 (4GB) Mounting Bay (4x M2.5 standoffs at 58x49mm pitch at Z=200mm)
     rpi_cz = 200.0
-    for rx in [-RPI4_HOLE_DX/2.0, RPI4_HOLE_DX/2.0]:
-        for ry in [25.0, 25.0 + RPI4_HOLE_DY]:
-            tris += mounting_boss_m2_5(rx, ry, W, W + 15.0, is_insert=True)
+    for rx in [-RPI4_HOLE_DY/2.0, RPI4_HOLE_DY/2.0]: # 49mm span in X
+        for rz in [rpi_cz - RPI4_HOLE_DX/2.0, rpi_cz + RPI4_HOLE_DX/2.0]: # 58mm span in Z
+            tris += hollow_cylinder_y(rx, rz, 8.0, 22.0, 3.5, M2_5_INSERT_R, segments=12)
 
-    # 2. External I/O Port Cutouts on Left Torso Wall (X=-82mm)
-    # 4x USB-A Ports Cutout (16mm x 32mm)
-    tris += box(-85.0, -70.0, 15.0, 47.0, rpi_cz - 16.0, rpi_cz + 16.0)
-    # 1x RJ45 Gigabit Ethernet Port Cutout (16mm x 15mm)
-    tris += box(-85.0, -70.0, 52.0, 67.0, rpi_cz - 8.0, rpi_cz + 8.0)
-    # 1x USB-C Power Port Cutout (10mm x 6mm)
-    tris += box(-85.0, -70.0, 10.0, 20.0, rpi_cz - 28.0, rpi_cz - 22.0)
-    # 2x Micro-HDMI Port Cutouts (8mm x 4mm)
-    tris += box(-85.0, -70.0, 25.0, 33.0, rpi_cz - 28.0, rpi_cz - 24.0)
-    tris += box(-85.0, -70.0, 38.0, 46.0, rpi_cz - 28.0, rpi_cz - 24.0)
-    # MicroSD Card Slot Cutout at bottom of Pi
-    tris += box(-85.0, -70.0, 30.0, 45.0, rpi_cz - 35.0, rpi_cz - 30.0)
+    # 2. External I/O Port Cutouts on Left Torso Wall (X=-48mm)
+    tris += box(-50.0, -40.0, 10.0, 38.0, rpi_cz - 16.0, rpi_cz + 16.0) # USB-A Ports
+    tris += box(-50.0, -40.0, 12.0, 28.0, rpi_cz + 18.0, rpi_cz + 32.0) # RJ45 Ethernet
+    tris += box(-50.0, -40.0, 8.0, 18.0,  rpi_cz - 32.0, rpi_cz - 24.0) # USB-C Power
 
-    # 3. Dual Speaker Acoustic Chambers & Louver Grilles (At X=±48mm, Z=300mm)
-    for spk_x in [-48.0, 48.0]:
-        tris += hollow_cylinder_y(spk_x, 300.0, 82.0, 92.0, 24.0, 20.0, segments=24)
-        tris += box(spk_x - 22.0, spk_x + 22.0, 50.0, 85.0, 278.0, 322.0)
+    # 3. Dual Speaker Acoustic Chambers & Louver Grilles (At X=±36mm, Z=320mm)
+    for spk_x in [-36.0, 36.0]:
+        tris += hollow_cylinder_y(spk_x, 320.0, 34.0, 42.0, 18.0, 15.0, segments=20)
 
-    # 4. Base Attachment Bolt Bosses (4x M4 connecting Column to Base)
-    for bx, by in [(-65.0, 20.0), (65.0, 20.0), (-65.0, 75.0), (65.0, 75.0)]:
-        tris += mounting_boss_m4(bx, by, W, W + 25.0, is_insert=False)
+    # 4. Base Attachment Bolt Bosses (2x M4 connecting Column to Base)
+    for bx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(bx, 22.0, W, W + 22.0, is_insert=False)
 
-    # 5. Top Neck Attachment Bosses (4x M4 connecting Column to Neck)
-    for bx, by in [(-55.0, 20.0), (55.0, 20.0)]:
-        tris += mounting_boss_m4(bx, by, 480.0 - 25.0, 480.0 - W, is_insert=True)
+    # 5. Top Neck Attachment Bosses (2x M4 connecting Column to Neck)
+    for bx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(bx, 18.0, 480.0 - 22.0, 480.0 - W, is_insert=True)
 
-    # 6. Continuous Central Wire Routing Conduit (Ø22mm from Base to Neck)
-    tris += hollow_cylinder_z(0.0, 20.0, W, 480.0 - W, 13.0, 11.0, segments=20)
+    # 6. Continuous Central Wire Routing Conduit (Ø18mm from Base to Neck)
+    tris += hollow_cylinder_z(0.0, 8.0, W, 480.0 - W, 11.0, 9.0, segments=20)
 
     return tris
 
 
 def build_column_back() -> List[Triangle]:
     """
-    Exotic Column Back Spine:
+    Exotic Thin Column Back Spine:
+    - Sleek aerodynamic spine matching the thin waist
     - Aerodynamic Cooling Louvers for passive convection airflow over Pi & Drivers
     - 6x M4 Perimeter Seam Fasteners & 4x M4 Base/Neck Mounts
     """
@@ -567,31 +559,31 @@ def build_column_back() -> List[Triangle]:
     W = WALL_COLUMN
 
     outer_layers = [
-        (0.0,   half_contour_back(-85.0, 85.0, -115.0, 0.0, chamfer_back=22.0, n_per_seg=6)),
-        (120.0, half_contour_back(-80.0, 80.0, -108.0, 0.0, chamfer_back=20.0, n_per_seg=6)),
-        (200.0, half_contour_back(-74.0, 74.0, -96.0,  0.0, chamfer_back=18.0, n_per_seg=6)),
-        (320.0, half_contour_back(-85.0, 85.0, -112.0, 0.0, chamfer_back=22.0, n_per_seg=6)),
-        (420.0, half_contour_back(-82.0, 82.0, -100.0, 0.0, chamfer_back=20.0, n_per_seg=6)),
-        (480.0, half_contour_back(-80.0, 80.0, -45.0,  0.0, chamfer_back=18.0, n_per_seg=6)),
+        (0.0,   half_contour_back(-65.0, 65.0, -58.0, 0.0, chamfer_back=16.0, n_per_seg=6)),
+        (100.0, half_contour_back(-56.0, 56.0, -48.0, 0.0, chamfer_back=13.0, n_per_seg=6)),
+        (220.0, half_contour_back(-48.0, 48.0, -40.0, 0.0, chamfer_back=10.0, n_per_seg=6)), # Slim waist!
+        (340.0, half_contour_back(-54.0, 54.0, -44.0, 0.0, chamfer_back=12.0, n_per_seg=6)),
+        (420.0, half_contour_back(-60.0, 60.0, -44.0, 0.0, chamfer_back=14.0, n_per_seg=6)),
+        (480.0, half_contour_back(-65.0, 65.0, -42.0, 0.0, chamfer_back=14.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
     # 1. Spine Aerodynamic Cooling Louvers
     for louver_z in range(120, 420, 30):
-        tris += box(-45.0, 45.0, -105.0, -98.0, float(louver_z), float(louver_z + 10))
+        tris += box(-30.0, 30.0, -44.0, -38.0, float(louver_z), float(louver_z + 10))
 
-    # 2. Base Attachment Bolt Bosses (4x M4)
-    for bx, by in [(-65.0, -20.0), (65.0, -20.0), (-65.0, -75.0), (65.0, -75.0)]:
-        tris += mounting_boss_m4(bx, by, W, W + 25.0, is_insert=False)
+    # 2. Base Attachment Bolt Bosses (2x M4)
+    for bx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(bx, -22.0, W, W + 22.0, is_insert=False)
 
-    # 3. Top Neck Attachment Bosses (4x M4)
-    for bx, by in [(-55.0, -20.0), (55.0, -20.0)]:
-        tris += mounting_boss_m4(bx, by, 480.0 - 25.0, 480.0 - W, is_insert=True)
+    # 3. Top Neck Attachment Bosses (2x M4)
+    for bx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(bx, -18.0, 480.0 - 22.0, 480.0 - W, is_insert=True)
 
     # 4. Column Seam Fasteners (6x M4 along split line)
     for seam_z in [80.0, 180.0, 280.0, 380.0]:
-        tris += mounting_boss_m4(-65.0, -10.0, seam_z - 12.0, seam_z + 12.0, is_insert=False)
-        tris += mounting_boss_m4( 65.0, -10.0, seam_z - 12.0, seam_z + 12.0, is_insert=False)
+        tris += mounting_boss_m4(-45.0, -8.0, seam_z - 10.0, seam_z + 10.0, is_insert=False)
+        tris += mounting_boss_m4( 45.0, -8.0, seam_z - 10.0, seam_z + 10.0, is_insert=False)
 
     return tris
 
@@ -601,7 +593,7 @@ def build_column_back() -> List[Triangle]:
 
 def build_neck_front() -> List[Triangle]:
     """
-    Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..46] (World Z: 700..746)
+    Exotic Neck Front Cowl: X: [-65..65], Y: [0..42], Z: [0..46] (World Z: 700..746)
     - MG90S Servo Mounting Bay (23x12.5x23mm) with 2x M2 Brass Insert Bosses (28mm pitch)
     - Dual-Shear Hinge Pin Center Lugs (7mm tongue, Ø3.1mm bore) at X=±40mm, Z=50mm
     - Wide Clearance Throat Opening for Head Display 90°..135° Pitch Travel
@@ -612,11 +604,11 @@ def build_neck_front() -> List[Triangle]:
     SHELL_TOP = 46.0
 
     outer_layers = [
-        (0.0,       half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (14.0,      half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (28.0,      half_contour_front(-78.0, 78.0, 0.0, 36.0, chamfer_front=14.0, n_per_seg=6)),
-        (38.0,      half_contour_front(-76.0, 76.0, 0.0, 20.0, chamfer_front=8.0,  n_per_seg=6)),
-        (SHELL_TOP, half_contour_front(-74.0, 74.0, 0.0, 8.0,  chamfer_front=4.0,  n_per_seg=6)),
+        (0.0,       half_contour_front(-65.0, 65.0, 0.0, 42.0, chamfer_front=14.0, n_per_seg=6)),
+        (14.0,      half_contour_front(-65.0, 65.0, 0.0, 42.0, chamfer_front=14.0, n_per_seg=6)),
+        (28.0,      half_contour_front(-65.0, 65.0, 0.0, 32.0, chamfer_front=12.0, n_per_seg=6)),
+        (38.0,      half_contour_front(-65.0, 65.0, 0.0, 18.0, chamfer_front=7.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_front(-65.0, 65.0, 0.0, 8.0,  chamfer_front=4.0,  n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
@@ -634,15 +626,15 @@ def build_neck_front() -> List[Triangle]:
         tris += hollow_cylinder_z(m2_x, servo_cy, W, servo_cz + 8.0, 3.2, M2_INSERT_R, segments=12)
 
     # 3. Base Column Attachment Bosses (2x M4)
-    for fx in [-55.0, 55.0]:
-        tris += mounting_boss_m4(fx, 20.0, W, W + 15.0, is_insert=False)
+    for fx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(fx, 18.0, W, W + 15.0, is_insert=False)
 
     return tris
 
 
 def build_neck_back() -> List[Triangle]:
     """
-    Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..46]
+    Exotic Neck Back Cowl: X: [-65..65], Y: [-42..0], Z: [0..46]
     - Rear Hinge Pin Center Lugs (7mm tongue) at X=±40mm, Z=50mm
     - Continuous Wire Routing Conduit (Ø16mm)
     - Base Column Attachment Bosses (2x M4)
@@ -652,11 +644,11 @@ def build_neck_back() -> List[Triangle]:
     SHELL_TOP = 46.0
 
     outer_layers = [
-        (0.0,       half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (14.0,      half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (28.0,      half_contour_back(-78.0, 78.0, -32.0, 0.0, chamfer_back=12.0, n_per_seg=6)),
-        (38.0,      half_contour_back(-76.0, 76.0, -18.0, 0.0, chamfer_back=7.0,  n_per_seg=6)),
-        (SHELL_TOP, half_contour_back(-74.0, 74.0, -8.0,  0.0, chamfer_back=3.0,  n_per_seg=6)),
+        (0.0,       half_contour_back(-65.0, 65.0, -42.0, 0.0, chamfer_back=14.0, n_per_seg=6)),
+        (14.0,      half_contour_back(-65.0, 65.0, -42.0, 0.0, chamfer_back=14.0, n_per_seg=6)),
+        (28.0,      half_contour_back(-65.0, 65.0, -30.0, 0.0, chamfer_back=11.0, n_per_seg=6)),
+        (38.0,      half_contour_back(-65.0, 65.0, -16.0, 0.0, chamfer_back=6.0,  n_per_seg=6)),
+        (SHELL_TOP, half_contour_back(-65.0, 65.0, -8.0,  0.0, chamfer_back=3.0,  n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
@@ -666,11 +658,11 @@ def build_neck_back() -> List[Triangle]:
         tris += box(bx - 3.5, bx + 3.5, -7.0, 0.0, 15.0, HINGE_Z)
 
     # 2. Base Column Attachment Bosses (2x M4)
-    for bx in [-55.0, 55.0]:
-        tris += mounting_boss_m4(bx, -20.0, W, W + 15.0, is_insert=False)
+    for bx in [-45.0, 45.0]:
+        tris += mounting_boss_m4(bx, -18.0, W, W + 15.0, is_insert=False)
 
     # 3. Wire Conduit Pass-Through (Ø16mm)
-    tris += hollow_cylinder_z(0.0, -15.0, W, SHELL_TOP - W, 10.0, 8.0, segments=16)
+    tris += hollow_cylinder_z(0.0, -12.0, W, SHELL_TOP - W, 10.0, 8.0, segments=16)
 
     return tris
 
