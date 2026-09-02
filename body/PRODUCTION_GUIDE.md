@@ -8,7 +8,7 @@ An end-to-end industrial manufacturing, 3D printing, hardware assembly, and wiri
 
 | Component | Part Model / Spec | Qty | Target 3D Shell | Mounting Method | Hardware Fasteners |
 | :--- | :--- | :---: | :--- | :--- | :--- |
-| **Main Compute SBC** | Raspberry Pi 4 (4GB RAM) | 1 | `column_front.stl` | 4x M2.5 standoff bosses ($58\times 49\text{ mm}$ pitch) | 4x M2.5 $\times 6\text{ mm}$ screws + heat-set inserts |
+| **Main Compute SBC** | Raspberry Pi 4 (8GB RAM) | 1 | `column_front.stl` | 4x M2.5 standoff bosses ($58\times 49\text{ mm}$ pitch) | 4x M2.5 $\times 6\text{ mm}$ screws + heat-set inserts |
 | **Drive Motors** | 5840-31ZY Worm DC Gear Motor 12V 60RPM | 2 | `base_front.stl` | Left & Right motor bays with steel L-brackets | 8x M3 $\times 8\text{ mm}$ screws + heat-set inserts |
 | **Motor Drivers** | BTS7960 43A High-Power H-Bridge | 2 | `base_back.stl` | 4x M3 standoff bosses ($44\times 44\text{ mm}$ pitch) | 8x M3 $\times 6\text{ mm}$ screws + heat-set inserts |
 | **Display Screen** | 7" 800x480 Capacitive Touch LCD | 1 | `head_window_half.stl` | Beveled bezel frame + 4x M3 corner standoffs | 4x M3 $\times 8\text{ mm}$ screws + heat-set inserts |

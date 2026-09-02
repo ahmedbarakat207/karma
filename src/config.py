@@ -75,19 +75,26 @@ _DEFAULT_YOLO_DEVICE = "mps" if (hasattr(torch.backends, "mps") and torch.backen
 _DEFAULT_GPU_LAYERS = -1 if _DEFAULT_YOLO_DEVICE == "mps" else 0
 
 # ==============================================================================
-# 1. Local Language Model (llama-cpp-python)
+# 1. Local Language Model (Qwen 2.5 0.5B Instruct - Ultra-fast on Raspberry Pi 4)
 # ==============================================================================
-MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(MODELS_DIR, "qwen2.5-1.5b-instruct-q4_k_m.gguf"))
-HF_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
-HF_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-CTX_SIZE = int(os.environ.get("CTX_SIZE", "2048"))            # 2048 gives 3x faster prompt eval & low RAM on ARM
-N_BATCH = int(os.environ.get("N_BATCH", "512"))               # Fast prompt batching
+MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(MODELS_DIR, "model.gguf"))
+HF_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+HF_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+CTX_SIZE = int(os.environ.get("CTX_SIZE", "4096"))            # 4096 tokens context window (~25MB KV-cache in Q8_0)
+N_BATCH = int(os.environ.get("N_BATCH", "512"))               # Fast prompt evaluation batching
 N_GPU_LAYERS = int(os.environ.get("N_GPU_LAYERS", str(_DEFAULT_GPU_LAYERS)))
 
 # Speculative Decoding (Disabled by default to avoid numpy stride broadcast bug in streaming multi-turn)
 SPECULATIVE_DECODING = os.environ.get("SPECULATIVE_DECODING", "none").lower()
 SPECULATIVE_NGRAM_SIZE = int(os.environ.get("SPECULATIVE_NGRAM_SIZE", "2"))
 SPECULATIVE_NUM_PRED_TOKENS = int(os.environ.get("SPECULATIVE_NUM_PRED_TOKENS", "8"))
+
+# LLM Sampling Parameters (Tuned for Qwen 2.5 natural fluency and grammatical coherence)
+DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.7"))
+DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
+DEFAULT_REPEAT_PENALTY = float(os.environ.get("DEFAULT_REPEAT_PENALTY", "1.05"))
+DEFAULT_FREQUENCY_PENALTY = float(os.environ.get("DEFAULT_FREQUENCY_PENALTY", "0.0"))
+DEFAULT_PRESENCE_PENALTY = float(os.environ.get("DEFAULT_PRESENCE_PENALTY", "0.0"))
 
 # KV Cache Quantization (Q8_0 for 50% lower KV-cache RAM footprint + Flash Attention)
 KV_CACHE_TYPE = os.environ.get("KV_CACHE_TYPE", "q8_0").lower()

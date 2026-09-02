@@ -155,10 +155,10 @@ class LocalEngine:
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_p=0.90,
-                repeat_penalty=1.20,
-                frequency_penalty=0.35,
-                presence_penalty=0.15,
+                top_p=getattr(config, "DEFAULT_TOP_P", 0.90),
+                repeat_penalty=getattr(config, "DEFAULT_REPEAT_PENALTY", 1.05),
+                frequency_penalty=getattr(config, "DEFAULT_FREQUENCY_PENALTY", 0.0),
+                presence_penalty=getattr(config, "DEFAULT_PRESENCE_PENALTY", 0.0),
                 stop=self.stop_tokens
             )
         text = out["choices"][0]["text"].strip()
@@ -176,10 +176,10 @@ class LocalEngine:
                     prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    top_p=0.90,
-                    repeat_penalty=1.20,
-                    frequency_penalty=0.35,
-                    presence_penalty=0.15,
+                    top_p=getattr(config, "DEFAULT_TOP_P", 0.90),
+                    repeat_penalty=getattr(config, "DEFAULT_REPEAT_PENALTY", 1.05),
+                    frequency_penalty=getattr(config, "DEFAULT_FREQUENCY_PENALTY", 0.0),
+                    presence_penalty=getattr(config, "DEFAULT_PRESENCE_PENALTY", 0.0),
                     stop=self.stop_tokens,
                     stream=True
                 )

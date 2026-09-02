@@ -3,7 +3,7 @@ Parts
 =====
 
 
-Raspberry PI 4 (4GB)
+Raspberry PI 4 (8GB)
 6850 EGP 
 https://makerselectronics.com/product/raspberry-pi-4-b-4gb-ram/
 
