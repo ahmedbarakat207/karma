@@ -401,7 +401,11 @@ def build_column_back() -> List[Triangle]:
 
 def build_neck_front() -> List[Triangle]:
     """
-    Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..60] (World Z: 700..760)
+    Exotic Neck Front Cowl: X: [-80..80], Y: [0..45], Z: [0..46] (World Z: 700..746)
+    Outer shell STOPS at Z=46 (4mm below hinge pin center at Z=50).
+    This gives the dual-shear head clevis full clearance to wrap around
+    the Ø11mm pillow block at Z=50 without the shell blocking it.
+    The pillow blocks (Z=0..50) protrude above the shell top by 4mm.
     Features:
     - Dedicated MG90S Micro Servo Mounting Bay with M2 mounting screw posts
     - Dual Hinge Pin Pillow Blocks with Ø3.0mm stainless steel pin bores (at X=+/-40mm, Z=50mm)
@@ -409,19 +413,19 @@ def build_neck_front() -> List[Triangle]:
     """
     tris = []
     W = WALL_NECK
+    SHELL_TOP = 46.0   # Shell stops 4mm below hinge pin — clevis slides over pillow block above
 
     outer_layers = [
-        (0.0,  half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (30.0, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
-        (60.0, half_contour_front(-76.0, 76.0, 0.0, 42.0, chamfer_front=16.0, n_per_seg=6)),
+        (0.0,      half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (SHELL_TOP / 2, half_contour_front(-80.0, 80.0, 0.0, 45.0, chamfer_front=18.0, n_per_seg=6)),
+        (SHELL_TOP,    half_contour_front(-76.0, 76.0, 0.0, 42.0, chamfer_front=16.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
     # Dual Hinge Pin Pillow Blocks (At X=+/-40mm, Z=50mm)
+    # These protrude 4mm above the shell top so the head clevis can grip them
     for bx in [-HINGE_X, HINGE_X]:
-        # Pillow Block Cylinder with Ø3.1mm Pin Bore & Ø11mm Boss
         tris += hollow_cylinder_y(bx, HINGE_Z, 0.0, 45.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
-        # Structural gusset connecting pillow block to neck shell
         tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, 0.0, 45.0, 20.0, HINGE_Z)
 
     # MG90S Micro Servo Mounting Cradle (Positioned at X=0..25mm, Y=8..21mm, Z=10..33mm)
@@ -440,22 +444,25 @@ def build_neck_front() -> List[Triangle]:
 
     return tris
 
+
 def build_neck_back() -> List[Triangle]:
     """
-    Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..60]
-    Features rear bearing retainer cups and wire exit grommet.
+    Exotic Neck Back Cowl: X: [-80..80], Y: [-45..0], Z: [0..46]
+    Shell stops at Z=46 (matching front) so hinge pillow blocks protrude
+    above the shell for clevis clearance. Wire exit conduit at base.
     """
     tris = []
     W = WALL_NECK
+    SHELL_TOP = 46.0
 
     outer_layers = [
-        (0.0,  half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (30.0, half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
-        (60.0, half_contour_back(-76.0, 76.0, -42.0, 0.0, chamfer_back=16.0, n_per_seg=6)),
+        (0.0,      half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (SHELL_TOP / 2, half_contour_back(-80.0, 80.0, -45.0, 0.0, chamfer_back=18.0, n_per_seg=6)),
+        (SHELL_TOP,    half_contour_back(-76.0, 76.0, -42.0, 0.0, chamfer_back=16.0, n_per_seg=6)),
     ]
     tris += loft_contours_z(outer_layers, cap_bottom=True, cap_top=True)
 
-    # Rear Hinge Pin Support Bosses
+    # Rear Hinge Pin Support Bosses (protrude 4mm above shell)
     for bx in [-HINGE_X, HINGE_X]:
         tris += hollow_cylinder_y(bx, HINGE_Z, -45.0, 0.0, HINGE_BOSS_R, HINGE_PIN_R, segments=24)
         tris += box(bx - HINGE_BOSS_R, bx + HINGE_BOSS_R, -45.0, 0.0, 20.0, HINGE_Z)
@@ -464,9 +471,10 @@ def build_neck_back() -> List[Triangle]:
         tris += mounting_boss_m4(bx, -25.0, W, W + 15.0, is_insert=False)
 
     # Wire Exit Conduit
-    tris += hollow_cylinder_z(0.0, -15.0, W, 60.0 - W, 16.0, 13.0, segments=16)
+    tris += hollow_cylinder_z(0.0, -15.0, W, SHELL_TOP - W, 16.0, 13.0, segments=16)
 
     return tris
+
 
 # ---------------------------------------------------------------------------
 # 4. MG90S Micro Servo & Mechanical Linkage CAD

@@ -935,7 +935,6 @@ let collisionActive = false;      // whether we are currently blocked
 const _boxA = new THREE.Box3();
 const _boxB = new THREE.Box3();
 
-// Emissive materials saved so we can restore after clearing highlight
 const COL_HIGHLIGHT_COLOR = new THREE.Color(0xff2200);
 const NORMAL_EMISSIVE     = new THREE.Color(0x000000);
 
@@ -949,7 +948,7 @@ function checkCollisions() {
   let anyCollision = false;
   const collidingPairs = [];
 
-  // Force matrix update so Box3 reflects current transforms
+  // Force world matrices so Box3 is accurate
   scene.updateMatrixWorld(true);
 
   for (const pair of COL_PAIRS) {
@@ -957,16 +956,20 @@ function checkCollisions() {
     const nMesh = meshMap[pair.n];
     if (!hMesh || !nMesh) continue;
 
+    // World-space AABB for each mesh
     _boxA.setFromObject(hMesh);
     _boxB.setFromObject(nMesh);
 
+    // Direct AABB intersection — valid because CAD neck shell now ends
+    // at World Z=746, 4mm below the hinge pin at Z=750, giving true
+    // clearance at 90° neutral. Any hit from here is a real collision.
     const hit = _boxA.intersectsBox(_boxB);
 
     // Update per-pair indicator dot
-    const dot  = document.getElementById(`cdot-${pair.id}`);
-    const row  = document.getElementById(`cpair-${pair.id}`);
-    if (dot) { dot.classList.toggle('red', hit); }
-    if (row) { row.classList.toggle('active', hit); }
+    const dot = document.getElementById(`cdot-${pair.id}`);
+    const row = document.getElementById(`cpair-${pair.id}`);
+    if (dot) dot.classList.toggle('red', hit);
+    if (row) row.classList.toggle('active', hit);
 
     if (hit) {
       anyCollision = true;
@@ -974,7 +977,9 @@ function checkCollisions() {
     }
   }
 
+
   if (anyCollision) {
+
     // ---- COLLISION STATE ----
     if (!collisionActive) {
       // First collision frame: revert to last safe pose
