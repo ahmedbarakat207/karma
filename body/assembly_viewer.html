@@ -295,6 +295,113 @@
   .spec-k { color: var(--muted); }
   .spec-v { font-family: 'JetBrains Mono', monospace; color: var(--text); font-weight: 500; }
   .spec-v.hl { color: var(--accent); }
+
+  /* ========== COLLISION DETECTION UI ========== */
+  #collision-alert {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: none;
+    z-index: 20;
+    min-width: 320px;
+    background: rgba(10, 4, 4, 0.92);
+    border: 1.5px solid #ef4444;
+    border-radius: 10px;
+    padding: 12px 16px;
+    backdrop-filter: blur(18px);
+    box-shadow: 0 0 28px rgba(239, 68, 68, 0.55), 0 6px 24px rgba(0,0,0,0.7);
+    animation: colPulse 0.5s ease;
+  }
+  #collision-alert.show { display: flex; gap: 10px; align-items: flex-start; }
+  @keyframes colPulse {
+    0% { transform: scale(0.96); opacity: 0; }
+    60% { transform: scale(1.02); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .col-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .col-body { flex: 1; }
+  .col-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #f87171;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .col-msg { font-size: 11px; color: #fca5a5; line-height: 1.5; }
+  .col-pair {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.15);
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-top: 4px;
+    display: inline-block;
+  }
+  .col-limit {
+    font-size: 10px;
+    color: #fb923c;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 5px;
+  }
+
+  /* Slider goes red when clamped */
+  input[type=range].clamped::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.8) !important;
+  }
+  input[type=range].clamped {
+    background: linear-gradient(90deg, #7f1d1d, #451a03) !important;
+  }
+
+  /* Collision panel in sidebar */
+  #collision-panel .col-pair-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 4px 6px;
+    border-radius: 5px;
+    background: rgba(255,255,255,0.03);
+    margin-bottom: 3px;
+    transition: background 0.2s;
+  }
+  #collision-panel .col-pair-row.active {
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+  }
+  #collision-panel .col-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  #collision-panel .col-dot.red { background: #ef4444; box-shadow: 0 0 5px #ef4444; }
+  #col-status-line {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #22c55e;
+    margin-top: 8px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: rgba(34, 197, 94, 0.1);
+    text-align: center;
+    transition: all 0.2s;
+  }
+  #col-status-line.error {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.15);
+  }
+  #col-max-angle {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #64748b;
+    margin-top: 4px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -319,6 +426,17 @@
     <div class="hud-row"><span class="hud-key">Torque / Speed</span><span class="hud-val" id="hud-infill">2.2 kg·cm @ 6V (0.08s/60°)</span></div>
     <div class="hud-row"><span class="hud-key">Weight</span><span class="hud-val" id="hud-weight">13.4 g</span></div>
     <div class="hud-row"><span class="hud-key">Interface</span><span class="hud-val" id="hud-hardware">21T Spline, 2x M2 Screws</span></div>
+  </div>
+
+  <!-- COLLISION ALERT OVERLAY -->
+  <div id="collision-alert">
+    <span class="col-icon">⛔</span>
+    <div class="col-body">
+      <div class="col-title">Collision Detected — Motion Blocked</div>
+      <div class="col-msg" id="col-msg">Head display intersects neck cowling.</div>
+      <span class="col-pair" id="col-pair">Head Visor ↔ Neck Front Cowling</span>
+      <div class="col-limit" id="col-limit">⚠ Servo clamped at max safe angle: 132.0°</div>
+    </div>
   </div>
 
   <div class="viewport-overlay">
@@ -390,6 +508,31 @@
     <div id="part-list-container"></div>
   </div>
 
+  <!-- Collision Detection Panel -->
+  <div class="card" id="collision-panel">
+    <div class="card-title">Collision Detection <span id="col-live-badge" style="font-size:9px;color:#22c55e;font-weight:700">● LIVE</span></div>
+    <div id="col-pair-list">
+      <div class="col-pair-row" id="cpair-0">
+        <div class="col-dot" id="cdot-0"></div>
+        <span>Head Visor ↔ Neck Front</span>
+      </div>
+      <div class="col-pair-row" id="cpair-1">
+        <div class="col-dot" id="cdot-1"></div>
+        <span>Head Dome ↔ Neck Front</span>
+      </div>
+      <div class="col-pair-row" id="cpair-2">
+        <div class="col-dot" id="cdot-2"></div>
+        <span>Head Visor ↔ Neck Back</span>
+      </div>
+      <div class="col-pair-row" id="cpair-3">
+        <div class="col-dot" id="cdot-3"></div>
+        <span>Head Dome ↔ Neck Back</span>
+      </div>
+    </div>
+    <div id="col-status-line">✓ No Collision — ROM Safe</div>
+    <div id="col-max-angle">Max safe pitch: <b id="col-max-val">135.0°</b></div>
+  </div>
+
   <!-- Mechanical Specs -->
   <div class="card">
     <div class="card-title">Hardware Specifications</div>
@@ -399,7 +542,7 @@
       <div class="spec-item"><span class="spec-k">Linkage Mechanism</span><span class="spec-v hl">4-Bar Articulated Pushrod</span></div>
       <div class="spec-item"><span class="spec-k">Hinge Axles</span><span class="spec-v">2x Ø3.0 × 20mm Steel Pins</span></div>
       <div class="spec-item"><span class="spec-k">Pivot Axis</span><span class="spec-v hl">X=±40 mm, World Z=750 mm</span></div>
-      <div class="spec-item"><span class="spec-k">Head Pitch ROM</span><span class="spec-v hl">90° to 135° (45° Sweep)</span></div>
+      <div class="spec-item"><span class="spec-k">Head Pitch ROM</span><span class="spec-v hl" id="spec-pitch-rom">90° to 135° (45° Sweep)</span></div>
       <div class="spec-item"><span class="spec-k">Fasteners</span><span class="spec-v">M2 / M3 / M4 Heat-Set Brass</span></div>
     </div>
   </div>
@@ -753,10 +896,169 @@ function updateKinematics() {
   // 8. Update UI
   updateArcDiagram(pitchAngle);
   document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
+
+  // 9. Run collision check after every kinematics update
+  checkCollisions();
+}
+
+// ============================================================
+// COLLISION DETECTION ENGINE
+//
+// Collision pairs to monitor (all use world-space AABB via Box3.setFromObject):
+//   HEAD parts: 'Head Display Front Visor', 'Head Rear Aero Dome'
+//   NECK parts:  'Neck Front Cowling', 'Neck Back Cowling'
+//
+// Algorithm (per frame):
+//   1. For each (head mesh, neck mesh) pair → compute Box3 in world space
+//   2. Check Box3.intersectsBox()
+//   3. If ANY pair collides:
+//      a. Clamp pitchAngle to lastSafeAngle
+//      b. Revert headPivotGroup + hornGroup rotations
+//      c. Show red alert overlay + highlight colliding meshes
+//      d. Update sidebar collision panel
+//   4. If no collision: update lastSafeAngle = pitchAngle
+// ============================================================
+
+const HEAD_PARTS = ['Head Display Front Visor', 'Head Rear Aero Dome'];
+const NECK_PARTS = ['Neck Front Cowling', 'Neck Back Cowling'];
+
+// Pair metadata for the 4 monitored combinations
+const COL_PAIRS = [
+  { h: 'Head Display Front Visor', n: 'Neck Front Cowling', id: 0 },
+  { h: 'Head Rear Aero Dome',      n: 'Neck Front Cowling', id: 1 },
+  { h: 'Head Display Front Visor', n: 'Neck Back Cowling',  id: 2 },
+  { h: 'Head Rear Aero Dome',      n: 'Neck Back Cowling',  id: 3 },
+];
+
+let lastSafeAngle   = 90;         // last pitch angle with no collision
+let collisionActive = false;      // whether we are currently blocked
+const _boxA = new THREE.Box3();
+const _boxB = new THREE.Box3();
+
+// Emissive materials saved so we can restore after clearing highlight
+const COL_HIGHLIGHT_COLOR = new THREE.Color(0xff2200);
+const NORMAL_EMISSIVE     = new THREE.Color(0x000000);
+
+function checkCollisions() {
+  // Skip during exploded view (parts are artificially separated)
+  if (explodeFactor > 5) {
+    clearCollisionState();
+    return;
+  }
+
+  let anyCollision = false;
+  const collidingPairs = [];
+
+  // Force matrix update so Box3 reflects current transforms
+  scene.updateMatrixWorld(true);
+
+  for (const pair of COL_PAIRS) {
+    const hMesh = meshMap[pair.h];
+    const nMesh = meshMap[pair.n];
+    if (!hMesh || !nMesh) continue;
+
+    _boxA.setFromObject(hMesh);
+    _boxB.setFromObject(nMesh);
+
+    const hit = _boxA.intersectsBox(_boxB);
+
+    // Update per-pair indicator dot
+    const dot  = document.getElementById(`cdot-${pair.id}`);
+    const row  = document.getElementById(`cpair-${pair.id}`);
+    if (dot) { dot.classList.toggle('red', hit); }
+    if (row) { row.classList.toggle('active', hit); }
+
+    if (hit) {
+      anyCollision = true;
+      collidingPairs.push(pair);
+    }
+  }
+
+  if (anyCollision) {
+    // ---- COLLISION STATE ----
+    if (!collisionActive) {
+      // First collision frame: revert to last safe pose
+      pitchAngle = lastSafeAngle;
+      const tiltDeg = pitchAngle - 90.0;
+      headPivotGroup.rotation.x = THREE.MathUtils.degToRad(tiltDeg);
+      hornGroup.rotation.z      = THREE.MathUtils.degToRad(-tiltDeg);
+      // Re-snap slider
+      const slider = document.getElementById('slider-pitch');
+      if (slider) slider.value = pitchAngle;
+      document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
+      updateArcDiagram(pitchAngle);
+      collisionActive = true;
+    }
+
+    // Highlight colliding meshes red
+    for (const pair of collidingPairs) {
+      const hm = meshMap[pair.h];
+      const nm = meshMap[pair.n];
+      if (hm) { hm.material.emissive = COL_HIGHLIGHT_COLOR; hm.material.emissiveIntensity = 0.55; }
+      if (nm) { nm.material.emissive = COL_HIGHLIGHT_COLOR; nm.material.emissiveIntensity = 0.45; }
+    }
+
+    // Build pair label string
+    const pairLabel = collidingPairs.map(p => `${p.h.replace('Head ','').replace(' Cowling','')} ↔ ${p.n.replace(' Cowling','')}`).join(', ');
+
+    // Show alert overlay
+    const alertEl = document.getElementById('collision-alert');
+    alertEl.classList.add('show');
+    document.getElementById('col-msg').textContent =
+      `${collidingPairs.length} pair${collidingPairs.length>1?'s':''} intersect. Motion blocked.`;
+    document.getElementById('col-pair').textContent = pairLabel;
+    document.getElementById('col-limit').textContent =
+      `⚠ Servo clamped at max safe angle: ${lastSafeAngle.toFixed(1)}°`;
+
+    // Sidebar status
+    const statusEl = document.getElementById('col-status-line');
+    if (statusEl) { statusEl.textContent = `⛔ COLLISION — ${collidingPairs.length} pair${collidingPairs.length>1?'s':''}`; statusEl.classList.add('error'); }
+    const maxEl = document.getElementById('col-max-val');
+    if (maxEl) maxEl.textContent = lastSafeAngle.toFixed(1) + '°';
+
+    // Slider turns red
+    document.getElementById('slider-pitch').classList.add('clamped');
+
+    // Update ROM spec in Hardware Specifications card
+    const romEl = document.getElementById('spec-pitch-rom');
+    if (romEl) romEl.textContent = `90° to ${lastSafeAngle.toFixed(1)}° (${(lastSafeAngle-90).toFixed(1)}° Sweep)`;
+
+  } else {
+    // ---- NO COLLISION ----
+    lastSafeAngle = pitchAngle;
+    clearCollisionState();
+  }
+}
+
+function clearCollisionState() {
+  if (!collisionActive && !anyCollisionWasActive()) return;
+  collisionActive = false;
+
+  // Clear mesh emissives for head/neck parts (don't touch user-selected highlight)
+  for (const name of [...HEAD_PARTS, ...NECK_PARTS]) {
+    const m = meshMap[name];
+    if (m && m.material.emissive.getHex() === COL_HIGHLIGHT_COLOR.getHex()) {
+      m.material.emissive = NORMAL_EMISSIVE;
+      m.material.emissiveIntensity = 0;
+    }
+  }
+
+  document.getElementById('collision-alert').classList.remove('show');
+  const statusEl = document.getElementById('col-status-line');
+  if (statusEl) { statusEl.textContent = '✓ No Collision — ROM Safe'; statusEl.classList.remove('error'); }
+  document.getElementById('slider-pitch').classList.remove('clamped');
+  const romEl = document.getElementById('spec-pitch-rom');
+  if (romEl) romEl.textContent = '90° to 135° (45° Sweep)';
+}
+
+function anyCollisionWasActive() {
+  // Check if any dot is red (proxy for previous collision state)
+  return Array.from(document.querySelectorAll('.col-dot')).some(d => d.classList.contains('red'));
 }
 
 // ============================================================
 // EXPLODED VIEW
+
 // ============================================================
 const EXPLODE_ORIGINS = {};
 PARTS.forEach(p => {
