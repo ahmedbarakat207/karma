@@ -1,8 +1,6 @@
-"""
-Main Vision Pipeline Loop.
-"""
+import math
 import time
-from typing import Set
+from typing import Set, Tuple, List, Dict, Optional
 import cv2
 
 from src import config
@@ -44,17 +42,47 @@ def get_display_resolution() -> Tuple[int, int]:
 
 def run_vision(memory, stop_event, speaking_event=None) -> None:
     """Main camera capture, face rendering, and computer vision loop."""
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        config.log_debug("[vision] could not open webcam -- check camera permissions.")
-        return
+    cam_idx = getattr(config, "CAMERA_INDEX", 0)
+    cap = None
+    has_camera = False
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # 1. Probe for camera availability
+    try:
+        test_cap = cv2.VideoCapture(cam_idx)
+        if test_cap is not None and test_cap.isOpened():
+            ok, test_frame = test_cap.read()
+            if ok and test_frame is not None and test_frame.size > 0:
+                has_camera = True
+                cap = test_cap
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            else:
+                test_cap.release()
+    except Exception as e:
+        config.log_debug(f"[vision] camera probe note: {e}")
 
-    face_tracker = FaceAndGazeTracker()
-    hand_tracker = HandTracker()
-    object_detector = ObjectDetector()
+    # 2. Conditionally initialize vision trackers & YOLO
+    if not has_camera:
+        print(f"\n[vision] ⚠️ No camera hardware found at index {cam_idx}.")
+        print("[vision] 💤 YOLO object detection & spatial trackers are DISABLED to save CPU and RAM.")
+        print("[vision] 📺 Fullscreen companion face and voice cognition loop remain active.\n")
+        object_detector = None
+        face_tracker = None
+        hand_tracker = None
+    else:
+        config.log_debug(f"[vision] camera verified at index {cam_idx}. Initializing detectors...")
+        face_tracker = FaceAndGazeTracker()
+        hand_tracker = HandTracker()
+        if getattr(config, "ENABLE_YOLO", True):
+            try:
+                object_detector = ObjectDetector()
+                config.log_debug(f"[vision] YOLOv8 enabled on {config.YOLO_DEVICE}")
+            except Exception as e:
+                print(f"[vision] ⚠️ Could not load YOLO model: {e}. Disabling YOLO.")
+                object_detector = None
+        else:
+            object_detector = None
+            config.log_debug("[vision] YOLOv8 disabled via ENABLE_YOLO=0")
 
     screen_w, screen_h = get_display_resolution()
     face_renderer = FaceRenderer(width=screen_w, height=screen_h)
@@ -72,65 +100,81 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
     fps_time = time.time()
     frame_count = 0
-    display_fps = 0.0
+    display_fps = 30.0
     last_seen_labels: Set[str] = set()
-
-
-    config.log_debug(f"[vision] running high-FPS vision pipeline on {config.YOLO_DEVICE}")
 
     try:
         while not stop_event.is_set():
-            ok, frame = cap.read()
-            if not ok:
-                time.sleep(0.01)
-                continue
+            frame = None
+            bboxes = []
+            hand_pts = None
+            primary_face = None
 
-            frame_count += 1
-            now = time.time()
-            if now - fps_time >= 1.0:
-                display_fps = frame_count / (now - fps_time)
-                frame_count = 0
-                fps_time = now
+            if has_camera and cap is not None:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    time.sleep(0.01)
+                    continue
 
-            # 1. Object detection
-            obj_labels, positions, bboxes = object_detector.process(frame, memory)
+                frame_count += 1
+                now = time.time()
+                if now - fps_time >= 1.0:
+                    display_fps = frame_count / (now - fps_time)
+                    frame_count = 0
+                    fps_time = now
 
-            # 2. Face, gaze, and identity tracking
-            face_labels, recognized_people, primary_face = face_tracker.process(frame, memory)
-            if recognized_people:
-                memory.set_recognized_people(recognized_people)
+                # 1. Object detection (only if object_detector is active)
+                obj_labels, positions, bboxes = ([], {}, [])
+                if object_detector is not None:
+                    obj_labels, positions, bboxes = object_detector.process(frame, memory)
 
-            # Update gaze tracking coordinates for Face UI
-            if primary_face:
-                fx, fy, fw, fh, fname, femotion = primary_face
-                # Mirrored horizontal gaze tracking
-                norm_x = -((fx + fw / 2.0) - 320.0) / 320.0
-                norm_y = ((fy + fh / 2.0) - 240.0) / 240.0
-                internal_state.set_gaze(norm_x, norm_y, is_present=True)
+                # 2. Face, gaze, and identity tracking
+                face_labels, recognized_people, primary_face = ([], [], None)
+                if face_tracker is not None:
+                    face_labels, recognized_people, primary_face = face_tracker.process(frame, memory)
+                    if recognized_people:
+                        memory.set_recognized_people(recognized_people)
+
+                # Update gaze tracking coordinates for Face UI
+                if primary_face:
+                    fx, fy, fw, fh, fname, femotion = primary_face
+                    norm_x = -((fx + fw / 2.0) - 320.0) / 320.0
+                    norm_y = ((fy + fh / 2.0) - 240.0) / 240.0
+                    internal_state.set_gaze(norm_x, norm_y, is_present=True)
+                else:
+                    internal_state.set_gaze(0.0, 0.0, is_present=False)
+
+                # 3. 3D Hand tracking
+                hand_labels = []
+                if hand_tracker is not None:
+                    hand_labels, hand_pts = hand_tracker.process(frame)
+
+                # Aggregate observations
+                current_labels = set(obj_labels + face_labels + hand_labels)
+                for p in recognized_people:
+                    current_labels.discard("person")
+                    current_labels.add(p)
+
+                # Update working memory consciousness spatial map
+                spatial_objects = [(lbl, positions.get(lbl, (320.0, 240.0))) for lbl in current_labels]
+                memory.consciousness.update(spatial_objects)
+
+                # Log newly appeared objects (when enabled)
+                new_labels = current_labels - last_seen_labels
+                for label in new_labels:
+                    if getattr(config, "LOG_VISION_TO_CONSOLE", False):
+                        print(f"[vision] {label}")
+                    memory.add(kind="object", text=label, dedup_seconds=config.OBJECT_DEDUP_SECONDS)
+                last_seen_labels = current_labels
+
             else:
-                internal_state.set_gaze(0.0, 0.0, is_present=False)
-
-            # 3. 3D Hand tracking
-            hand_labels, hand_pts = hand_tracker.process(frame)
-
-            # Aggregate observations
-            current_labels = set(obj_labels + face_labels + hand_labels)
-            for p in recognized_people:
-                current_labels.discard("person")
-                current_labels.add(p)
-
-            # Update working memory consciousness spatial map
-            spatial_objects = [(lbl, positions.get(lbl, (320.0, 240.0))) for lbl in current_labels]
-            memory.consciousness.update(spatial_objects)
-
-            # Log newly appeared objects (when enabled)
-            new_labels = current_labels - last_seen_labels
-            for label in new_labels:
-                if getattr(config, "LOG_VISION_TO_CONSOLE", False):
-                    print(f"[vision] {label}")
-                memory.add(kind="object", text=label, dedup_seconds=config.OBJECT_DEDUP_SECONDS)
-
-            last_seen_labels = current_labels
+                # No camera mode: gentle wandering idle gaze & steady ~30 FPS pacing
+                time.sleep(getattr(config, "VISION_POLL_SECONDS", 0.033))
+                t = time.time()
+                idle_x = 0.12 * math.sin(t * 0.5)
+                idle_y = 0.06 * math.cos(t * 0.35)
+                internal_state.set_gaze(idle_x, idle_y, is_present=False)
+                display_fps = 30.0
 
             # UI State
             is_talking = bool(
@@ -156,9 +200,8 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             )
             cv2.imshow(face_window_name, face_frame)
 
-
-            # 5. Render Debug Camera Window (only when SHOW_VISION_WINDOW / --debug is enabled)
-            if getattr(config, "SHOW_VISION_WINDOW", False):
+            # 5. Render Debug Camera Window (only when camera is active and debug window enabled)
+            if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
                 annotated = frame.copy()
                 VisionRenderer.draw_objects(annotated, bboxes)
                 VisionRenderer.draw_hands(annotated, hand_pts)
@@ -179,7 +222,7 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, prop)
                 except Exception:
                     pass
-            elif key in (ord('d'), ord('D')):  # 'd' = Toggle Debug Camera Window
+            elif key in (ord('d'), ord('D')) and has_camera:  # 'd' = Toggle Debug Camera Window
                 config.SHOW_VISION_WINDOW = not getattr(config, "SHOW_VISION_WINDOW", False)
                 if not config.SHOW_VISION_WINDOW:
                     try:
@@ -198,7 +241,11 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
     except Exception as e:
         config.log_debug(f"[vision] pipeline exception: {e}")
     finally:
-        cap.release()
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
         try:
             cv2.destroyAllWindows()
         except Exception:
