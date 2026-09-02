@@ -420,285 +420,263 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-// --- Kinematics & World Coordinates ---
-const NECK_BASE_Z   = 700;
-const HINGE_LOCAL_Z = 50;
-const HINGE_WORLD_Z = NECK_BASE_Z + HINGE_LOCAL_Z; // = 750 mm
-const NECK_Y_OFFSET = 0;
+// ============================================================
+// COORDINATE SYSTEM (all in mm)
+//   X: left(-) / right(+)
+//   Y: back(-) / front(+)
+//   Z: down(0) / up(+)
+//
+// Assembly world Z offsets:
+//   Base:      Z=0..220
+//   Column:    Z=220..700
+//   Neck:      Z=700..760
+//   Hinge pins: X=±40, Y=0, World Z=750  (local neck Z=50)
+//   Head:      Z=750..940 (pivots around Z=750)
+//
+// MG90S inside neck front (all LOCAL to neck, which starts at world Z=700):
+//   Servo body bottom-left corner: local (−11.4, 6.1, 10)
+//   Servo centered at:             local (  18,  15, 33)
+//   Spline shaft tip center:       local (23.8,  15, 57.5)  <- world Z=757.5
+//   Horn arm tip eyelet (neutral): local (23.8,  27, 57.5)  <- 12mm arm along +Y at 90°
+//
+// Head clevis driving horn (LOCAL to pivotGroup which sits at world Z=750):
+//   Clevis eyelet:  local (18, 0, -12)  <- 12mm below pivot in neutral (Z points up)
+// ============================================================
 
-// MG90S Physical Position in World:
-// Servo mounted inside Neck Front cavity: X = 18mm, Y = 15mm, Z = NECK_BASE_Z + 22 = 722mm
-// Output spline shaft center: X = 18 + 5.8 = 23.8mm, Y = 15mm, Z = 722 + 27.5 = 749.5mm
-const SERVO_POS   = [18.0, 15.0, 722.0];
-const SPLINE_POS  = [23.8, 15.0, 749.5];
+const NECK_WORLD_Z  = 700;    // Neck base world Z
+const HINGE_LOCAL_Z = 50;     // Hinge pin Z inside neck local space
+const HINGE_WORLD_Z = NECK_WORLD_Z + HINGE_LOCAL_Z; // = 750
 
+// MG90S spline position in NECK LOCAL space
+const SPLINE_LX = 23.8;  // local X
+const SPLINE_LY = 15.0;  // local Y
+const SPLINE_LZ = 57.5;  // local Z (servo body at Z=10..33, shaft exits at Z=57.5)
+
+// Horn arm radius
+const HORN_R = 12.0;     // mm from spline center to eyelet
+
+// Head clevis driving point in HEAD LOCAL space (relative to pivot origin at world Z=750)
+const CLEVIS_HX = 18.0;  // same X as servo
+const CLEVIS_HY = 0.0;
+const CLEVIS_HZ = -12.0; // 12mm below the pivot = behind the pivot in Z-local
+
+// Parts definition
 const PARTS = [
-  {
-    name: 'Base Front Chassis',
-    file: 'base_front.stl',
-    color: 0x1e2536,
-    baseOffset: [0, 0, 0],
-    explodeDir: [0, 90, 0],
-    group: 'Base Chassis',
-    type: 'static',
-    mat: 'PETG / ABS',
-    infill: '30% Gyroid',
-    weight: '~480 g',
-    hardware: '8x M4 Inserts, 4x M3 Inserts'
-  },
-  {
-    name: 'Base Back Chassis',
-    file: 'base_back.stl',
-    color: 0x141a28,
-    baseOffset: [0, 0, 0],
-    explodeDir: [0, -90, 0],
-    group: 'Base Chassis',
-    type: 'static',
-    mat: 'PETG / ABS',
-    infill: '30% Gyroid',
-    weight: '~420 g',
-    hardware: 'DC Power Port, Rocker Switch'
-  },
-  {
-    name: 'Column Front Torso',
-    file: 'column_front.stl',
-    color: 0x2b384e,
-    baseOffset: [0, 0, 220],
-    explodeDir: [0, 75, 0],
-    group: 'Column Torso',
-    type: 'static',
-    mat: 'PETG / ABS',
-    infill: '25% Gyroid',
-    weight: '~560 g',
-    hardware: '2x 40mm Speakers, Mic'
-  },
-  {
-    name: 'Column Back Spine',
-    file: 'column_back.stl',
-    color: 0x1c2534,
-    baseOffset: [0, 0, 220],
-    explodeDir: [0, -75, 0],
-    group: 'Column Torso',
-    type: 'static',
-    mat: 'PETG / ABS',
-    infill: '25% Gyroid',
-    weight: '~540 g',
-    hardware: 'Cooling Louvers, M4 Bolts'
-  },
-  {
-    name: 'Neck Front Cowling',
-    file: 'neck_front.stl',
-    color: 0x384c6c,
-    baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
-    explodeDir: [0, 50, 30],
-    group: 'Neck Assembly',
-    type: 'static',
-    mat: 'PETG / PLA-CF',
-    infill: '40% Gyroid',
-    weight: '~160 g',
-    hardware: 'MG90S Servo Cradle, 2x M2 Posts'
-  },
-  {
-    name: 'Neck Back Cowling',
-    file: 'neck_back.stl',
-    color: 0x25344d,
-    baseOffset: [0, NECK_Y_OFFSET, NECK_BASE_Z],
-    explodeDir: [0, -50, 30],
-    group: 'Neck Assembly',
-    type: 'static',
-    mat: 'PETG / ABS',
-    infill: '30% Gyroid',
-    weight: '~110 g',
-    hardware: '4x M4 Bolts, Wire Exit'
-  },
-  {
-    name: 'MG90S Micro Servo',
-    file: 'mg90s_servo.stl',
-    color: 0x1d4ed8,
-    baseOffset: [...SERVO_POS],
-    explodeDir: [0, 30, 20],
-    group: 'Actuation Mechanism',
-    type: 'static',
-    mat: 'Polycarbonate + Metal Gears',
-    infill: 'Injection Molded',
-    weight: '13.4 g',
-    hardware: '2x M2 Mounting Screws'
-  },
-  {
-    name: 'MG90S 21T Servo Horn',
-    file: 'servo_horn.stl',
-    color: 0xf8fafc,
-    baseOffset: [...SPLINE_POS],
-    explodeDir: [25, 0, 15],
-    group: 'Actuation Mechanism',
-    type: 'servo_horn',
-    mat: 'Nylon / Carbon Fiber',
-    infill: '100% Solid',
-    weight: '~1.5 g',
-    hardware: '21T Spline, M2 Linkage Eyelet'
-  },
-  {
-    name: 'Articulated Pushrod',
-    file: 'steering_arm.stl',
-    color: 0x00f0ff,
-    baseOffset: [SPLINE_POS[0], SPLINE_POS[1] + 12, SPLINE_POS[2]],
-    explodeDir: [35, 0, 20],
-    group: 'Actuation Mechanism',
-    type: 'pushrod',
-    mat: 'PETG / Aluminum',
-    infill: '100% Solid',
-    weight: '~4.0 g',
-    hardware: '2x M2 Ball-Joint Screws'
-  },
-  {
-    name: 'Head Display Front Visor',
-    file: 'head_window_half.stl',
-    color: 0x0c121e,
-    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
-    explodeDir: [0, 60, 60],
-    group: 'Head Assembly',
-    type: 'pivot',
-    mat: 'PETG / Polycarbonate',
-    infill: '25% Gyroid',
-    weight: '~280 g',
-    hardware: 'Dual Hinge Clevis, 7" Display'
-  },
-  {
-    name: 'Head Rear Aero Dome',
-    file: 'head_cover_half.stl',
-    color: 0xe2e8f0,
-    baseOffset: [0, NECK_Y_OFFSET, HINGE_WORLD_Z],
-    explodeDir: [0, -60, 60],
-    group: 'Head Assembly',
-    type: 'pivot',
-    mat: 'PETG / ABS',
-    infill: '20% Gyroid',
-    weight: '~210 g',
-    hardware: '8x M3 Perimeter Bolts'
-  }
+  { name: 'Base Front Chassis',    file: 'base_front.stl',    color: 0x1e2536, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,100,0],  mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~480 g', hardware: '8x M4 Inserts, 4x M3 Inserts' },
+  { name: 'Base Back Chassis',     file: 'base_back.stl',     color: 0x141a28, group: 'Base Chassis',       type: 'static', wPos: [0,0,0],                explodeDir: [0,-100,0], mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~420 g', hardware: 'DC Power Port, Rocker Switch' },
+  { name: 'Column Front Torso',    file: 'column_front.stl',  color: 0x2b384e, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,80,0],   mat: 'PETG / ABS',             infill: '25% Gyroid',     weight: '~560 g', hardware: '2x 40mm Speakers, Mic' },
+  { name: 'Column Back Spine',     file: 'column_back.stl',   color: 0x1c2534, group: 'Column Torso',       type: 'static', wPos: [0,0,220],              explodeDir: [0,-80,0],  mat: 'PETG / ABS',             infill: '25% Gyroid',     weight: '~540 g', hardware: 'Cooling Louvers, M4 Bolts' },
+  { name: 'Neck Front Cowling',    file: 'neck_front.stl',    color: 0x3a506e, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,55,30],  mat: 'PETG / PLA-CF',          infill: '40% Gyroid',     weight: '~160 g', hardware: 'MG90S Cradle, 2x M2 Posts' },
+  { name: 'Neck Back Cowling',     file: 'neck_back.stl',     color: 0x25344d, group: 'Neck Assembly',      type: 'static', wPos: [0,0,NECK_WORLD_Z],     explodeDir: [0,-55,30], mat: 'PETG / ABS',             infill: '30% Gyroid',     weight: '~110 g', hardware: '4x M4 Bolts, Wire Exit Grommet' },
+  { name: 'MG90S Micro Servo',     file: 'mg90s_servo.stl',   color: 0x1d4ed8, group: 'Actuation Mechanism', type: 'neck-child', lPos: [6.6, 8.9, 10],   explodeDir: [0,35,25],  mat: 'Polycarbonate + Metal Gears', infill: 'Injection Molded', weight: '13.4 g', hardware: '2x M2 Mounting Screws' },
+  { name: 'MG90S 21T Servo Horn',  file: 'servo_horn.stl',    color: 0xf5f5f0, group: 'Actuation Mechanism', type: 'horn',  lPos: [SPLINE_LX, SPLINE_LY, SPLINE_LZ], explodeDir: [30,0,15], mat: 'Nylon / Carbon Fiber', infill: '100% Solid', weight: '~1.5 g', hardware: '21T Spline, M2 Linkage Eyelet' },
+  { name: 'Head Display Front Visor', file: 'head_window_half.stl', color: 0x0c121e, group: 'Head Assembly', type: 'head-child', lPos: [0,0,0], explodeDir: [0,65,65], mat: 'PETG / Polycarbonate', infill: '25% Gyroid', weight: '~280 g', hardware: 'Dual Hinge Clevis, 7" Display' },
+  { name: 'Head Rear Aero Dome',   file: 'head_cover_half.stl', color: 0xdde3ea, group: 'Head Assembly',   type: 'head-child', lPos: [0,0,0], explodeDir: [0,-65,65], mat: 'PETG / ABS', infill: '20% Gyroid', weight: '~210 g', hardware: '8x M3 Perimeter Bolts' },
 ];
 
-// --- Scene Setup ---
+// --- Scene ---
 const wrap = document.getElementById('canvas-wrap');
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.25;
+renderer.toneMappingExposure = 1.3;
 wrap.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070b);
-scene.fog = new THREE.FogExp2(0x05070b, 0.0006);
+scene.fog = new THREE.FogExp2(0x05070b, 0.00055);
 
-const camera = new THREE.PerspectiveCamera(38, wrap.clientWidth / wrap.clientHeight, 10, 8000);
+const camera = new THREE.PerspectiveCamera(42, wrap.clientWidth / wrap.clientHeight, 5, 8000);
 camera.up.set(0, 0, 1);
-camera.position.set(120, -180, 780); // Close-up on the MG90S mechanism
+camera.position.set(220, -320, 820);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.06;
+controls.dampingFactor = 0.065;
 controls.minDistance = 20;
 controls.maxDistance = 4000;
-controls.target.set(0, 0, 745);
+controls.target.set(15, 5, 755);
 controls.update();
 
-// Studio Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-scene.add(ambientLight);
-
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
-keyLight.position.set(700, -850, 1300);
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+keyLight.position.set(600, -900, 1400);
 keyLight.castShadow = true;
-keyLight.shadow.mapSize.width = 2048;
-keyLight.shadow.mapSize.height = 2048;
+keyLight.shadow.mapSize.set(2048, 2048);
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
-
-const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.85);
-fillLight.position.set(-700, 650, 700);
+const fillLight = new THREE.DirectionalLight(0x88b4ff, 0.9);
+fillLight.position.set(-700, 600, 800);
 scene.add(fillLight);
-
-const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.5);
-rimLight.position.set(0, 900, 600);
+const rimLight = new THREE.DirectionalLight(0x00f0ff, 1.6);
+rimLight.position.set(0, 1000, 600);
 scene.add(rimLight);
 
-const grid = new THREE.GridHelper(2000, 40, 0x182236, 0x0a0f1a);
+const grid = new THREE.GridHelper(2400, 48, 0x182236, 0x0a0f1a);
 grid.rotation.x = Math.PI / 2;
-grid.position.z = 0;
 scene.add(grid);
 
-// Dynamic Hierarchy Groups
-const staticGroup = new THREE.Group();
-const pivotGroup  = new THREE.Group();
-const servoGroup  = new THREE.Group();
-const hornGroup   = new THREE.Group();
-const pushrodGroup = new THREE.Group();
+// ============================================================
+// GROUP HIERARCHY (matching physical assembly)
+//
+//  scene
+//  ├── staticGroup          (base, column, neck shells - never rotate)
+//  │   └── neckGroup        (neck shells + servo, child of staticGroup, at world Z=700)
+//  │       ├── servoMesh    (local to neck)
+//  │       └── hornGroup    (at local neck spline pos, rotates Z axis)
+//  │           └── hornMesh
+//  └── headPivotGroup       (pivots around world Z=750, contains head halves + clevis markers)
+//      ├── headWindowMesh
+//      └── headCoverMesh
+// ============================================================
 
-pivotGroup.position.set(0, NECK_Y_OFFSET, HINGE_WORLD_Z);
-hornGroup.position.set(SPLINE_POS[0], SPLINE_POS[1], SPLINE_POS[2]);
-
+const staticGroup   = new THREE.Group();                    // base + column (static)
+const neckGroup     = new THREE.Group();                    // neck shells + servo
+neckGroup.position.set(0, 0, NECK_WORLD_Z);               // neck base at world Z=700
+staticGroup.add(neckGroup);
 scene.add(staticGroup);
-scene.add(pivotGroup);
-scene.add(hornGroup);
-scene.add(pushrodGroup);
 
-// Dual Stainless Steel Hinge Pins (X = -40 and X = +40)
-for (let hx of [-40, 40]) {
-  const pinGeo = new THREE.CylinderGeometry(1.5, 1.5, 24, 20);
+const hornGroup     = new THREE.Group();                    // servo horn, child of neckGroup
+hornGroup.position.set(SPLINE_LX, SPLINE_LY, SPLINE_LZ); // at spline tip in neck local space
+neckGroup.add(hornGroup);
+
+const headPivotGroup = new THREE.Group();                   // entire head, pivots around hinge
+headPivotGroup.position.set(0, 0, HINGE_WORLD_Z);         // world hinge pivot at Z=750
+scene.add(headPivotGroup);
+
+// === Hinge marker helpers ===
+// Two stainless steel Ø3mm hinge pins straddling the neck at X=±40, spanning Y=-22..+22
+for (const hx of [-40, 40]) {
+  const pinGeo = new THREE.CylinderGeometry(1.5, 1.5, 50, 20);
   pinGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-  const pinMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.15, metalness: 0.95 });
-  const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-  pinMesh.position.set(hx, 0, 0);
-  pivotGroup.add(pinMesh);
+  const pinMesh = new THREE.Mesh(pinGeo,
+    new THREE.MeshStandardMaterial({ color: 0xcfd8dc, roughness: 0.12, metalness: 0.96 }));
+  // In neckGroup local space, hinge pin is at X=hx, Y=0, Z=HINGE_LOCAL_Z=50
+  pinMesh.position.set(hx, 0, HINGE_LOCAL_Z);
+  neckGroup.add(pinMesh);
 }
 
-// --- STL Loading ---
+// === Horn tip and Head clevis marker spheres (for debugging attachment points) ===
+const hornTipMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(2.5, 10, 10),
+  new THREE.MeshStandardMaterial({ color: 0xffff00, roughness: 0.3, metalness: 0.1 })
+);
+scene.add(hornTipMarker);
+
+const clevisMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(2.5, 10, 10),
+  new THREE.MeshStandardMaterial({ color: 0xff4400, roughness: 0.3, metalness: 0.1 })
+);
+scene.add(clevisMarker);
+
+// === Procedural pushrod (rebuilt every frame) ===
+// We use a CylinderGeometry but replace it each update with correct length & orientation
+let pushrodMesh = null;
+const pushrodMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.12, metalness: 0.92 });
+
+function buildPushrod(pA, pB) {
+  if (pushrodMesh) { scene.remove(pushrodMesh); pushrodMesh.geometry.dispose(); }
+  const len = pA.distanceTo(pB);
+  if (len < 1) return;
+  const geo = new THREE.CylinderGeometry(1.5, 1.5, len, 10);
+  pushrodMesh = new THREE.Mesh(geo, pushrodMat);
+  // Position at midpoint
+  pushrodMesh.position.copy(pA).lerp(pB, 0.5);
+  // Orient along the vector from A to B (cylinder default axis is +Y)
+  pushrodMesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    pB.clone().sub(pA).normalize()
+  );
+  scene.add(pushrodMesh);
+}
+
+// === Ball-joint end caps on pushrod ===
+const hornEyeletSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(2.8, 10, 10),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 })
+);
+const clevisEyeletSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(2.8, 10, 10),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 })
+);
+scene.add(hornEyeletSphere);
+scene.add(clevisEyeletSphere);
+
+// ============================================================
+// STL Loader
+// ============================================================
 const loader = new STLLoader();
 const meshMap = {};
 let loadedCount = 0;
-let explodeFactor = 0.0;
-let pitchAngle = 90.0;
-let isAnimatingTilt = false;
+let explodeFactor = 0;
+let pitchAngle   = 90;
+let isAnimating  = false;
 
-function createPBRMaterial(p) {
+function makeMat(p) {
   if (p.name.includes('Visor') || p.name.includes('Window')) {
-    return new THREE.MeshPhysicalMaterial({
-      color: 0x0a101d,
-      metalness: 0.8,
-      roughness: 0.15,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
-      side: THREE.DoubleSide
-    });
+    return new THREE.MeshPhysicalMaterial({ color: 0x080e1a, metalness: 0.7, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide });
   }
   if (p.name.includes('Servo')) {
-    return new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    return new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.25, metalness: 0.15, side: THREE.DoubleSide });
   }
   if (p.name.includes('Horn')) {
-    return new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide });
+    return new THREE.MeshStandardMaterial({ color: 0xf5f5f0, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
   }
-  if (p.name.includes('Pushrod')) {
-    return new THREE.MeshStandardMaterial({ color: 0x00f0ff, roughness: 0.15, metalness: 0.9, side: THREE.DoubleSide });
-  }
-  return new THREE.MeshStandardMaterial({
-    color: p.color,
-    roughness: 0.35,
-    metalness: 0.4,
-    side: THREE.DoubleSide
-  });
+  return new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.35, metalness: 0.42, side: THREE.DoubleSide });
 }
 
-function updateLoading(pct, text) {
+function updateLoadingUI(pct, text) {
   document.getElementById('loading-bar').style.width = pct + '%';
   const badge = document.getElementById('status-badge');
   badge.textContent = text;
   if (pct >= 100) badge.classList.add('ready');
 }
 
-// Build Sidebar Component List
+PARTS.forEach((p, idx) => {
+  loader.load(p.file, (geom) => {
+    geom.computeVertexNormals();
+    const mesh = new THREE.Mesh(geom, makeMat(p));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData = { ...p, index: idx };
+
+    // Place mesh into the correct group with local position
+    if (p.type === 'static') {
+      mesh.position.set(...p.wPos);
+      staticGroup.add(mesh);
+    } else if (p.type === 'neck-child') {
+      // Local to neckGroup (which is already at world Z=700)
+      mesh.position.set(...p.lPos);
+      neckGroup.add(mesh);
+    } else if (p.type === 'horn') {
+      // Horn mesh: local origin is at its spline center (0,0,0) inside hornGroup
+      mesh.position.set(0, 0, 0);
+      hornGroup.add(mesh);
+    } else if (p.type === 'head-child') {
+      // Local to headPivotGroup (which is at world Z=750 = hinge pivot)
+      mesh.position.set(...p.lPos);
+      headPivotGroup.add(mesh);
+    }
+
+    meshMap[p.name] = mesh;
+    loadedCount++;
+    const pct = Math.round(loadedCount / PARTS.length * 100);
+    updateLoadingUI(pct, `Loaded ${loadedCount}/${PARTS.length} (${pct}%)`);
+    if (loadedCount === PARTS.length) {
+      updateLoadingUI(100, '● 11/11 Physical Parts Ready');
+      updateKinematics();
+    }
+  }, undefined, (err) => {
+    console.warn('STL load error:', p.file, err);
+    loadedCount++;
+  });
+});
+
+// Build sidebar list
 const listContainer = document.getElementById('part-list-container');
 PARTS.forEach((p, idx) => {
   const item = document.createElement('div');
@@ -706,7 +684,7 @@ PARTS.forEach((p, idx) => {
   item.id = `part-item-${idx}`;
   item.innerHTML = `
     <div class="part-left">
-      <div class="part-color-dot" style="background: #${p.color.toString(16).padStart(6, '0')}"></div>
+      <div class="part-color-dot" style="background:#${p.color.toString(16).padStart(6,'0')}"></div>
       <span class="part-title">${p.name}</span>
     </div>
     <span class="part-tag">${p.group.split(' ')[0]}</span>
@@ -715,163 +693,150 @@ PARTS.forEach((p, idx) => {
   listContainer.appendChild(item);
 });
 
-// Load all STLs
-PARTS.forEach((p, idx) => {
-  loader.load(p.file, (geom) => {
-    geom.computeVertexNormals();
-    const mat = createPBRMaterial(p);
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.userData = { ...p, index: idx };
+// ============================================================
+// KINEMATICS ENGINE
+//
+// Physical linkage geometry:
+//
+//  Servo horn arm (HORN_R=12mm) rotates around spline Z-axis.
+//  At 90° (neutral/level):  horn arm points along +Y → eyelet at (0, 12, 0) in hornGroup local
+//  At 135° (max tilt):      horn arm rotates −45° around Z → eyelet at (8.5, 8.5, 0) in hornGroup local
+//
+//  The servo horn rotates the same number of degrees as the pitch change,
+//  but in the opposite direction (pushing rod pushes head forward/down).
+//
+//  Head clevis eyelet (in headPivotGroup local):
+//    At 90°: (18, 0, -12)  — 12mm below pivot center
+//    Rotates with the head around X-axis (the hinge pin axis in world space = X-axis of headPivotGroup)
+// ============================================================
 
-    if (p.type === 'pivot') {
-      mesh.userData.localOrigin = [0, 0, 0];
-      mesh.position.set(0, 0, 0);
-      pivotGroup.add(mesh);
-    } else if (p.type === 'servo_horn') {
-      mesh.userData.localOrigin = [0, 0, 0];
-      mesh.position.set(0, 0, 0);
-      hornGroup.add(mesh);
-    } else if (p.type === 'pushrod') {
-      mesh.userData.localOrigin = [0, 0, 0];
-      mesh.position.set(0, 0, 0);
-      pushrodGroup.add(mesh);
-    } else {
-      mesh.userData.localOrigin = [...p.baseOffset];
-      mesh.position.set(...mesh.userData.localOrigin);
-      staticGroup.add(mesh);
-    }
+// Helper: get world position of a local point inside a Group
+function worldPos(group, localVec3) {
+  group.updateMatrixWorld(true);
+  return localVec3.clone().applyMatrix4(group.matrixWorld);
+}
 
-    meshMap[p.name] = mesh;
-    loadedCount++;
-    const pct = Math.round((loadedCount / PARTS.length) * 100);
-    updateLoading(pct, `Loaded ${loadedCount}/${PARTS.length} Parts (${pct}%)`);
-    if (loadedCount === PARTS.length) {
-      updateLoading(100, `● 11/11 Physical Parts Ready`);
-      updateKinematics();
-    }
-  });
-});
-
-// --- 4-Bar Mechanism Kinematics Engine ---
 function updateKinematics() {
-  const tiltRad = THREE.MathUtils.degToRad(-(pitchAngle - 90.0));
-  pivotGroup.rotation.x = tiltRad;
+  // 1. Head pitch: rotate headPivotGroup around its local X axis
+  //    At 90° → rotation.x = 0 (head level)
+  //    At 135° → rotation.x = +45° (head nods forward/down)
+  //    Three.js X-axis rotation: positive = pitch down (nose down in camera convention)
+  //    Our Z-up system: rotating around X in world = tilting toward +Y direction
+  const tiltDeg = pitchAngle - 90.0;
+  headPivotGroup.rotation.x = THREE.MathUtils.degToRad(tiltDeg);
 
-  // 1. Servo Horn Rotation around spline Z-axis (Rotates proportionally to pitch)
-  const servoAngleRad = (pitchAngle - 90.0) * (Math.PI / 45.0); // 0 at 90 deg -> PI at 135 deg
-  hornGroup.rotation.z = -servoAngleRad;
+  // 2. Servo horn rotation: horn rotates OPPOSITE to head pitch
+  //    When head pitts +45°, servo arm rotates −45° (pulling rod)
+  hornGroup.rotation.z = THREE.MathUtils.degToRad(-tiltDeg);
 
-  // 2. Position of Horn Eyelet in World Coordinates
-  // Horn arm length R = 12mm pointing along +Y in local frame
-  const hornEyeletLocal = new THREE.Vector3(0, 12, 2.5);
-  hornEyeletLocal.applyEuler(hornGroup.rotation);
-  const hornEyeletWorld = hornGroup.position.clone().add(hornEyeletLocal);
+  // 3. Compute world position of horn eyelet
+  //    In hornGroup local: eyelet is at (0, HORN_R, 0) — tip of the arm (arm points along +Y)
+  const hornEyeletLocal = new THREE.Vector3(0, HORN_R, 0);
+  const hornEyeletWorld = worldPos(hornGroup, hornEyeletLocal);
 
-  // 3. Position of Head Driving Horn Clevis in World Coordinates
-  // Clevis is on head at local X = 18mm, Y = 0mm, Z = -12mm relative to hinge pivot
-  const headClevisLocal = new THREE.Vector3(18.0, 0.0, -12.0);
-  headClevisLocal.applyEuler(pivotGroup.rotation);
-  const headClevisWorld = pivotGroup.position.clone().add(headClevisLocal);
+  // 4. Compute world position of head clevis eyelet
+  //    In headPivotGroup local: clevis is at (CLEVIS_HX, CLEVIS_HY, CLEVIS_HZ)
+  const headClevisLocal = new THREE.Vector3(CLEVIS_HX, CLEVIS_HY, CLEVIS_HZ);
+  const headClevisWorld = worldPos(headPivotGroup, headClevisLocal);
 
-  // 4. Orient & Position Pushrod Linkage Between Horn Eyelet and Head Clevis
-  const pushrodMesh = meshMap['Articulated Pushrod'];
-  if (pushrodMesh) {
-    pushrodGroup.position.copy(hornEyeletWorld);
-    
-    // Direction vector from horn eyelet to head clevis
-    const dir = headClevisWorld.clone().sub(hornEyeletWorld);
-    const len = dir.length();
-    
-    // Orient pushrod toward target
-    const up = new THREE.Vector3(0, 0, 1);
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-    pushrodGroup.quaternion.copy(quat);
-    
-    // Scale length to bridge connection
-    pushrodGroup.scale.set(1, len / 30.0, 1);
-  }
+  // 5. Rebuild procedural pushrod cylinder between the two eyelets
+  buildPushrod(hornEyeletWorld, headClevisWorld);
 
+  // 6. Move ball-joint spheres to their attachment points
+  hornEyeletSphere.position.copy(hornEyeletWorld);
+  clevisEyeletSphere.position.copy(headClevisWorld);
+
+  // 7. Move debug markers (hidden by default, visible in debug mode)
+  hornTipMarker.position.copy(hornEyeletWorld);
+  clevisMarker.position.copy(headClevisWorld);
+
+  // 8. Update UI
   updateArcDiagram(pitchAngle);
   document.getElementById('val-pitch').textContent = pitchAngle.toFixed(1) + '°';
 }
+
+// ============================================================
+// EXPLODED VIEW
+// ============================================================
+const EXPLODE_ORIGINS = {};
+PARTS.forEach(p => {
+  if (p.type === 'static')      EXPLODE_ORIGINS[p.name] = new THREE.Vector3(...p.wPos);
+  else if (p.type === 'neck-child') EXPLODE_ORIGINS[p.name] = new THREE.Vector3(...p.lPos);
+  else if (p.type === 'horn')   EXPLODE_ORIGINS[p.name] = new THREE.Vector3(0, 0, 0);
+  else if (p.type === 'head-child') EXPLODE_ORIGINS[p.name] = new THREE.Vector3(...p.lPos);
+});
 
 function updateExplodedView() {
   PARTS.forEach(p => {
     const mesh = meshMap[p.name];
     if (!mesh) return;
-    const [ox, oy, oz] = mesh.userData.localOrigin;
+    const orig = EXPLODE_ORIGINS[p.name];
+    if (!orig) return;
     const [ex, ey, ez] = p.explodeDir;
-    mesh.position.set(
-      ox + ex * (explodeFactor / 100),
-      oy + ey * (explodeFactor / 100),
-      oz + ez * (explodeFactor / 100)
-    );
+    const t = explodeFactor / 100;
+    mesh.position.set(orig.x + ex * t, orig.y + ey * t, orig.z + ez * t);
   });
+  // Also move horn group in explode
+  const hornPart = PARTS.find(p => p.type === 'horn');
+  if (hornPart) {
+    const [ex, ey, ez] = hornPart.explodeDir;
+    const t = explodeFactor / 100;
+    hornGroup.position.set(SPLINE_LX + ex * t, SPLINE_LY + ey * t, SPLINE_LZ + ez * t);
+  }
 }
 
+// ============================================================
+// PART SELECTION
+// ============================================================
 function selectPart(name) {
   const p = PARTS.find(item => item.name === name);
   if (!p) return;
-
-  const hud = document.getElementById('part-hud');
   document.getElementById('hud-name').textContent = p.name;
   document.getElementById('hud-group').textContent = p.group;
   document.getElementById('hud-mat').textContent = p.mat;
   document.getElementById('hud-infill').textContent = p.infill;
   document.getElementById('hud-weight').textContent = p.weight;
   document.getElementById('hud-hardware').textContent = p.hardware;
-  hud.classList.add('show');
-
+  document.getElementById('part-hud').classList.add('show');
   document.querySelectorAll('.part-item').forEach(el => el.classList.remove('active'));
   const idx = PARTS.findIndex(item => item.name === name);
   if (idx >= 0) document.getElementById(`part-item-${idx}`).classList.add('active');
-
   Object.values(meshMap).forEach(m => {
-    if (m.userData.name === name) {
-      m.material.emissive.setHex(0x00f0ff);
-      m.material.emissiveIntensity = 0.4;
-    } else {
-      m.material.emissive.setHex(0x000000);
-      m.material.emissiveIntensity = 0.0;
-    }
+    m.material.emissive = new THREE.Color(m.userData.name === name ? 0x00f0ff : 0x000000);
+    m.material.emissiveIntensity = m.userData.name === name ? 0.35 : 0;
   });
 }
 
 function deselectPart() {
   document.getElementById('part-hud').classList.remove('show');
   document.querySelectorAll('.part-item').forEach(el => el.classList.remove('active'));
-  Object.values(meshMap).forEach(m => {
-    m.material.emissive.setHex(0x000000);
-    m.material.emissiveIntensity = 0.0;
-  });
+  Object.values(meshMap).forEach(m => { m.material.emissive = new THREE.Color(0x000000); m.material.emissiveIntensity = 0; });
 }
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-
 window.addEventListener('click', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
   mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
   raycaster.setFromCamera(mouse, camera);
-  const meshes = Object.values(meshMap);
-  const intersects = raycaster.intersectObjects(meshes, false);
-
-  if (intersects.length > 0) {
-    selectPart(intersects[0].object.userData.name);
-  } else {
-    deselectPart();
-  }
+  const hits = raycaster.intersectObjects(Object.values(meshMap), false);
+  hits.length ? selectPart(hits[0].object.userData.name) : deselectPart();
 });
 
+// ============================================================
+// CONTROLS
+// ============================================================
 document.getElementById('slider-explode').addEventListener('input', (e) => {
   explodeFactor = parseFloat(e.target.value);
   document.getElementById('val-explode').textContent = Math.round(explodeFactor) + '%';
   updateExplodedView();
+  if (explodeFactor === 0) {
+    // Restore horn group to default position
+    hornGroup.position.set(SPLINE_LX, SPLINE_LY, SPLINE_LZ);
+    updateKinematics();
+  }
 });
 
 document.getElementById('slider-pitch').addEventListener('input', (e) => {
@@ -880,22 +845,21 @@ document.getElementById('slider-pitch').addEventListener('input', (e) => {
 });
 
 window.toggleTiltAnim = function() {
-  isAnimatingTilt = !isAnimatingTilt;
+  isAnimating = !isAnimating;
   const btn = document.getElementById('btn-anim');
-  btn.classList.toggle('active', isAnimatingTilt);
-  btn.textContent = isAnimatingTilt ? '⏸ Stop Pitch' : '⚡ Animate Pitch';
+  btn.classList.toggle('active', isAnimating);
+  btn.textContent = isAnimating ? '⏸ Stop Pitch' : '⚡ Animate Pitch';
 };
 
 window.resetAll = function() {
-  explodeFactor = 0;
-  pitchAngle = 90;
-  isAnimatingTilt = false;
+  explodeFactor = 0; pitchAngle = 90; isAnimating = false;
   document.getElementById('slider-explode').value = 0;
   document.getElementById('val-explode').textContent = '0%';
   document.getElementById('slider-pitch').value = 90;
   document.getElementById('val-pitch').textContent = '90.0°';
   document.getElementById('btn-anim').classList.remove('active');
   document.getElementById('btn-anim').textContent = '⚡ Animate Pitch';
+  hornGroup.position.set(SPLINE_LX, SPLINE_LY, SPLINE_LZ);
   updateExplodedView();
   updateKinematics();
   deselectPart();
@@ -907,19 +871,19 @@ window.setView = function(type) {
     if (b.id !== 'btn-xray') b.classList.remove('active');
   });
   if (event && event.target && event.target.id !== 'btn-xray') event.target.classList.add('active');
-
   if (type === 'iso') {
-    camera.position.set(650, -950, 920);
-    controls.target.set(0, 0, 520);
+    camera.position.set(700, -1000, 980);
+    controls.target.set(0, 0, 500);
   } else if (type === 'front') {
-    camera.position.set(0, -1300, 520);
+    camera.position.set(0, -1400, 540);
     controls.target.set(0, 0, 520);
   } else if (type === 'side') {
-    camera.position.set(1300, 0, 520);
+    camera.position.set(1400, 0, 540);
     controls.target.set(0, 0, 520);
   } else if (type === 'mechanism') {
-    camera.position.set(160, -260, 810);
-    controls.target.set(10, 10, 745);
+    // Look into the neck from front-right so servo, horn, and head are all visible
+    camera.position.set(220, -320, 820);
+    controls.target.set(15, 5, 752);
   }
   controls.update();
 };
@@ -927,43 +891,30 @@ window.setView = function(type) {
 let isXRay = false;
 window.toggleXRay = function() {
   isXRay = !isXRay;
-  const btn = document.getElementById('btn-xray');
-  btn.classList.toggle('active', isXRay);
+  document.getElementById('btn-xray').classList.toggle('active', isXRay);
   const shellParts = ['Neck Front Cowling', 'Neck Back Cowling', 'Column Front Torso', 'Column Back Spine'];
   shellParts.forEach(name => {
     const m = meshMap[name];
-    if (m) {
-      m.material.transparent = isXRay;
-      m.material.opacity = isXRay ? 0.35 : 1.0;
-    }
+    if (m) { m.material.transparent = isXRay; m.material.opacity = isXRay ? 0.28 : 1.0; }
   });
 };
 
 function updateArcDiagram(deg) {
   const CX = 120, CY = 65, R = 50;
-  const svgAngle = deg - 90;
-  const rad = svgAngle * Math.PI / 180;
+  const rad = (deg - 90) * Math.PI / 180;
   const ex = CX + R * Math.cos(rad);
   const ey = CY + R * Math.sin(rad);
-
   document.getElementById('angle-line').setAttribute('x2', ex.toFixed(1));
   document.getElementById('angle-line').setAttribute('y2', ey.toFixed(1));
   document.getElementById('angle-text').setAttribute('x', (ex + 6).toFixed(1));
   document.getElementById('angle-text').setAttribute('y', (ey - 4).toFixed(1));
   document.getElementById('angle-text').textContent = deg.toFixed(0) + '°';
-
-  const sx = CX + R, sy = CY;
-  const large = Math.abs(svgAngle) > 180 ? 1 : 0;
+  const large = Math.abs(deg - 90) > 180 ? 1 : 0;
   document.getElementById('arc-band').setAttribute('d',
-    `M${CX},${CY} L${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,${large},1,${ex.toFixed(1)},${ey.toFixed(1)} Z`
-  );
-
-  const endFullRad = 45 * Math.PI / 180;
-  const efx = CX + R * Math.cos(endFullRad);
-  const efy = CY + R * Math.sin(endFullRad);
+    `M${CX},${CY} L${CX+R},${CY} A${R},${R},0,${large},1,${ex.toFixed(1)},${ey.toFixed(1)} Z`);
+  const ea = 45 * Math.PI / 180;
   document.getElementById('arc-limit').setAttribute('d',
-    `M${sx.toFixed(1)},${sy.toFixed(1)} A${R},${R},0,0,1,${efx.toFixed(1)},${efy.toFixed(1)}`
-  );
+    `M${(CX+R).toFixed(1)},${CY} A${R},${R},0,0,1,${(CX+R*Math.cos(ea)).toFixed(1)},${(CY+R*Math.sin(ea)).toFixed(1)}`);
 }
 
 window.addEventListener('resize', () => {
@@ -972,18 +923,15 @@ window.addEventListener('resize', () => {
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 });
 
-// Animation Loop
 let animClock = 0;
 function animate() {
   requestAnimationFrame(animate);
-
-  if (isAnimatingTilt) {
-    animClock += 0.025;
-    pitchAngle = 90.0 + (Math.sin(animClock) * 0.5 + 0.5) * 45.0;
+  if (isAnimating) {
+    animClock += 0.022;
+    pitchAngle = 90 + (Math.sin(animClock) * 0.5 + 0.5) * 45;
     document.getElementById('slider-pitch').value = pitchAngle;
     updateKinematics();
   }
-
   controls.update();
   renderer.render(scene, camera);
 }
