@@ -1,23 +1,15 @@
-"""
-Streaming Prosody Pipeline ("The Expressive Voice").
-Streams LLM tokens into a real-time JSON prefix parser, extracts emotion/inflection/text_chunks,
-and orchestrates parallel TTS synthesis and sounddevice playback with minimal latency.
-"""
 import queue
 import re
 import threading
-import time
-from typing import Generator, List, Tuple, Optional, Any
+from typing import Generator, List, Optional, Any
 import numpy as np
 import sounddevice as sd
 
 from src import config
 from src.state import internal_state
 
-# Regex matching sentence terminal punctuation for natural clause splitting
-_SENTENCE_BOUNDARY_RE = re.compile(getattr(config, "PROSODY_SENTENCE_BOUNDARIES", r'[.!?]+'))
+_SENTENCE_RE = re.compile(getattr(config, "PROSODY_SENTENCE_BOUNDARIES", r'[.!?]+'))
 
-# Speed multiplier lookup table by emotion/inflection
 _SPEED_MAP = {
     ("excited", "excited"): 1.15,
     ("excited", "emphatic"): 1.10,
@@ -38,44 +30,13 @@ _SPEED_MAP = {
 
 
 def _resolve_speed(emotion: Optional[str], inflection: Optional[str]) -> float:
-    """Determine synthesis playback rate based on emotional and inflection cues."""
     e = (emotion or "").lower().strip()
     i = (inflection or "").lower().strip()
-
-    if (e, i) in _SPEED_MAP:
-        return _SPEED_MAP[(e, i)]
-    if (e, None) in _SPEED_MAP:
-        return _SPEED_MAP[(e, None)]
-    if (None, i) in _SPEED_MAP:
-        return _SPEED_MAP[(None, i)]
-
-    return 1.0
-
-
-def _flush_at_boundary(text: str) -> Tuple[List[str], str]:
-    """Split text at sentence terminal boundaries."""
-    if not text:
-        return [], ""
-
-    matches = list(_SENTENCE_BOUNDARY_RE.finditer(text))
-    if not matches:
-        return [], text
-
-    last_match = matches[-1]
-    split_pos = last_match.end()
-
-    if split_pos < len(text) and text[split_pos - 1] == '.' and text[split_pos].isdigit():
-        return [], text
-
-    completed = text[:split_pos].strip()
-    tail = text[split_pos:].lstrip()
-
-    chunks = [completed]
-    return chunks, tail
+    return _SPEED_MAP.get((e, i)) or _SPEED_MAP.get((e, None)) or _SPEED_MAP.get((None, i)) or 1.0
 
 
 class _JSONPrefixParser:
-    """Streaming parser that extracts emotion, inflection, and text_chunks from JSON tokens."""
+    """Pulls emotion/inflection/text_chunks out of a streaming JSON token-by-token."""
 
     def __init__(self):
         self.emotion: Optional[str] = None
@@ -84,171 +45,147 @@ class _JSONPrefixParser:
 
         self._in_object = False
         self._in_string = False
-        self._string_buf = ""
-        self._current_key: Optional[str] = None
-        self._in_chunks_array = False
-        self._array_closed = False
-        self._escape_next = False
+        self._buf = ""
+        self._key: Optional[str] = None
+        self._in_array = False
+        self._done = False
+        self._escape = False
 
     def feed(self, token: str) -> List[str]:
-        """Feed a new string token and return any newly extracted text chunks."""
-        if self._array_closed:
+        if self._done:
             return []
-        new_chunks: List[str] = []
+        out = []
         for ch in token:
-            extracted = self._feed_char(ch)
-            if extracted:
-                new_chunks.extend(extracted)
-        return new_chunks
+            got = self._char(ch)
+            if got:
+                out.extend(got)
+        return out
 
-    def _feed_char(self, ch: str) -> List[str]:
-        results: List[str] = []
+    def _char(self, ch: str) -> List[str]:
+        results = []
 
-        # Wait until outer JSON object begins
         if not self._in_object:
             if ch == '{':
                 self._in_object = True
             return results
 
-        if self._escape_next:
-            self._escape_next = False
+        if self._escape:
+            self._escape = False
             if self._in_string:
-                self._string_buf += ch
+                self._buf += ch
             return results
 
         if ch == '\\' and self._in_string:
-            self._escape_next = True
+            self._escape = True
             return results
 
         if (ch == ']' or ch == '}') and not self._in_string:
-            self._array_closed = True
-            self._in_chunks_array = False
-            if self._string_buf.strip():
-                val = self._string_buf.strip()
-                if val not in ("emotion", "inflection", "text_chunks"):
-                    results.append(val)
-                self._string_buf = ""
+            self._done = True
+            self._in_array = False
+            if self._buf.strip() and self._buf.strip() not in ("emotion", "inflection", "text_chunks"):
+                results.append(self._buf.strip())
+            self._buf = ""
             return results
 
         if ch == '"':
             if not self._in_string:
                 self._in_string = True
-                self._string_buf = ""
+                self._buf = ""
             else:
                 self._in_string = False
-                val = self._string_buf.strip()
-                if self._current_key is None and not self._in_chunks_array:
-                    self._current_key = val
-                elif self._current_key == "emotion":
+                val = self._buf.strip()
+                if self._key is None and not self._in_array:
+                    self._key = val
+                elif self._key == "emotion":
                     self.emotion = val
-                    self._current_key = None
-                elif self._current_key == "inflection":
+                    self._key = None
+                elif self._key == "inflection":
                     self.inflection = val
-                    self._current_key = None
-                elif self._current_key in ("response", "reply", "message", "text"):
+                    self._key = None
+                elif self._key in ("response", "reply", "message", "text"):
                     if val:
                         self.text_chunks.append(val)
                         results.append(val)
-                    self._current_key = None
-                elif self._in_chunks_array:
-                    if val:
-                        self.text_chunks.append(val)
-                        results.append(val)
-                self._string_buf = ""
+                    self._key = None
+                elif self._in_array and val:
+                    self.text_chunks.append(val)
+                    results.append(val)
+                self._buf = ""
             return results
 
-        if ch == '[' and self._current_key in ("text_chunks", "response", "reply", "message", "text") and not self._in_string:
-            self._in_chunks_array = True
-            self._current_key = None
+        if ch == '[' and self._key in ("text_chunks", "response", "reply", "message", "text") and not self._in_string:
+            self._in_array = True
+            self._key = None
             return results
 
         if self._in_string:
-            self._string_buf += ch
+            self._buf += ch
 
         return results
 
 
-
-
 class CodeFilter:
-    """
-    Filters out code blocks (```...```) from the speech stream so the TTS engine
-    never speaks raw code syntax out loud. Extracted code snippets are published
-    to internal_state for on-screen center visual rendering.
-    """
+    """Strips code fences from TTS stream and shows the code on screen instead."""
+
     def __init__(self):
         self.in_code = False
-        self.code_buf: List[str] = []
+        self.buf: List[str] = []
         self.lang = "code"
 
     def filter_chunk(self, chunk: str) -> List[str]:
         if not chunk:
             return []
 
-        # If already inside code block, look for closing ```
         if self.in_code:
             if "```" in chunk:
                 parts = chunk.split("```", 1)
-                self.code_buf.append(parts[0])
-                full_code = "".join(self.code_buf).strip()
-                if full_code:
-                    internal_state.set_active_code(full_code, lang=self.lang)
+                self.buf.append(parts[0])
+                code = "".join(self.buf).strip()
+                if code:
+                    internal_state.set_active_code(code, lang=self.lang)
                 self.in_code = False
-                self.code_buf = []
+                self.buf = []
                 return self.filter_chunk(parts[1])
-            else:
-                self.code_buf.append(chunk)
-                return []
+            self.buf.append(chunk)
+            return []
 
-        # Not in code block: check if ``` opens in this chunk
-        if "```" in chunk:
-            parts = chunk.split("```", 1)
-            spoken_prefix = parts[0].strip()
-            rest = parts[1]
+        if "```" not in chunk:
+            return [chunk]
 
-            self.in_code = True
-            self.code_buf = []
+        parts = chunk.split("```", 1)
+        prefix = parts[0].strip()
+        rest = parts[1]
 
-            # Check if language tag is on the first line after ```
-            first_newline = rest.find("\n")
-            if first_newline != -1:
-                potential_lang = rest[:first_newline].strip()
-                if potential_lang and len(potential_lang) < 15 and " " not in potential_lang:
-                    self.lang = potential_lang
-                    rest = rest[first_newline + 1:]
-                else:
-                    self.lang = "code"
+        self.in_code = True
+        self.buf = []
+
+        nl = rest.find("\n")
+        if nl != -1:
+            maybe_lang = rest[:nl].strip()
+            if maybe_lang and len(maybe_lang) < 15 and " " not in maybe_lang:
+                self.lang = maybe_lang
+                rest = rest[nl + 1:]
             else:
                 self.lang = "code"
+        else:
+            self.lang = "code"
 
-            # Check if it also closes in the same chunk
-            if "```" in rest:
-                code_body, after_code = rest.split("```", 1)
-                self.code_buf.append(code_body)
-                full_code = "".join(self.code_buf).strip()
-                if full_code:
-                    internal_state.set_active_code(full_code, lang=self.lang)
-                self.in_code = False
-                self.code_buf = []
+        if "```" in rest:
+            body, after = rest.split("```", 1)
+            self.buf.append(body)
+            code = "".join(self.buf).strip()
+            if code:
+                internal_state.set_active_code(code, lang=self.lang)
+            self.in_code = False
+            self.buf = []
+            out = ([prefix] if prefix else []) + self.filter_chunk(after)
+            return out
 
-                results = []
-                if spoken_prefix:
-                    results.append(spoken_prefix)
-                trailing = self.filter_chunk(after_code)
-                results.extend(trailing)
-                return results
-            else:
-                self.code_buf.append(rest)
-                return [spoken_prefix] if spoken_prefix else []
-
-        return [chunk]
+        self.buf.append(rest)
+        return [prefix] if prefix else []
 
 
 def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bool = True) -> None:
-    """
-    Main streaming entrypoint.
-    LLM Tokens -> JSON Parser -> Code Filter -> Parallel Synthesis Queue -> Sounddevice Output.
-    """
     parser = _JSONPrefixParser()
     code_filter = CodeFilter()
     interrupt_event = getattr(tts, "interrupt_event", None)
@@ -259,22 +196,22 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
     if speaking_event:
         speaking_event.set()
 
-    synth_queue: queue.Queue = queue.Queue()
-    audio_queue: queue.Queue = queue.Queue()
+    synth_q: queue.Queue = queue.Queue()
+    audio_q: queue.Queue = queue.Queue()
 
     def synth_worker():
         try:
             while True:
                 if interrupt_event and interrupt_event.is_set():
-                    while not synth_queue.empty():
+                    while not synth_q.empty():
                         try:
-                            synth_queue.get_nowait()
+                            synth_q.get_nowait()
                         except Exception:
                             break
                     break
 
                 try:
-                    item = synth_queue.get(timeout=0.05)
+                    item = synth_q.get(timeout=0.05)
                 except queue.Empty:
                     continue
 
@@ -285,26 +222,26 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                 try:
                     audio = tts._synthesize(text, speed=speed)
                     if audio is not None and not (interrupt_event and interrupt_event.is_set()):
-                        audio_queue.put(audio)
+                        audio_q.put(audio)
                 except Exception as e:
                     config.log_debug(f"[prosody] synth error: {e}")
         finally:
-            audio_queue.put(None)
+            audio_q.put(None)
 
-    def audio_drain_worker():
+    def drain_worker():
         try:
             with sd.OutputStream(samplerate=config.TTS_SAMPLE_RATE, channels=1, dtype="float32") as stream:
                 while True:
                     if interrupt_event and interrupt_event.is_set():
-                        while not audio_queue.empty():
+                        while not audio_q.empty():
                             try:
-                                audio_queue.get_nowait()
+                                audio_q.get_nowait()
                             except Exception:
                                 break
                         break
 
                     try:
-                        audio = audio_queue.get(timeout=0.05)
+                        audio = audio_q.get(timeout=0.05)
                     except queue.Empty:
                         continue
 
@@ -313,21 +250,19 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
 
                     try:
                         internal_state.set_playing_audio(True)
-                        audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
-                        stream.write(audio_arr)
+                        stream.write(np.ascontiguousarray(audio, dtype=np.float32))
                     except Exception as e:
                         config.log_debug(f"[prosody] playback error: {e}")
                     finally:
-                        if audio_queue.empty():
+                        if audio_q.empty():
                             internal_state.set_playing_audio(False)
         except Exception as e:
-            # Fallback to standard play if continuous stream cannot open
-            config.log_debug(f"[prosody] stream open fallback: {e}")
+            config.log_debug(f"[prosody] stream fallback: {e}")
             while True:
                 if interrupt_event and interrupt_event.is_set():
                     break
                 try:
-                    audio = audio_queue.get(timeout=0.05)
+                    audio = audio_q.get(timeout=0.05)
                 except queue.Empty:
                     continue
                 if audio is None:
@@ -337,7 +272,7 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
             internal_state.set_playing_audio(False)
 
     synth_t = threading.Thread(target=synth_worker, daemon=True, name="prosody_synth")
-    drain_t = threading.Thread(target=audio_drain_worker, daemon=True, name="prosody_drain")
+    drain_t = threading.Thread(target=drain_worker, daemon=True, name="prosody_drain")
     synth_t.start()
     drain_t.start()
 
@@ -349,36 +284,32 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
             if interrupt_event and interrupt_event.is_set():
                 break
 
-            new_chunks = parser.feed(token)
+            chunks = parser.feed(token)
 
             if not emotion_logged and (parser.emotion or parser.inflection):
                 emotion_logged = True
                 internal_state.current_emotion = parser.emotion
                 speed = _resolve_speed(parser.emotion, parser.inflection)
                 if verbose and getattr(config, "DEBUG", False):
-                    e_str = parser.emotion or "neutral"
-                    i_str = f"/{parser.inflection}" if parser.inflection else ""
-                    print(f"[prosody] feeling: {e_str}{i_str} (speed={speed:.2f}x)")
+                    inf = f"/{parser.inflection}" if parser.inflection else ""
+                    print(f"[prosody] {parser.emotion or 'neutral'}{inf} @ {speed:.2f}x")
 
-            for chunk in new_chunks:
+            for chunk in chunks:
                 if interrupt_event and interrupt_event.is_set():
                     break
-                filtered_speech_chunks = code_filter.filter_chunk(chunk)
-                for spoken_text in filtered_speech_chunks:
-                    if spoken_text.strip():
-                        synth_queue.put((spoken_text.strip(), speed))
+                for spoken in code_filter.filter_chunk(chunk):
+                    if spoken.strip():
+                        synth_q.put((spoken.strip(), speed))
 
     except Exception as e:
         config.log_debug(f"[prosody] token loop error: {e}")
-
     finally:
-        # Flush any trailing unclosed code block to screen state
-        if code_filter.in_code and code_filter.code_buf:
-            full_code = "".join(code_filter.code_buf).strip()
-            if full_code:
-                internal_state.set_active_code(full_code, lang=code_filter.lang)
+        if code_filter.in_code and code_filter.buf:
+            code = "".join(code_filter.buf).strip()
+            if code:
+                internal_state.set_active_code(code, lang=code_filter.lang)
 
-        synth_queue.put(None)
+        synth_q.put(None)
         synth_t.join(timeout=3.0)
         drain_t.join(timeout=4.0)
         if speaking_event:
