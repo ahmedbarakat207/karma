@@ -69,8 +69,22 @@ fix_network_and_dns() {
 
 fix_network_and_dns
 
+apt_install_safe() {
+    local available=()
+    for pkg in "$@"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            available+=("$pkg")
+        else
+            log_warn "Package $pkg not in repository, skipping"
+        fi
+    done
+    if [ ${#available[@]} -gt 0 ]; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y "${available[@]}"
+    fi
+}
+
 log_info "Installing core build tools and C/C++ toolchain..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     build-essential \
     cmake \
     git \
@@ -84,7 +98,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     liblapack-dev
 
 log_info "Installing Python 3 headers and virtual environment tools..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     python3 \
     python3-dev \
     python3-pip \
@@ -93,7 +107,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     python3-wheel
 
 log_info "Installing Audio & Speech subsystems (ALSA, PortAudio, FFmpeg)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     libasound2 \
     libasound2-dev \
     alsa-utils \
@@ -106,7 +120,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     pulseaudio-utils
 
 log_info "Installing Vision & Camera stack (libcamera, Picamera2, OpenCV GTK)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     python3-opencv \
     libcamera-dev \
     libcamera-tools \
@@ -120,21 +134,23 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     libxrender-dev
 
 log_info "Installing Hardware Actuation, PWM & GPIO subsystems (BTS7960, MG90S)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     i2c-tools \
     gpiod \
     libgpiod-dev \
     python3-libgpiod \
+    python3-rpi-lgpio \
     python3-rpi.gpio \
     python3-gpiozero \
     python3-pigpio \
     pigpio
 
 log_info "Installing Complete Xorg Display & Touchscreen Kiosk Stack..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
+apt_install_safe \
     xserver-xorg \
     xserver-xorg-video-fbdev \
     xserver-xorg-input-all \
+    xserver-xorg-input-libinput \
     xserver-xorg-input-evdev \
     xserver-xorg-legacy \
     xinit \
@@ -262,7 +278,7 @@ pip install mediapipe
 pip install sentence-transformers sqlean.py sqlite-vec
 pip install "markitdown[pdf]"
 
-pip install pygame
+pip install pygame pigpio gpiozero
 
 log_info "Compiling llama-cpp-python with native ARM NEON vectorization..."
 CMAKE_ARGS="-DGGML_CPU_ARM_ARCH=armv8-a -DGGML_BLAS=OFF" pip install --no-cache-dir llama-cpp-python
