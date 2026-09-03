@@ -72,10 +72,10 @@ fix_network_and_dns
 apt_install_safe() {
     local available=()
     for pkg in "$@"; do
-        if apt-cache show "$pkg" >/dev/null 2>&1; then
+        local cand
+        cand=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2}')
+        if [ -n "$cand" ] && [ "$cand" != "(none)" ]; then
             available+=("$pkg")
-        else
-            log_warn "Package $pkg not in repository, skipping"
         fi
     done
     if [ ${#available[@]} -gt 0 ]; then
@@ -139,11 +139,7 @@ apt_install_safe \
     gpiod \
     libgpiod-dev \
     python3-libgpiod \
-    python3-rpi-lgpio \
-    python3-rpi.gpio \
-    python3-gpiozero \
-    python3-pigpio \
-    pigpio
+    python3-gpiozero
 
 log_info "Installing Complete Xorg Display & Touchscreen Kiosk Stack..."
 apt_install_safe \
@@ -151,7 +147,6 @@ apt_install_safe \
     xserver-xorg-video-fbdev \
     xserver-xorg-input-all \
     xserver-xorg-input-libinput \
-    xserver-xorg-input-evdev \
     xserver-xorg-legacy \
     xinit \
     x11-xserver-utils \
@@ -159,7 +154,6 @@ apt_install_safe \
     unclutter \
     openbox \
     xinput \
-    xinput-calibrator \
     libdrm-dev \
     libsdl2-dev \
     libsdl2-image-dev \
@@ -238,8 +232,10 @@ log_success "Hardware firmware and overclock configured."
 
 log_info "Configuring audio..."
 
-sudo systemctl enable pigpiod || true
-sudo systemctl restart pigpiod || true
+if systemctl list-unit-files pigpiod.service 2>/dev/null | grep -q "pigpiod.service"; then
+    sudo systemctl enable pigpiod 2>/dev/null || true
+    sudo systemctl restart pigpiod 2>/dev/null || true
+fi
 
 amixer -c 0 sset 'Master' 100% unmute 2>/dev/null || true
 amixer -c 0 sset 'PCM' 100% unmute 2>/dev/null || true
@@ -247,7 +243,7 @@ amixer -c 1 sset 'Master' 100% unmute 2>/dev/null || true
 amixer -c 1 sset 'PCM' 100% unmute 2>/dev/null || true
 sudo alsactl store 2>/dev/null || true
 
-log_success "Audio initialized and pigpiod daemon running."
+log_success "Audio initialized."
 
 log_info "Setting up Python virtual environment..."
 
@@ -406,8 +402,7 @@ SERVICE_FILE="/etc/systemd/system/karma.service"
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=Karma Autonomous Companion Robot (Xorg Kiosk + AI Brain)
-After=network.target sound.target pigpiod.service systemd-user-sessions.service
-Wants=pigpiod.service
+After=network.target sound.target systemd-user-sessions.service
 Conflicts=getty@tty1.service
 
 [Service]
