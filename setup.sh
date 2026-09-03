@@ -139,27 +139,21 @@ set_config_param() {
     fi
 }
 
-# 1. Overclock Cortex-A72: 1.5 GHz -> 2.0 GHz (+33% boost for Qwen 2.5 0.5B inference)
 set_config_param "over_voltage" "6"
 set_config_param "arm_freq" "2000"
 
-# 2. Camera Module (CSI autodetect)
 set_config_param "camera_auto_detect" "1"
 
-# 3. Hardware Buses (I2C, SPI, Audio)
 set_config_param "dtparam=i2c_arm" "on"
 set_config_param "dtparam=spi" "on"
 set_config_param "dtparam=audio" "on"
 
-# 4. Hardware PWM for motors and servo
 if ! grep -q "dtoverlay=pwm-2chan" "$CONFIG_TXT"; then
     echo "dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4" | sudo tee -a "$CONFIG_TXT" > /dev/null
 fi
 
-# 5. GPU memory allocation for camera pipeline
 set_config_param "gpu_mem" "128"
 
-# 6. Disable Linux console screen blanking so the LCD screen stays on forever
 CMDLINE_TXT="/boot/firmware/cmdline.txt"
 if [ ! -f "$CMDLINE_TXT" ]; then
     CMDLINE_TXT="/boot/cmdline.txt"
@@ -172,7 +166,6 @@ if [ -f "$CMDLINE_TXT" ]; then
     fi
 fi
 
-# 7. Enable V4L2 kernel driver for Raspberry Pi Camera Module
 log_info "Enabling V4L2 CSI camera module driver..."
 sudo modprobe bcm2835-v4l2 2>/dev/null || true
 if [ -f "/etc/modules" ]; then
@@ -185,11 +178,9 @@ log_success "Hardware firmware and overclock configured."
 
 log_info "Configuring audio..."
 
-# Enable and start pigpiod for jitter-free servo PWM
 sudo systemctl enable pigpiod || true
 sudo systemctl restart pigpiod || true
 
-# Maximize audio volume and unmute standard ALSA controls
 amixer -c 0 sset 'Master' 100% unmute 2>/dev/null || true
 amixer -c 0 sset 'PCM' 100% unmute 2>/dev/null || true
 amixer -c 1 sset 'Master' 100% unmute 2>/dev/null || true
@@ -213,28 +204,22 @@ log_info "Installing Python dependencies..."
 
 pip install numpy scipy requests aiohttp fastapi uvicorn pydantic huggingface_hub
 
-# Install PyTorch (Pulls official ARM64 wheels from PyPI)
 pip install torch torchvision torchaudio || pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Audio Speech Pipeline
 pip install sounddevice soundfile pyaudio
 pip install faster-whisper
 pip install onnxruntime
 pip install kokoro
 
-# Computer Vision & Gestures (opencv-python uses system GTK bindings)
 pip install opencv-python || true
 pip install ultralytics
 pip install mediapipe
 
-# SQLite Vector, Embeddings & PDF RAG (MarkItDown)
 pip install sentence-transformers sqlean.py sqlite-vec
 pip install "markitdown[pdf]"
 
-# UI Rendering
 pip install pygame
 
-# Compile llama-cpp-python with native ARM NEON SIMD optimizations
 log_info "Compiling llama-cpp-python with native ARM NEON vectorization..."
 CMAKE_ARGS="-DGGML_CPU_ARM_ARCH=armv8-a -DGGML_BLAS=OFF" pip install --no-cache-dir llama-cpp-python
 
@@ -307,7 +292,6 @@ log_info "Setting up kiosk launcher script..."
 OPENBOX_DIR="$TARGET_HOME/.config/openbox"
 mkdir -p "$OPENBOX_DIR"
 
-# Minimal Openbox rc.xml to remove all window decorations, title bars, and borders
 cat << 'EOF' > "$OPENBOX_DIR/rc.xml"
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
@@ -321,27 +305,19 @@ cat << 'EOF' > "$OPENBOX_DIR/rc.xml"
 EOF
 chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config"
 
-# Create the master kiosk launcher script (start_robot.sh)
 START_SCRIPT="$SCRIPT_DIR/start_robot.sh"
 cat << EOF > "$START_SCRIPT"
 #!/usr/bin/env bash
-# ==============================================================================
-# Karma Autonomous Robot Master Launcher (Runs inside Xorg on :0)
-# ==============================================================================
 set -e
 
-# Disable screen blanking, power management, and screensavers
 xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
 xset s noblank 2>/dev/null || true
 
-# Hide mouse cursor completely after 0.1s
 unclutter -idle 0.1 -root &
 
-# Start minimal borderless window manager in background
 openbox &
 
-# Launch Karma Autonomous Companion Robot Loop (Voice, Vision, Face & Cognition)
 exec "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py"
 EOF
 chmod +x "$START_SCRIPT"
@@ -372,7 +348,6 @@ Environment=N_BATCH=512
 Environment=DEFAULT_REPEAT_PENALTY=1.05
 Environment=DEFAULT_TOP_P=0.9
 
-# Launch xinit directly on virtual terminal 1 without login prompt
 ExecStart=/usr/bin/xinit $SCRIPT_DIR/start_robot.sh -- :0 vt1 -keeptty
 Restart=always
 RestartSec=3
