@@ -456,8 +456,8 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=$TARGET_HOME/.Xauthority
 Environment=PYTHONUNBUFFERED=1
 Environment=CTX_SIZE=4096
-Environment=N_THREADS=4
-Environment=N_BATCH=512
+Environment=N_THREADS=2
+Environment=N_BATCH=256
 Environment=DEFAULT_REPEAT_PENALTY=1.05
 Environment=DEFAULT_TOP_P=0.9
 
