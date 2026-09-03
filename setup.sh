@@ -229,8 +229,8 @@ set_config_param() {
     fi
 }
 
-set_config_param "over_voltage" "6"
-set_config_param "arm_freq" "2000"
+sudo sed -i '/over_voltage/d' "$CONFIG_TXT" 2>/dev/null || true
+sudo sed -i '/arm_freq/d' "$CONFIG_TXT" 2>/dev/null || true
 
 set_config_param "camera_auto_detect" "1"
 
@@ -264,7 +264,7 @@ if [ -f "/etc/modules" ]; then
     fi
 fi
 
-log_success "Hardware firmware and overclock configured."
+log_success "Hardware firmware configured."
 
 log_info "Configuring audio..."
 
