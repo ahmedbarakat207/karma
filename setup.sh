@@ -283,11 +283,14 @@ log_info "Setting up Python virtual environment..."
 VENV_DIR="$SCRIPT_DIR/.venv"
 if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv --system-site-packages "$VENV_DIR"
+elif [ -f "$VENV_DIR/pyvenv.cfg" ]; then
+    sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' "$VENV_DIR/pyvenv.cfg"
 fi
 
 source "$VENV_DIR/bin/activate"
 
 export PIP_PREFER_BINARY=1
+export PIP_ONLY_BINARY="numpy,scipy,torch,torchvision,torchaudio"
 export PIP_EXTRA_INDEX_URL="https://www.piwheels.org/simple"
 
 pip install --prefer-binary --upgrade pip setuptools wheel
@@ -298,14 +301,13 @@ pip install --prefer-binary requests aiohttp fastapi uvicorn pydantic huggingfac
 
 pip install --prefer-binary torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || pip install --prefer-binary torch torchvision torchaudio
 
-pip install --prefer-binary sounddevice soundfile pyaudio
+pip install --prefer-binary sounddevice soundfile
 pip install --prefer-binary faster-whisper
 pip install --prefer-binary onnxruntime
 pip install --prefer-binary kokoro
 
-pip install --prefer-binary opencv-python || true
-pip install --prefer-binary ultralytics
-pip install --prefer-binary mediapipe
+pip install --prefer-binary --no-build-isolation ultralytics
+pip install --prefer-binary --no-build-isolation mediapipe
 
 pip install --prefer-binary sentence-transformers sqlean.py sqlite-vec
 pip install --prefer-binary "markitdown[pdf]"
