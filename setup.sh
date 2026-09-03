@@ -176,6 +176,37 @@ sudo usermod -a -G video,audio,gpio,i2c,spi,render,input,tty "$TARGET_USER" || t
 
 log_success "Xorg configured to run cleanly without root restrictions."
 
+log_info "Configuring user karma and system autologin..."
+
+if ! id -u karma >/dev/null 2>&1; then
+    sudo useradd -m -s /bin/bash -G sudo,video,audio,gpio,i2c,spi,render,input,tty karma
+else
+    sudo usermod -a -G sudo,video,audio,gpio,i2c,spi,render,input,tty karma || true
+fi
+
+echo "karma:1234" | sudo chpasswd
+
+echo "karma ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/010_karma-nopasswd > /dev/null
+sudo chmod 0440 /etc/sudoers.d/010_karma-nopasswd
+
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf > /dev/null << 'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin karma --noclear %I $TERM
+EOF
+
+if [ -f /etc/lightdm/lightdm.conf ]; then
+    sudo sed -i 's/^#\?autologin-user=.*/autologin-user=karma/' /etc/lightdm/lightdm.conf
+    sudo sed -i 's/^#\?autologin-user-timeout=.*/autologin-user-timeout=0/' /etc/lightdm/lightdm.conf
+fi
+
+if command -v raspi-config >/dev/null 2>&1; then
+    sudo raspi-config nonint do_boot_behaviour B2 >/dev/null 2>&1 || true
+fi
+
+log_success "Autologin configured for user karma (password: 1234)."
+
 log_info "Configuring hardware settings in config.txt..."
 
 CONFIG_TXT="/boot/firmware/config.txt"
