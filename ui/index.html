@@ -7,31 +7,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
   <div id="app-container" class="mode-face">
     <header id="top-hud">
       <div class="hud-left">
-        <div class="brand">
+        <div class="brand-badge" title="Karma Autonomous Companion">
+          <i class="fa-solid fa-robot brand-fa-icon"></i>
           <span class="brand-text">KARMA</span>
-          <span class="status-indicator-dot"></span>
         </div>
-        <div id="mood-pill" class="pill mood-playful">
-          <span id="mood-label">PLAYFUL</span>
+        <div id="mood-pill" class="mood-icon-indicator mood-playful" title="Mood: Playful">
+          <i id="mood-fa-icon" class="fa-solid fa-face-smile"></i>
         </div>
       </div>
 
       <div class="hud-right">
         <div class="telemetry-group">
-          <div class="telemetry-bar-item">
-            <span class="telemetry-label">NRG</span>
+          <div class="telemetry-bar-item" title="Battery & Power">
+            <i class="fa-solid fa-bolt telemetry-icon energy-icon"></i>
             <div class="progress-track">
               <div id="energy-fill" class="progress-fill energy-fill" style="width: 85%;"></div>
             </div>
           </div>
-          <div class="telemetry-bar-item">
-            <span class="telemetry-label">CUR</span>
+          <div class="telemetry-bar-item" title="Curiosity & Engagement">
+            <i class="fa-solid fa-brain telemetry-icon curiosity-icon"></i>
             <div class="progress-track">
               <div id="curiosity-fill" class="progress-fill curiosity-fill" style="width: 70%;"></div>
             </div>
@@ -39,12 +41,8 @@
         </div>
 
         <button id="menu-btn" class="tactile-btn menu-btn" aria-label="Open Kiosk Hub">
-          <svg class="menu-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="3" y1="6" x2="21" y2="6"></line>
-            <line x1="3" y1="12" x2="21" y2="12"></line>
-            <line x1="3" y1="18" x2="21" y2="18"></line>
-          </svg>
-          <span class="menu-btn-text">:: MENU</span>
+          <i class="fa-solid fa-bars"></i>
+          <span class="menu-btn-text">MENU</span>
         </button>
       </div>
     </header>
@@ -92,18 +90,13 @@
           </svg>
         </div>
 
-        <div id="companion-sidebar-widget" class="companion-sidebar-widget">
-          <div class="sidebar-status-card">
-            <div class="status-header">
-              <span class="live-dot"></span>
-              <span class="live-text">COMPANION ACTIVE</span>
-            </div>
-            <div class="status-note" id="companion-status-note">Hanging out & listening to you</div>
-          </div>
-          <div class="sidebar-actions">
-            <button id="dock-touch-btn" class="sidebar-mini-btn" title="Pitch Head to 135° Touch">📐 135° Touch</button>
-            <button id="dock-face-btn" class="sidebar-mini-btn" title="Pitch Head to 90° Face">👀 90° Face</button>
-          </div>
+        <div class="companion-quick-controls">
+          <button id="dock-touch-btn" class="dock-fa-btn" title="Pitch Head 135° Touch">
+            <i class="fa-solid fa-hand-pointer"></i>
+          </button>
+          <button id="dock-face-btn" class="dock-fa-btn" title="Pitch Head 90° Face">
+            <i class="fa-solid fa-eye"></i>
+          </button>
         </div>
       </div>
 
@@ -112,32 +105,29 @@
           <header class="kiosk-nav-bar">
             <div class="kiosk-nav-tabs">
               <button class="tab-btn active" data-view="map">
-                <span class="tab-icon">🗺️</span>
+                <i class="fa-solid fa-map-location-dot tab-icon"></i>
                 <span class="tab-label">Campus Maps</span>
               </button>
               <button class="tab-btn" data-view="apps">
-                <span class="tab-icon">🚀</span>
+                <i class="fa-solid fa-rocket tab-icon"></i>
                 <span class="tab-label">Student Apps</span>
               </button>
               <button class="tab-btn" data-view="achievements">
-                <span class="tab-icon">🏆</span>
+                <i class="fa-solid fa-trophy tab-icon"></i>
                 <span class="tab-label">Achievements</span>
               </button>
               <button class="tab-btn" data-view="docs">
-                <span class="tab-icon">📚</span>
+                <i class="fa-solid fa-book-open tab-icon"></i>
                 <span class="tab-label">Reference Docs</span>
               </button>
               <button class="tab-btn" data-view="system">
-                <span class="tab-icon">⚡</span>
+                <i class="fa-solid fa-microchip tab-icon"></i>
                 <span class="tab-label">Diagnostics</span>
               </button>
             </div>
 
             <button id="kiosk-close-btn" class="kiosk-exit-btn" title="Return to Fullscreen Companion">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <i class="fa-solid fa-xmark"></i>
               <span>CLOSE</span>
             </button>
           </header>
@@ -150,9 +140,15 @@
                   <button class="floor-pill-btn" data-floor="1">Floor 2 (Robotics & AI Labs)</button>
                 </div>
                 <div class="map-controls">
-                  <button id="map-zoom-in" class="pill-action-btn" title="Zoom In">+</button>
-                  <button id="map-zoom-out" class="pill-action-btn" title="Zoom Out">−</button>
-                  <button id="map-reset" class="pill-action-btn" title="Reset Map View">Reset</button>
+                  <button id="map-zoom-in" class="pill-action-btn" title="Zoom In">
+                    <i class="fa-solid fa-plus"></i>
+                  </button>
+                  <button id="map-zoom-out" class="pill-action-btn" title="Zoom Out">
+                    <i class="fa-solid fa-minus"></i>
+                  </button>
+                  <button id="map-reset" class="pill-action-btn" title="Reset View">
+                    <i class="fa-solid fa-rotate-left"></i>
+                  </button>
                 </div>
               </div>
 
@@ -217,9 +213,15 @@
               </div>
 
               <div class="system-actions-row">
-                <button id="act-tilt-touch" class="action-btn">📐 Pitch to 135° Touch</button>
-                <button id="act-tilt-face" class="action-btn">👀 Pitch to 90° Face</button>
-                <button id="act-restart-ui" class="action-btn">🔄 Reload Display</button>
+                <button id="act-tilt-touch" class="action-btn">
+                  <i class="fa-solid fa-hand-pointer"></i> Pitch to 135° Touch
+                </button>
+                <button id="act-tilt-face" class="action-btn">
+                  <i class="fa-solid fa-eye"></i> Pitch to 90° Face
+                </button>
+                <button id="act-restart-ui" class="action-btn">
+                  <i class="fa-solid fa-arrows-rotate"></i> Reload Display
+                </button>
               </div>
             </section>
           </div>
@@ -235,17 +237,11 @@
             </div>
             <div class="code-actions">
               <button id="code-copy-btn" class="icon-btn" title="Copy code to clipboard">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
+                <i class="fa-solid fa-copy"></i>
                 <span class="btn-label">Copy</span>
               </button>
               <button id="code-close-btn" class="icon-btn close-btn" title="Dismiss code view">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
+                <i class="fa-solid fa-xmark"></i>
               </button>
             </div>
           </div>

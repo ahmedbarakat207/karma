@@ -6,10 +6,18 @@
   "scripts": {
     "start": "electron ."
   },
-  "keywords": ["robot", "companion", "kiosk", "face", "electron"],
+  "keywords": [
+    "robot",
+    "companion",
+    "kiosk",
+    "face",
+    "electron"
+  ],
   "author": "Karma Team",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.1"
+  },
   "devDependencies": {
     "electron": "^34.0.0"
   }

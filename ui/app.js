@@ -100,13 +100,12 @@
 
   const appContainer = document.getElementById('app-container');
   const moodPill = document.getElementById('mood-pill');
-  const moodLabel = document.getElementById('mood-label');
+  const moodFaIcon = document.getElementById('mood-fa-icon');
   const energyFill = document.getElementById('energy-fill');
   const curiosityFill = document.getElementById('curiosity-fill');
   const menuBtn = document.getElementById('menu-btn');
 
   const faceStage = document.getElementById('companion-station');
-  const companionStatusNote = document.getElementById('companion-status-note');
   const dockTouchBtn = document.getElementById('dock-touch-btn');
   const dockFaceBtn = document.getElementById('dock-face-btn');
 
@@ -226,10 +225,28 @@
     }
   }
 
+  const MOOD_ICONS = {
+    playful: 'fa-face-smile-wink',
+    curious: 'fa-lightbulb',
+    warm: 'fa-heart',
+    excited: 'fa-bolt',
+    attentive: 'fa-eye',
+    thoughtful: 'fa-brain',
+    tired: 'fa-moon',
+    neutral: 'fa-face-smile'
+  };
+
   function setMood(mood) {
-    currentState.mood = mood.toLowerCase();
-    moodLabel.textContent = mood.toUpperCase();
-    moodPill.className = `pill mood-${currentState.mood}`;
+    if (!mood) return;
+    const m = mood.toLowerCase();
+    currentState.mood = m;
+    if (moodPill) {
+      moodPill.className = `mood-icon-indicator mood-${m}`;
+      moodPill.title = `Mood: ${m.toUpperCase()}`;
+    }
+    if (moodFaIcon) {
+      moodFaIcon.className = `fa-solid ${MOOD_ICONS[m] || 'fa-face-smile'}`;
+    }
   }
 
   const EYE_EXPRESSIONS = {
@@ -410,9 +427,6 @@
     currentState.kioskView = view;
     appContainer.classList.remove('mode-face');
     appContainer.classList.add('mode-kiosk');
-    if (companionStatusNote) {
-      companionStatusNote.textContent = 'Browsing Interactive Hub';
-    }
     switchKioskTab(view);
     if (notifyBackend) {
       sendAction('open_view', { view });
@@ -423,9 +437,6 @@
     currentState.kioskView = 'face';
     appContainer.classList.remove('mode-kiosk');
     appContainer.classList.add('mode-face');
-    if (companionStatusNote) {
-      companionStatusNote.textContent = 'Hanging out & listening to you';
-    }
     if (notifyBackend) {
       sendAction('close_kiosk');
     }
