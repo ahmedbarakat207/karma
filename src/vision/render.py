@@ -136,16 +136,38 @@ class FaceRenderer:
         primary_color = theme["primary"]
         glow_color = theme["glow"]
 
-        # Calculate dynamic eye parameters scaled to window size
-        cx, cy = w // 2, int(h * 0.44)
-        eye_w = int(w * 0.11)
-        eye_h = int(h * 0.24)
-        eye_gap = int(w * 0.17)
-
+        # Gaze and blink state
         blink_mult = self._update_blinking(now)
         gaze_x, gaze_y = self._update_gaze(now)
-        gaze_off_x = int(gaze_x * (eye_w * 0.30))
-        gaze_off_y = int(gaze_y * (eye_h * 0.22))
+        gaze_off_x = int(gaze_x * (w * 0.033))
+        gaze_off_y = int(gaze_y * (h * 0.05))
+
+        # Check if code snippet display is active
+        code_data = internal_state.get_active_code()
+        is_coding_mode = (code_data is not None)
+
+        if is_coding_mode:
+            code_text, code_lang = code_data
+            # Karma's face is sized smaller and pushed to the left 32%
+            left_w = int(w * 0.32)
+            cx = left_w // 2
+            cy = int(h * 0.46)
+            eye_w = int(left_w * 0.20)
+            eye_h = int(h * 0.18)
+            eye_gap = int(left_w * 0.28)
+            mouth_w = int(left_w * 0.36)
+            mouth_h = int(h * 0.05)
+
+            # Eyes look toward the code snippet on the right
+            gaze_off_x += int(eye_w * 0.35)
+        else:
+            left_w = 0
+            cx, cy = w // 2, int(h * 0.44)
+            eye_w = int(w * 0.11)
+            eye_h = int(h * 0.24)
+            eye_gap = int(w * 0.17)
+            mouth_w = int(w * 0.18)
+            mouth_h = int(h * 0.07)
 
         # Render Left & Right Eyes
         self._draw_eye(canvas, cx - eye_gap, cy, eye_w, eye_h, blink_mult,
@@ -155,20 +177,80 @@ class FaceRenderer:
 
         # Render Reactive Mouth
         mouth_y = int(cy + eye_h * 0.82)
-        self._draw_mouth(canvas, cx, mouth_y, int(w * 0.18), int(h * 0.07),
+        self._draw_mouth(canvas, cx, mouth_y, mouth_w, mouth_h,
                          is_talking, is_user_speaking, mood, primary_color, glow_color)
 
-        # Render Top HUD & Mood Badges
-        self._draw_top_bar(canvas, w, h, mood, is_talking, is_user_speaking, fps, primary_color)
+        if is_coding_mode:
+            self._draw_code_panel(canvas, left_w, w, h, code_text, code_lang, primary_color)
+        else:
+            # Render Top HUD & Mood Badges
+            self._draw_top_bar(canvas, w, h, mood, is_talking, is_user_speaking, fps, primary_color)
 
-        # Render Active Dialogue Subtitles (bottom overlay)
-        self._draw_subtitles(canvas, w, h, primary_color)
+            # Render Active Dialogue Subtitles (bottom overlay)
+            self._draw_subtitles(canvas, w, h, primary_color)
 
-        # Render subtle exit hint in bottom right
-        cv2.putText(canvas, "Ctrl+D to exit  |  'f' fullscreen  |  'd' debug camera",
-                    (max(10, w - 440), max(20, h - 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (90, 80, 75), 1, cv2.LINE_AA)
+            # Render subtle exit hint in bottom right
+            cv2.putText(canvas, "Ctrl+D to exit  |  'f' fullscreen  |  'm' kiosk menu",
+                        (max(10, w - 440), max(20, h - 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (90, 80, 75), 1, cv2.LINE_AA)
 
         return canvas
+
+    def _draw_code_panel(self, canvas: np.ndarray, left_w: int, width: int, height: int,
+                         code_text: str, code_lang: str, primary_color: Tuple[int, int, int]) -> None:
+        """Renders center-right IDE code editor card on screen when coding requests are active."""
+        x1 = left_w + 14
+        x2 = width - 16
+        y1 = 18
+        y2 = height - 18
+
+        # Divider line between face on left and code in center
+        cv2.line(canvas, (left_w + 2, 20), (left_w + 2, height - 20), (45, 55, 70), 1, cv2.LINE_AA)
+
+        # Card shadow / background
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), (20, 24, 32), -1)
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 1)
+
+        # Header bar
+        header_h = 32
+        cv2.rectangle(canvas, (x1, y1), (x2, y1 + header_h), (28, 34, 46), -1)
+        cv2.line(canvas, (x1, y1 + header_h), (x2, y1 + header_h), (50, 65, 85), 1)
+
+        # 3 Terminal dots (macOS style)
+        cv2.circle(canvas, (x1 + 16, y1 + 16), 5, (70, 70, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, (x1 + 32, y1 + 16), 5, (50, 210, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, (x1 + 48, y1 + 16), 5, (90, 220, 100), -1, cv2.LINE_AA)
+
+        # Language title badge
+        lang_title = f"{code_lang.upper()} SNIPPET"
+        cv2.putText(canvas, lang_title, (x1 + 68, y1 + 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 220, 255), 1, cv2.LINE_AA)
+
+        # Touch dismiss hint
+        cv2.putText(canvas, "[TAP TO CLOSE]", (x2 - 110, y1 + 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (120, 140, 160), 1, cv2.LINE_AA)
+
+        # Split and draw code lines with line numbers
+        lines = code_text.splitlines()
+        line_y = y1 + 54
+        max_lines = max(5, (y2 - y1 - 45) // 22)
+
+        for i, line in enumerate(lines[:max_lines]):
+            # Line number
+            cv2.putText(canvas, f"{i+1:02d}", (x1 + 14, line_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (80, 100, 125), 1, cv2.LINE_AA)
+
+            # Code text
+            line_str = line[:60]
+            is_kw = any(line_str.strip().startswith(kw) for kw in ["def ", "class ", "import ", "from ", "return ", "if ", "for ", "while ", "const ", "let ", "function "])
+            text_color = (0, 220, 255) if is_kw else (235, 245, 255)
+
+            cv2.putText(canvas, line_str, (x1 + 44, line_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, text_color, 1, cv2.LINE_AA)
+            line_y += 22
+
+        if len(lines) > max_lines:
+            cv2.putText(canvas, f"... [{len(lines) - max_lines} more lines]", (x1 + 44, line_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (100, 200, 255), 1, cv2.LINE_AA)
 
     def _draw_eye(self, canvas: np.ndarray, cx: int, cy: int, w: int, h: int,
                   blink: float, gx: int, gy: int, mood: str,

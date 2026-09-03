@@ -90,6 +90,30 @@ def _deduplicate_phrase_loops(text: str) -> str:
     return re.sub(r'\s+', ' ', deduped).strip()
 
 
+def extract_code_blocks(text: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Separates code blocks (```...```) from conversational speech.
+    Returns (spoken_text, extracted_code, language).
+    """
+    if not text or "```" not in text:
+        return text, None, None
+
+    code_match = re.search(r'```(?:(\w+)\s*\n)?(.*?)```', text, flags=re.DOTALL)
+    if not code_match:
+        return text, None, None
+
+    lang = code_match.group(1) or "code"
+    code_content = code_match.group(2).strip()
+
+    spoken_text = text[:code_match.start()].strip() + " " + text[code_match.end():].strip()
+    spoken_text = re.sub(r'\s+', ' ', spoken_text).strip()
+
+    if not spoken_text:
+        spoken_text = "Here is the code on screen."
+
+    return spoken_text, code_content, lang
+
+
 def _extract_plain_text(raw: str) -> str:
     """Extract plain text string from LLM JSON response for speaking and logging."""
     if not raw:
@@ -174,15 +198,19 @@ HUMAN CONVERSATION STYLE:
 - Never sound like an AI assistant, customer service rep, or formal computer program.
 - Never mention cameras, sensors, vision models, or AI mechanisms.
 
+CODING REQUESTS:
+- If asked to write, explain, or demonstrate code, provide a brief spoken explanation and enclose the code in a markdown block with language tag (e.g. ```python ... ```).
+- The code snippet inside the backticks will be shown visually on the touchscreen display while you speak only your conversational explanation.
+
 OUTPUT FORMAT — CRITICAL:
 You MUST respond directly with ONLY a raw JSON object starting with { and ending with }.
-Never use markdown code blocks or backticks (no ``` or ```json).
+Do not wrap the outer JSON structure itself in markdown backticks.
 {
   "emotion": "<one word: curious, playful, warm, excited, tired, sad, surprised, angry, confused, scared, etc.>",
   "inflection": "<one word: question | excited | whisper | emphatic | flat>",
   "text_chunks": [
     "<first natural sentence>",
-    "<second sentence if needed>"
+    "<second sentence or code block in ```lang ... ``` if requested>"
   ]
 }
 """
@@ -327,16 +355,28 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
                 raw_reply = engine.chat(sys_prompt, prompt, max_tokens=180)
                 reply_text = _extract_plain_text(raw_reply)
                 if tts and reply_text and len(reply_text) > 1:
-                    tts.speak(reply_text)
+                    spoken_fb, code_fb, lang_fb = extract_code_blocks(reply_text)
+                    if code_fb:
+                        internal_state.set_active_code(code_fb, lang=lang_fb)
+                    if spoken_fb:
+                        tts.speak(spoken_fb)
         else:
             raw_reply = engine.chat(sys_prompt, prompt, max_tokens=180)
             reply_text = _extract_plain_text(raw_reply)
             if tts and reply_text and len(reply_text) > 1:
-                tts.speak(reply_text)
+                spoken_fb, code_fb, lang_fb = extract_code_blocks(reply_text)
+                if code_fb:
+                    internal_state.set_active_code(code_fb, lang=lang_fb)
+                if spoken_fb:
+                    tts.speak(spoken_fb)
 
         if reply_text and len(reply_text) > 1:
-            print(f"[reply] ({internal_state.mood}) {reply_text}")
-            internal_state.set_karma_speech(reply_text)
+            spoken_reply, code_content, code_lang = extract_code_blocks(reply_text)
+            if code_content:
+                internal_state.set_active_code(code_content, lang=code_lang)
+
+            print(f"[reply] ({internal_state.mood}) {spoken_reply}")
+            internal_state.set_karma_speech(spoken_reply)
             memory.add(kind="reply", text=reply_text, counts_as_activity=True)
             memory.add_conversation(speech_text, reply_text)
 

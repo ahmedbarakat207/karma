@@ -170,12 +170,87 @@ class _JSONPrefixParser:
 
 
 
+class CodeFilter:
+    """
+    Filters out code blocks (```...```) from the speech stream so the TTS engine
+    never speaks raw code syntax out loud. Extracted code snippets are published
+    to internal_state for on-screen center visual rendering.
+    """
+    def __init__(self):
+        self.in_code = False
+        self.code_buf: List[str] = []
+        self.lang = "code"
+
+    def filter_chunk(self, chunk: str) -> List[str]:
+        if not chunk:
+            return []
+
+        # If already inside code block, look for closing ```
+        if self.in_code:
+            if "```" in chunk:
+                parts = chunk.split("```", 1)
+                self.code_buf.append(parts[0])
+                full_code = "".join(self.code_buf).strip()
+                if full_code:
+                    internal_state.set_active_code(full_code, lang=self.lang)
+                self.in_code = False
+                self.code_buf = []
+                return self.filter_chunk(parts[1])
+            else:
+                self.code_buf.append(chunk)
+                return []
+
+        # Not in code block: check if ``` opens in this chunk
+        if "```" in chunk:
+            parts = chunk.split("```", 1)
+            spoken_prefix = parts[0].strip()
+            rest = parts[1]
+
+            self.in_code = True
+            self.code_buf = []
+
+            # Check if language tag is on the first line after ```
+            first_newline = rest.find("\n")
+            if first_newline != -1:
+                potential_lang = rest[:first_newline].strip()
+                if potential_lang and len(potential_lang) < 15 and " " not in potential_lang:
+                    self.lang = potential_lang
+                    rest = rest[first_newline + 1:]
+                else:
+                    self.lang = "code"
+            else:
+                self.lang = "code"
+
+            # Check if it also closes in the same chunk
+            if "```" in rest:
+                code_body, after_code = rest.split("```", 1)
+                self.code_buf.append(code_body)
+                full_code = "".join(self.code_buf).strip()
+                if full_code:
+                    internal_state.set_active_code(full_code, lang=self.lang)
+                self.in_code = False
+                self.code_buf = []
+
+                results = []
+                if spoken_prefix:
+                    results.append(spoken_prefix)
+                trailing = self.filter_chunk(after_code)
+                results.extend(trailing)
+                return results
+            else:
+                self.code_buf.append(rest)
+                return [spoken_prefix] if spoken_prefix else []
+
+        return [chunk]
+
+
 def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bool = True) -> None:
     """
     Main streaming entrypoint.
-    LLM Tokens -> JSON Parser -> Parallel Synthesis Queue -> Sounddevice Output.
+    LLM Tokens -> JSON Parser -> Code Filter -> Parallel Synthesis Queue -> Sounddevice Output.
     """
     parser = _JSONPrefixParser()
+    code_filter = CodeFilter()
     interrupt_event = getattr(tts, "interrupt_event", None)
     speaking_event = getattr(tts, "speaking_event", None)
 
@@ -266,7 +341,6 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
     synth_t.start()
     drain_t.start()
 
-
     emotion_logged = False
     speed = 1.0
 
@@ -289,12 +363,21 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
             for chunk in new_chunks:
                 if interrupt_event and interrupt_event.is_set():
                     break
-                synth_queue.put((chunk, speed))
+                filtered_speech_chunks = code_filter.filter_chunk(chunk)
+                for spoken_text in filtered_speech_chunks:
+                    if spoken_text.strip():
+                        synth_queue.put((spoken_text.strip(), speed))
 
     except Exception as e:
         config.log_debug(f"[prosody] token loop error: {e}")
 
     finally:
+        # Flush any trailing unclosed code block to screen state
+        if code_filter.in_code and code_filter.code_buf:
+            full_code = "".join(code_filter.code_buf).strip()
+            if full_code:
+                internal_state.set_active_code(full_code, lang=code_filter.lang)
+
         synth_queue.put(None)
         synth_t.join(timeout=3.0)
         drain_t.join(timeout=4.0)

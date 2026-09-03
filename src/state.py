@@ -26,10 +26,39 @@ class InternalState:
         self.last_karma_speech: Optional[str] = None
         self.last_karma_speech_time: float = 0.0
 
+        # Active Code Snippet Display (Coding Requests)
+        self.active_code_snippet: Optional[str] = None
+        self.active_code_lang: Optional[str] = None
+        self.active_code_time: float = 0.0
+
         # Gaze tracking from camera/face detection: normalized (-1.0 to 1.0)
         self.gaze_x: float = 0.0
         self.gaze_y: float = 0.0
         self.is_user_present: bool = False
+
+    def set_active_code(self, code: Optional[str], lang: Optional[str] = None) -> None:
+        """Stores code block to be displayed in center screen while face is pushed left."""
+        with self._lock:
+            self.active_code_snippet = code.strip() if code else None
+            self.active_code_lang = (lang or "code").lower().strip()
+            self.active_code_time = time.time() if code else 0.0
+
+    def clear_active_code(self) -> None:
+        """Clears active code snippet from screen."""
+        with self._lock:
+            self.active_code_snippet = None
+            self.active_code_lang = None
+            self.active_code_time = 0.0
+
+    def get_active_code(self, max_age: float = 60.0) -> Optional[Tuple[str, str]]:
+        """Returns (code_snippet, lang) if active within max_age seconds, else None."""
+        with self._lock:
+            if not self.active_code_snippet:
+                return None
+            if time.time() - self.active_code_time > max_age:
+                self.active_code_snippet = None
+                return None
+            return (self.active_code_snippet, self.active_code_lang or "code")
 
     def set_user_speech(self, text: str) -> None:
         """Record user spoken text for UI subtitles."""

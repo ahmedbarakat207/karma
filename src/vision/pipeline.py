@@ -104,6 +104,10 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
     def on_touch(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
+            # If code panel is active and user taps the code card, dismiss code
+            if internal_state.get_active_code() is not None and x >= int(curr_dims[0] * 0.30):
+                internal_state.clear_active_code()
+                return
             kiosk_manager.handle_touch(x, y, curr_dims[0], curr_dims[1])
 
     try:
