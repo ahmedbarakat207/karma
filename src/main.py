@@ -48,6 +48,49 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
 def main():
     config.apply_cli_args()
 
+    stop_event = threading.Event()
+    speaking_event = threading.Event()
+    interrupt_event = threading.Event()
+    consolidation_lock = threading.Lock()
+
+    electron_proc = None
+    if getattr(config, "USE_ELECTRON", True):
+        try:
+            from src.ui.server import start_ui_server
+            start_ui_server(
+                host=getattr(config, "UI_WS_HOST", "127.0.0.1"),
+                port=getattr(config, "UI_WS_PORT", 8765)
+            )
+            ui_dir = os.path.join(config.BASE_DIR, "ui")
+            if os.path.isdir(ui_dir):
+                import shutil
+                import subprocess
+                electron_bin = shutil.which("electron")
+                local_node_bin = os.path.join(ui_dir, "node_modules", ".bin", "electron")
+                cmd = None
+                if os.path.exists(local_node_bin):
+                    cmd = [local_node_bin, ".", "--no-sandbox"]
+                elif electron_bin:
+                    cmd = [electron_bin, ".", "--no-sandbox"]
+                elif shutil.which("chromium-browser"):
+                    index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
+                    cmd = ["chromium-browser", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
+                elif shutil.which("chromium"):
+                    index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
+                    cmd = ["chromium", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
+                elif shutil.which("npx"):
+                    cmd = ["npx", "electron", ".", "--no-sandbox"]
+
+                if cmd:
+                    electron_proc = subprocess.Popen(
+                        cmd,
+                        cwd=ui_dir,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+        except Exception as e:
+            config.log_debug(f"[main] UI server / electron init note: {e}")
+
     engine_name = f"Groq ({getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')})" if getattr(config, "USE_GROQ", False) else "local llama_cpp"
     config.log_debug(f"[main] loading LLM engine: {engine_name}...")
     engine = create_engine()
@@ -58,14 +101,9 @@ def main():
 
     store = MemoryStore()
     memory = WorkingMemory()
-    stop_event = threading.Event()
-    speaking_event = threading.Event()
-    interrupt_event = threading.Event()
 
     config.log_debug("[main] loading TTS engine...")
     tts = TTSEngine(speaking_event=speaking_event, interrupt_event=interrupt_event)
-
-    consolidation_lock = threading.Lock()
 
     def do_sleep():
         if consolidation_lock.acquire(blocking=False):
@@ -140,38 +178,6 @@ def main():
 
     for t in threads:
         t.start()
-
-    electron_proc = None
-    if getattr(config, "USE_ELECTRON", True):
-        try:
-            from src.ui.server import start_ui_server
-            start_ui_server(
-                host=getattr(config, "UI_WS_HOST", "127.0.0.1"),
-                port=getattr(config, "UI_WS_PORT", 8765)
-            )
-            ui_dir = os.path.join(config.BASE_DIR, "ui")
-            if os.path.isdir(ui_dir):
-                import shutil
-                import subprocess
-                electron_bin = shutil.which("electron")
-                local_node_bin = os.path.join(ui_dir, "node_modules", ".bin", "electron")
-                cmd = None
-                if os.path.exists(local_node_bin):
-                    cmd = [local_node_bin, "."]
-                elif electron_bin:
-                    cmd = [electron_bin, "."]
-                elif shutil.which("npx"):
-                    cmd = ["npx", "electron", "."]
-
-                if cmd:
-                    electron_proc = subprocess.Popen(
-                        cmd,
-                        cwd=ui_dir,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-        except Exception as e:
-            config.log_debug(f"[main] UI server / electron init note: {e}")
 
     groq_note = f" [Groq: {getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')}]" if getattr(config, "USE_GROQ", False) else ""
     print(f"Karma running{groq_note}. Press Ctrl+D to exit.")

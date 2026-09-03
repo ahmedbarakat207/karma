@@ -157,6 +157,8 @@ apt_install_safe \
     unclutter \
     openbox \
     xinput \
+    chromium \
+    chromium-browser \
     libdrm-dev \
     libsdl2-dev \
     libsdl2-image-dev \
