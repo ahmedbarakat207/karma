@@ -319,8 +319,9 @@ pip install --prefer-binary --ignore-requires-python --no-deps kokoro
 pip install --prefer-binary --no-build-isolation ultralytics
 pip install --prefer-binary --no-build-isolation mediapipe
 
-pip install --prefer-binary sentence-transformers sqlean.py sqlite-vec
-pip install --prefer-binary "markitdown[pdf]"
+pip install --prefer-binary sqlean.py sqlite-vec
+pip install --prefer-binary --no-deps sentence-transformers
+pip install --prefer-binary markitdown pdfminer.six
 
 pip install --prefer-binary pygame pigpio gpiozero
 
