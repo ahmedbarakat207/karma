@@ -95,6 +95,18 @@ def main():
             except Exception:
                 pass
 
+            if electron_proc:
+                try:
+                    electron_proc.terminate()
+                except Exception:
+                    pass
+
+            try:
+                from src.ui.server import stop_ui_server
+                stop_ui_server()
+            except Exception:
+                pass
+
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
@@ -128,6 +140,38 @@ def main():
 
     for t in threads:
         t.start()
+
+    electron_proc = None
+    if getattr(config, "USE_ELECTRON", True):
+        try:
+            from src.ui.server import start_ui_server
+            start_ui_server(
+                host=getattr(config, "UI_WS_HOST", "127.0.0.1"),
+                port=getattr(config, "UI_WS_PORT", 8765)
+            )
+            ui_dir = os.path.join(config.BASE_DIR, "ui")
+            if os.path.isdir(ui_dir):
+                import shutil
+                import subprocess
+                electron_bin = shutil.which("electron")
+                local_node_bin = os.path.join(ui_dir, "node_modules", ".bin", "electron")
+                cmd = None
+                if os.path.exists(local_node_bin):
+                    cmd = [local_node_bin, "."]
+                elif electron_bin:
+                    cmd = [electron_bin, "."]
+                elif shutil.which("npx"):
+                    cmd = ["npx", "electron", "."]
+
+                if cmd:
+                    electron_proc = subprocess.Popen(
+                        cmd,
+                        cwd=ui_dir,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+        except Exception as e:
+            config.log_debug(f"[main] UI server / electron init note: {e}")
 
     groq_note = f" [Groq: {getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')}]" if getattr(config, "USE_GROQ", False) else ""
     print(f"Karma running{groq_note}. Press Ctrl+D to exit.")

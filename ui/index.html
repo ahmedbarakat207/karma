@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Karma Companion Face</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div id="app-container" class="mode-face">
+    <header id="top-hud">
+      <div class="hud-left">
+        <div class="brand">
+          <span class="brand-text">KARMA</span>
+          <span class="status-indicator-dot"></span>
+        </div>
+        <div id="mood-pill" class="pill mood-playful">
+          <span id="mood-label">PLAYFUL</span>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="telemetry-group">
+          <div class="telemetry-bar-item">
+            <span class="telemetry-label">NRG</span>
+            <div class="progress-track">
+              <div id="energy-fill" class="progress-fill energy-fill" style="width: 85%;"></div>
+            </div>
+          </div>
+          <div class="telemetry-bar-item">
+            <span class="telemetry-label">CUR</span>
+            <div class="progress-track">
+              <div id="curiosity-fill" class="progress-fill curiosity-fill" style="width: 70%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <button id="menu-btn" class="tactile-btn menu-btn" aria-label="Open Kiosk Hub">
+          <svg class="menu-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <span class="menu-btn-text">:: MENU</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-stage">
+      <div id="companion-station" class="companion-station">
+        <div class="face-canvas-wrapper">
+          <svg id="face-svg" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur1" />
+                <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="blur2" />
+                <feMerge>
+                  <feMergeNode in="blur2" />
+                  <feMergeNode in="blur1" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <linearGradient id="cyan-electric" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#38E1FF" />
+                <stop offset="100%" stop-color="#00A2FF" />
+              </linearGradient>
+            </defs>
+
+            <g id="head-assembly" class="breathing-idle">
+              <g id="eye-left-container" transform="translate(240, 160)">
+                <path id="eye-left-arc" class="eye-path" d="M -55 20 A 55 55 0 0 1 55 20" fill="none" stroke="url(#cyan-electric)" stroke-width="16" stroke-linecap="round" filter="url(#neon-glow)" />
+              </g>
+
+              <g id="eye-right-container" transform="translate(560, 160)">
+                <path id="eye-right-arc" class="eye-path" d="M -55 20 A 55 55 0 0 1 55 20" fill="none" stroke="url(#cyan-electric)" stroke-width="16" stroke-linecap="round" filter="url(#neon-glow)" />
+              </g>
+
+              <g id="mouth-container" transform="translate(400, 260)">
+                <path id="mouth-path" class="mouth-path" d="M -75 -5 Q 0 38 75 -5" fill="none" stroke="url(#cyan-electric)" stroke-width="8" stroke-linecap="round" filter="url(#soft-glow)" />
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <div id="companion-sidebar-widget" class="companion-sidebar-widget">
+          <div class="sidebar-status-card">
+            <div class="status-header">
+              <span class="live-dot"></span>
+              <span class="live-text">COMPANION ACTIVE</span>
+            </div>
+            <div class="status-note" id="companion-status-note">Hanging out & listening to you</div>
+          </div>
+          <div class="sidebar-actions">
+            <button id="dock-touch-btn" class="sidebar-mini-btn" title="Pitch Head to 135° Touch">📐 135° Touch</button>
+            <button id="dock-face-btn" class="sidebar-mini-btn" title="Pitch Head to 90° Face">👀 90° Face</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="kiosk-workspace" class="kiosk-workspace">
+        <div class="kiosk-inner-panel">
+          <header class="kiosk-nav-bar">
+            <div class="kiosk-nav-tabs">
+              <button class="tab-btn active" data-view="map">
+                <span class="tab-icon">🗺️</span>
+                <span class="tab-label">Campus Maps</span>
+              </button>
+              <button class="tab-btn" data-view="apps">
+                <span class="tab-icon">🚀</span>
+                <span class="tab-label">Student Apps</span>
+              </button>
+              <button class="tab-btn" data-view="achievements">
+                <span class="tab-icon">🏆</span>
+                <span class="tab-label">Achievements</span>
+              </button>
+              <button class="tab-btn" data-view="docs">
+                <span class="tab-icon">📚</span>
+                <span class="tab-label">Reference Docs</span>
+              </button>
+              <button class="tab-btn" data-view="system">
+                <span class="tab-icon">⚡</span>
+                <span class="tab-label">Diagnostics</span>
+              </button>
+            </div>
+
+            <button id="kiosk-close-btn" class="kiosk-exit-btn" title="Return to Fullscreen Companion">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+              <span>CLOSE</span>
+            </button>
+          </header>
+
+          <div class="kiosk-views-viewport">
+            <section id="view-map" class="kiosk-pane active">
+              <div class="pane-toolbar">
+                <div class="floor-selector">
+                  <button class="floor-pill-btn active" data-floor="0">Floor 1 (Ground Level)</button>
+                  <button class="floor-pill-btn" data-floor="1">Floor 2 (Robotics & AI Labs)</button>
+                </div>
+                <div class="map-controls">
+                  <button id="map-zoom-in" class="pill-action-btn" title="Zoom In">+</button>
+                  <button id="map-zoom-out" class="pill-action-btn" title="Zoom Out">−</button>
+                  <button id="map-reset" class="pill-action-btn" title="Reset Map View">Reset</button>
+                </div>
+              </div>
+
+              <div class="map-container">
+                <div class="map-canvas-box" id="map-canvas-box">
+                  <img id="map-image" src="../data/maps/floor_1.jpg" alt="Campus Blueprint" draggable="false">
+                  <div class="karma-beacon" id="karma-beacon" title="Karma Current Position">
+                    <span class="beacon-pulse"></span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="view-apps" class="kiosk-pane">
+              <div class="pane-header-info">
+                <span class="pane-title">STUDENT INNOVATION SHOWCASE</span>
+                <span class="pane-subtitle">Autonomous apps, machine learning models, and robotics club projects</span>
+              </div>
+              <div class="cards-grid" id="student-apps-grid"></div>
+            </section>
+
+            <section id="view-achievements" class="kiosk-pane">
+              <div class="pane-header-info">
+                <span class="pane-title">COMPANION MILESTONES & AWARDS</span>
+                <span class="pane-subtitle">Autonomous hardware engineering and neural cognition accomplishments</span>
+              </div>
+              <div class="cards-grid" id="achievements-grid"></div>
+            </section>
+
+            <section id="view-docs" class="kiosk-pane">
+              <div class="docs-browser">
+                <div class="docs-sidebar" id="docs-list"></div>
+                <div class="docs-viewer">
+                  <div class="docs-viewer-header" id="docs-current-title">Reference Manual</div>
+                  <div class="docs-viewer-body" id="docs-body"></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="view-system" class="kiosk-pane">
+              <div class="diagnostics-grid">
+                <div class="diag-card">
+                  <span class="diag-label">COMPUTING CORE</span>
+                  <span class="diag-value">Raspberry Pi 4 Model B</span>
+                  <span class="diag-sub">Cortex-A72 @ 2.0 GHz Turbo</span>
+                </div>
+                <div class="diag-card">
+                  <span class="diag-label">MAIN POWER SOURCE</span>
+                  <span class="diag-value" id="diag-battery">12V AGM (9.0 Ah)</span>
+                  <span class="diag-sub">Dual BTS7960 43A Motor Bridges</span>
+                </div>
+                <div class="diag-card">
+                  <span class="diag-label">EDGE NEURAL BRAIN</span>
+                  <span class="diag-value">Qwen 2.5 0.5B Instruct</span>
+                  <span class="diag-sub">GGUF 4-bit | NEON / Metal Acceleration</span>
+                </div>
+                <div class="diag-card">
+                  <span class="diag-label">ACOUSTIC STREAMING</span>
+                  <span class="diag-value">Faster-Whisper + Kokoro</span>
+                  <span class="diag-sub">Real-Time Sub-200ms Latency Loop</span>
+                </div>
+              </div>
+
+              <div class="system-actions-row">
+                <button id="act-tilt-touch" class="action-btn">📐 Pitch to 135° Touch</button>
+                <button id="act-tilt-face" class="action-btn">👀 Pitch to 90° Face</button>
+                <button id="act-restart-ui" class="action-btn">🔄 Reload Display</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="code-stage" class="code-stage" style="display: none;">
+        <div class="code-card">
+          <div class="code-card-header">
+            <div class="code-title-group">
+              <span id="code-lang-badge" class="code-badge">C</span>
+              <span id="code-filename" class="code-filename">snippet.c</span>
+            </div>
+            <div class="code-actions">
+              <button id="code-copy-btn" class="icon-btn" title="Copy code to clipboard">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span class="btn-label">Copy</span>
+              </button>
+              <button id="code-close-btn" class="icon-btn close-btn" title="Dismiss code view">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="code-card-body">
+            <pre><code id="code-content"></code></pre>
+          </div>
+          <div class="code-card-footer">
+            <span class="hint-text">Tap anywhere to dismiss</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div id="subtitle-bar" class="subtitle-bar" style="display: none;">
+      <span id="subtitle-text"></span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

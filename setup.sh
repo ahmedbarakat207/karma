@@ -225,6 +225,21 @@ CMAKE_ARGS="-DGGML_CPU_ARM_ARCH=armv8-a -DGGML_BLAS=OFF" pip install --no-cache-
 
 log_success "All Python AI libraries installed."
 
+log_info "Configuring Node.js and Electron frontend dependencies..."
+
+if ! command -v node >/dev/null 2>&1; then
+    log_info "Installing Node.js LTS via official NodeSource repository..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+if [ -d "$SCRIPT_DIR/ui" ]; then
+    log_info "Installing Electron and UI dependencies in ui/..."
+    cd "$SCRIPT_DIR/ui"
+    npm install
+    cd "$SCRIPT_DIR"
+fi
+
 log_info "Checking models in models/..."
 
 mkdir -p "$SCRIPT_DIR/models"

@@ -1,0 +1,16 @@
+{
+  "name": "karma-face-ui",
+  "version": "1.0.0",
+  "description": "Karma Companion Robot Animated Face & Kiosk UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": ["robot", "companion", "kiosk", "face", "electron"],
+  "author": "Karma Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^34.0.0"
+  }
+}

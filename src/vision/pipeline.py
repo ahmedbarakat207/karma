@@ -84,27 +84,29 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
     screen_w, screen_h = get_display_resolution()
     face_renderer = FaceRenderer(width=screen_w, height=screen_h)
 
+    use_electron = getattr(config, "USE_ELECTRON", True)
     face_window_name = "Karma"
-    cv2.namedWindow(face_window_name, cv2.WINDOW_NORMAL)
-    if getattr(config, "FULLSCREEN_FACE", True):
-        try:
-            cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        except Exception:
-            pass
-
     curr_dims = [screen_w, screen_h]
 
-    def on_touch(event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            if internal_state.get_active_code() is not None and x >= int(curr_dims[0] * 0.30):
-                internal_state.clear_active_code()
-                return
-            kiosk_manager.handle_touch(x, y, curr_dims[0], curr_dims[1])
+    if not use_electron:
+        cv2.namedWindow(face_window_name, cv2.WINDOW_NORMAL)
+        if getattr(config, "FULLSCREEN_FACE", True):
+            try:
+                cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            except Exception:
+                pass
 
-    try:
-        cv2.setMouseCallback(face_window_name, on_touch)
-    except Exception as e:
-        config.log_debug(f"[vision] mouse callback warning: {e}")
+        def on_touch(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                if internal_state.get_active_code() is not None and x >= int(curr_dims[0] * 0.30):
+                    internal_state.clear_active_code()
+                    return
+                kiosk_manager.handle_touch(x, y, curr_dims[0], curr_dims[1])
+
+        try:
+            cv2.setMouseCallback(face_window_name, on_touch)
+        except Exception as e:
+            config.log_debug(f"[vision] mouse callback warning: {e}")
 
     fps_time = time.time()
     frame_count = 0
@@ -182,27 +184,33 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             )
             is_user_speaking = bool(memory.is_user_speaking())
 
-            target_w, target_h = screen_w, screen_h
-            try:
-                rect = cv2.getWindowImageRect(face_window_name)
-                if rect is not None and len(rect) == 4 and rect[2] > 100 and rect[3] > 100:
-                    target_w, target_h = int(rect[2]), int(rect[3])
-            except Exception:
-                pass
-            curr_dims[0], curr_dims[1] = target_w, target_h
-
-            if kiosk_manager.is_active():
-                display_frame = kiosk_manager.render_kiosk(width=target_w, height=target_h)
+            if primary_face:
+                internal_state.set_gaze(primary_face.gaze_x, primary_face.gaze_y, is_present=True)
             else:
-                display_frame = face_renderer.render(
-                    is_talking=is_talking,
-                    is_user_speaking=is_user_speaking,
-                    fps=display_fps,
-                    target_shape=(target_h, target_w)
-                )
-                kiosk_manager.render_overlay_button(display_frame)
+                internal_state.set_gaze(0.0, 0.0, is_present=False)
 
-            cv2.imshow(face_window_name, display_frame)
+            if not use_electron:
+                target_w, target_h = screen_w, screen_h
+                try:
+                    rect = cv2.getWindowImageRect(face_window_name)
+                    if rect is not None and len(rect) == 4 and rect[2] > 100 and rect[3] > 100:
+                        target_w, target_h = int(rect[2]), int(rect[3])
+                except Exception:
+                    pass
+                curr_dims[0], curr_dims[1] = target_w, target_h
+
+                if kiosk_manager.is_active():
+                    display_frame = kiosk_manager.render_kiosk(width=target_w, height=target_h)
+                else:
+                    display_frame = face_renderer.render(
+                        is_talking=is_talking,
+                        is_user_speaking=is_user_speaking,
+                        fps=display_fps,
+                        target_shape=(target_h, target_w)
+                    )
+                    kiosk_manager.render_overlay_button(display_frame)
+
+                cv2.imshow(face_window_name, display_frame)
 
             if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
                 annotated = frame.copy()
@@ -213,36 +221,40 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 annotated = VisionRenderer.draw_hud(annotated, display_fps, display_fps, is_talking=is_talking)
                 cv2.imshow(camera_window_name, annotated)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key in (4, 27, ord('q'), ord('Q')):
-                stop_event.set()
-                break
-            elif key in (ord('m'), ord('M')):
-                if kiosk_manager.is_active():
-                    kiosk_manager.close()
-                else:
-                    kiosk_manager.open_view("map")
-            elif key in (ord('f'), ord('F')):
-                config.FULLSCREEN_FACE = not getattr(config, "FULLSCREEN_FACE", True)
-                prop = cv2.WINDOW_FULLSCREEN if config.FULLSCREEN_FACE else cv2.WINDOW_NORMAL
-                try:
-                    cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, prop)
-                except Exception:
-                    pass
-            elif key in (ord('d'), ord('D')) and has_camera:
-                config.SHOW_VISION_WINDOW = not getattr(config, "SHOW_VISION_WINDOW", False)
-                if not config.SHOW_VISION_WINDOW:
-                    try:
-                        cv2.destroyWindow(camera_window_name)
-                    except Exception:
-                        pass
-
-            try:
-                if cv2.getWindowProperty(face_window_name, cv2.WND_PROP_VISIBLE) < 1:
+            if not use_electron or (getattr(config, "SHOW_VISION_WINDOW", False) and has_camera):
+                key = cv2.waitKey(1) & 0xFF
+                if key in (4, 27, ord('q'), ord('Q')):
                     stop_event.set()
                     break
-            except Exception:
-                pass
+                elif key in (ord('m'), ord('M')) and not use_electron:
+                    if kiosk_manager.is_active():
+                        kiosk_manager.close()
+                    else:
+                        kiosk_manager.open_view("map")
+                elif key in (ord('f'), ord('F')) and not use_electron:
+                    config.FULLSCREEN_FACE = not getattr(config, "FULLSCREEN_FACE", True)
+                    prop = cv2.WINDOW_FULLSCREEN if config.FULLSCREEN_FACE else cv2.WINDOW_NORMAL
+                    try:
+                        cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, prop)
+                    except Exception:
+                        pass
+                elif key in (ord('d'), ord('D')) and has_camera:
+                    config.SHOW_VISION_WINDOW = not getattr(config, "SHOW_VISION_WINDOW", False)
+                    if not config.SHOW_VISION_WINDOW:
+                        try:
+                            cv2.destroyWindow(camera_window_name)
+                        except Exception:
+                            pass
+
+            if not use_electron:
+                try:
+                    if cv2.getWindowProperty(face_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                        stop_event.set()
+                        break
+                except Exception:
+                    pass
+            else:
+                time.sleep(0.01)
 
     except Exception as e:
         config.log_debug(f"[vision] pipeline exception: {e}")

@@ -110,6 +110,10 @@ SHOW_VISION_WINDOW = _env_bool("SHOW_VISION_WINDOW", False)
 LOG_VISION_TO_CONSOLE = _env_bool("LOG_VISION_TO_CONSOLE", False)
 FULLSCREEN_FACE = _env_bool("FULLSCREEN_FACE", True)
 
+USE_ELECTRON = _env_bool("USE_ELECTRON", True)
+UI_WS_HOST = os.environ.get("UI_WS_HOST", "127.0.0.1")
+UI_WS_PORT = int(os.environ.get("UI_WS_PORT", "8765"))
+
 USE_GROQ = _env_bool("USE_GROQ", False)
 _raw_groq = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 GROQ_MODEL = f"openai/{_raw_groq}" if _raw_groq in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else _raw_groq
@@ -139,6 +143,10 @@ def apply_cli_args(argv=None) -> None:
             FULLSCREEN_FACE = False
         elif clean in ("--fullscreen", "-f"):
             FULLSCREEN_FACE = True
+        elif clean in ("--no-electron", "--opencv-face"):
+            USE_ELECTRON = False
+        elif clean in ("--electron", "-e"):
+            USE_ELECTRON = True
         elif clean in ("--groq", "-g"):
             USE_GROQ = True
             GROQ_MODEL = "openai/gpt-oss-20b"

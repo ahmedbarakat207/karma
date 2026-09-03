@@ -53,3 +53,7 @@ models/
 bitnet_cpp/
 
 Modelfile
+
+# Node & Frontend
+node_modules/
+package-lock.json
