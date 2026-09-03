@@ -420,9 +420,10 @@ EOF
 chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config"
 
 START_SCRIPT="$SCRIPT_DIR/start_robot.sh"
-cat << EOF > "$START_SCRIPT"
+cat << 'EOF' > "$START_SCRIPT"
 #!/usr/bin/env bash
-set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 xset s off 2>/dev/null || true
 xset -dpms 2>/dev/null || true
@@ -432,7 +433,14 @@ unclutter -idle 0.1 -root &
 
 openbox &
 
-exec "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py"
+while true; do
+    if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then
+        "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+    else
+        python3 "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+    fi
+    sleep 3
+done
 EOF
 chmod +x "$START_SCRIPT"
 chown "$TARGET_USER:$TARGET_USER" "$START_SCRIPT"

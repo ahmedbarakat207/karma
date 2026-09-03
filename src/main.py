@@ -91,19 +91,31 @@ def main():
         except Exception as e:
             config.log_debug(f"[main] UI server / electron init note: {e}")
 
-    engine_name = f"Groq ({getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')})" if getattr(config, "USE_GROQ", False) else "local llama_cpp"
-    config.log_debug(f"[main] loading LLM engine: {engine_name}...")
-    engine = create_engine()
+    engine = None
+    try:
+        engine_name = f"Groq ({getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')})" if getattr(config, "USE_GROQ", False) else "local llama_cpp"
+        config.log_debug(f"[main] loading LLM engine: {engine_name}...")
+        engine = create_engine()
+    except Exception as e:
+        config.log_debug(f"[main] engine load note: {e}")
 
-    embed_model_path = getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME)
-    config.log_debug(f"[main] loading semantic embedding model from {embed_model_path}...")
-    embedder = SentenceTransformer(embed_model_path)
+    embedder = None
+    try:
+        embed_model_path = getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME)
+        config.log_debug(f"[main] loading semantic embedding model from {embed_model_path}...")
+        embedder = SentenceTransformer(embed_model_path)
+    except Exception as e:
+        config.log_debug(f"[main] embedder load note: {e}")
 
     store = MemoryStore()
     memory = WorkingMemory()
 
-    config.log_debug("[main] loading TTS engine...")
-    tts = TTSEngine(speaking_event=speaking_event, interrupt_event=interrupt_event)
+    tts = None
+    try:
+        config.log_debug("[main] loading TTS engine...")
+        tts = TTSEngine(speaking_event=speaking_event, interrupt_event=interrupt_event)
+    except Exception as e:
+        config.log_debug(f"[main] TTS load note: {e}")
 
     def do_sleep():
         if consolidation_lock.acquire(blocking=False):
