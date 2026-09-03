@@ -106,7 +106,8 @@ apt_install_safe \
     python3-setuptools \
     python3-wheel \
     python3-numpy \
-    python3-scipy
+    python3-scipy \
+    python3-spacy
 
 log_info "Installing Audio & Speech subsystems (ALSA, PortAudio, FFmpeg)..."
 apt_install_safe \
@@ -290,7 +291,7 @@ fi
 source "$VENV_DIR/bin/activate"
 
 export PIP_PREFER_BINARY=1
-export PIP_ONLY_BINARY="numpy,scipy,torch,torchvision,torchaudio"
+export PIP_ONLY_BINARY="numpy,scipy,spacy,torch,torchvision,torchaudio"
 export PIP_EXTRA_INDEX_URL="https://www.piwheels.org/simple"
 
 pip install --prefer-binary --upgrade pip setuptools wheel
@@ -304,7 +305,9 @@ pip install --prefer-binary torch torchvision torchaudio --index-url https://dow
 pip install --prefer-binary sounddevice soundfile
 pip install --prefer-binary faster-whisper
 pip install --prefer-binary onnxruntime
-pip install --prefer-binary kokoro
+
+pip install --prefer-binary loguru transformers "misaki>=0.9.4"
+pip install --prefer-binary --no-deps kokoro
 
 pip install --prefer-binary --no-build-isolation ultralytics
 pip install --prefer-binary --no-build-isolation mediapipe
