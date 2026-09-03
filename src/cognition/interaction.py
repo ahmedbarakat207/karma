@@ -189,6 +189,37 @@ Never use markdown code blocks or backticks (no ``` or ```json).
 
 
 
+def _check_kiosk_intent(text: str) -> Optional[Tuple[str, Optional[int]]]:
+    """Detects voice commands to open maps, achievements, student apps, or documents."""
+    t = text.lower()
+
+    # Map commands
+    if any(phrase in t for phrase in ["open the map", "show the map", "show map", "open map", "facility map", "where are we", "floor map", "where am i", "show floor", "open floor", "view floor"]):
+        if "floor 2" in t or "second floor" in t:
+            return ("map", 1)
+        elif "floor 1" in t or "first floor" in t or "ground floor" in t:
+            return ("map", 0)
+        return ("map", None)
+
+    # Achievements commands
+    if any(phrase in t for phrase in ["show achievements", "open achievements", "view achievements", "show awards", "my achievements", "what are our achievements", "show milestones"]):
+        return ("achievements", None)
+
+    # Student Apps commands
+    if any(phrase in t for phrase in ["student apps", "student projects", "show apps", "open apps", "show student apps", "open projects"]):
+        return ("apps", None)
+
+    # Documents / PDF commands
+    if any(phrase in t for phrase in ["open documents", "show documents", "open pdf", "show pdf", "read manual", "open menu", "show menu"]):
+        return ("docs", None)
+
+    # Return to face / Close menu commands
+    if any(phrase in t for phrase in ["close menu", "close map", "back to face", "show face", "exit kiosk", "hide menu"]):
+        return ("face", None)
+
+    return None
+
+
 def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> bool:
     """Orchestrates generating a response to new user speech."""
     new_speech = memory.unhandled_speech(0)
@@ -203,6 +234,23 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
 
     config.log_debug(f"[interaction] got speech: '{speech_text}'")
 
+    # Kiosk Voice Navigation Intent
+    kiosk_action = _check_kiosk_intent(speech_text)
+    kiosk_notice = ""
+    if kiosk_action:
+        view_name, floor_idx = kiosk_action
+        try:
+            from src.ui.kiosk import kiosk_manager
+            if view_name == "face":
+                kiosk_manager.close()
+                kiosk_notice = "You just closed the touchscreen kiosk and returned to your digital face."
+            else:
+                kiosk_manager.open_view(view_name, floor_idx=floor_idx)
+                kiosk_notice = f"You tilted your head up to 135 degrees and opened the {view_name.upper()} screen on your 7-inch LCD touchscreen for the user."
+            config.log_debug(f"[interaction] voice triggered kiosk view: {view_name}")
+        except Exception as e:
+            config.log_debug(f"[interaction] error triggering kiosk view: {e}")
+
     # Name learning
     if getattr(config, "FACE_RECOGNITION_ENABLED", True):
         introduced_name = _extract_name_introduction(speech_text)
@@ -210,7 +258,6 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
             config.log_debug(f"[interaction] detected name introduction: '{introduced_name}'")
             if _try_register_face(introduced_name, memory):
                 config.log_debug(f"[interaction] successfully registered face for '{introduced_name}'")
-
 
     # Update mood and state
     all_events = memory.all_events()
@@ -250,6 +297,7 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
     doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
 
     prompt_parts = []
+    if kiosk_notice: prompt_parts.append(f"System Action: {kiosk_notice}")
     if doc_section: prompt_parts.append(doc_section)
     if mem_section: prompt_parts.append(mem_section)
     if vision_ctx: prompt_parts.append(vision_ctx)

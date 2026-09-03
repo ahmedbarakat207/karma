@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ach_awakening",
+    "title": "Autonomous Awakening",
+    "description": "Cold boots from 12V battery into fullscreen companion face in <6s.",
+    "badge": "⚡ POWER",
+    "unlocked": true,
+    "date": "2026-09-02"
+  },
+  {
+    "id": "ach_local_mind",
+    "title": "Pure Local Mind",
+    "description": "Offline Qwen 2.5 0.5B Instruct cognition with 4096-token context window.",
+    "badge": "🧠 BRAIN",
+    "unlocked": true,
+    "date": "2026-09-02"
+  },
+  {
+    "id": "ach_document_rag",
+    "title": "Document Scholar",
+    "description": "PDF ingestion with Microsoft MarkItDown and persistent sqlite-vec memory.",
+    "badge": "📚 RAG",
+    "unlocked": true,
+    "date": "2026-09-03"
+  },
+  {
+    "id": "ach_overclock",
+    "title": "Cortex-A72 Turbo",
+    "description": "Hardware overclock to 2.0 GHz (+33% generation speedup).",
+    "badge": "🚀 OVERCLOCK",
+    "unlocked": true,
+    "date": "2026-09-02"
+  },
+  {
+    "id": "ach_kiosk_mode",
+    "title": "135° Kiosk Pitch",
+    "description": "Head tilts to 135 degrees for natural standing touchscreen interaction.",
+    "badge": "🤖 TOUCH",
+    "unlocked": true,
+    "date": "2026-09-03"
+  },
+  {
+    "id": "ach_voice_fluent",
+    "title": "Fluent Acoustic Loop",
+    "description": "Zero-latency real-time voice streaming with Faster-Whisper and Kokoro TTS.",
+    "badge": "🗣️ AUDIO",
+    "unlocked": true,
+    "date": "2026-09-03"
+  }
+]

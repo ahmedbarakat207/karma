@@ -4,7 +4,9 @@ from typing import Set, Tuple, List, Dict, Optional
 import cv2
 
 from src import config
+from src.hardware.neck import neck_actuator
 from src.state import internal_state
+from src.ui.kiosk import kiosk_manager
 from src.vision.detector import ObjectDetector
 from src.vision.face import FaceAndGazeTracker
 from src.vision.hand import HandTracker
@@ -98,6 +100,17 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
         except Exception:
             pass
 
+    curr_dims = [screen_w, screen_h]
+
+    def on_touch(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            kiosk_manager.handle_touch(x, y, curr_dims[0], curr_dims[1])
+
+    try:
+        cv2.setMouseCallback(face_window_name, on_touch)
+    except Exception as e:
+        config.log_debug(f"[vision] mouse callback warning: {e}")
+
     fps_time = time.time()
     frame_count = 0
     display_fps = 30.0
@@ -183,7 +196,7 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             )
             is_user_speaking = bool(memory.is_user_speaking())
 
-            # 4. Render Primary Full-Screen Face at exact display/window resolution
+            # 4. Render Primary Full-Screen Face or Active Kiosk Menu
             target_w, target_h = screen_w, screen_h
             try:
                 rect = cv2.getWindowImageRect(face_window_name)
@@ -191,14 +204,21 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     target_w, target_h = int(rect[2]), int(rect[3])
             except Exception:
                 pass
+            curr_dims[0], curr_dims[1] = target_w, target_h
 
-            face_frame = face_renderer.render(
-                is_talking=is_talking,
-                is_user_speaking=is_user_speaking,
-                fps=display_fps,
-                target_shape=(target_h, target_w)
-            )
-            cv2.imshow(face_window_name, face_frame)
+            if kiosk_manager.is_active():
+                display_frame = kiosk_manager.render_kiosk(width=target_w, height=target_h)
+            else:
+                display_frame = face_renderer.render(
+                    is_talking=is_talking,
+                    is_user_speaking=is_user_speaking,
+                    fps=display_fps,
+                    target_shape=(target_h, target_w)
+                )
+                # Render the interactive top-right [ :: MENU ] pill button
+                kiosk_manager.render_overlay_button(display_frame)
+
+            cv2.imshow(face_window_name, display_frame)
 
             # 5. Render Debug Camera Window (only when camera is active and debug window enabled)
             if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
@@ -215,6 +235,11 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             if key in (4, 27, ord('q'), ord('Q')):  # 4 = Ctrl+D (EOT), 27 = Esc, 'q' = Quit
                 stop_event.set()
                 break
+            elif key in (ord('m'), ord('M')):  # 'm' = Toggle Touchscreen Kiosk Menu
+                if kiosk_manager.is_active():
+                    kiosk_manager.close()
+                else:
+                    kiosk_manager.open_view("map")
             elif key in (ord('f'), ord('F')):  # 'f' = Toggle Fullscreen
                 config.FULLSCREEN_FACE = not getattr(config, "FULLSCREEN_FACE", True)
                 prop = cv2.WINDOW_FULLSCREEN if config.FULLSCREEN_FACE else cv2.WINDOW_NORMAL
@@ -246,6 +271,10 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 cap.release()
             except Exception:
                 pass
+        try:
+            neck_actuator.cleanup()
+        except Exception:
+            pass
         try:
             cv2.destroyAllWindows()
         except Exception:

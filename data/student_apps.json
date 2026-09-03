@@ -1,0 +1,38 @@
+[
+  {
+    "id": "app_campus_wayfinder",
+    "name": "Campus Wayfinder",
+    "author": "Omar & Sarah (Robotics Club)",
+    "category": "Navigation",
+    "description": "Interactive floor-by-floor navigation and lab locator for students & visitors.",
+    "version": "1.2.0",
+    "status": "Active"
+  },
+  {
+    "id": "app_lecture_scheduler",
+    "name": "Lecture Hall Scheduler",
+    "author": "Youssef K. (Computer Science)",
+    "category": "Productivity",
+    "description": "Real-time room occupancy, lab availability, and lecture timetable viewer.",
+    "version": "2.0.1",
+    "status": "Active"
+  },
+  {
+    "id": "app_study_buddy",
+    "name": "AI Study Buddy",
+    "author": "Nour & Tarek (AI Lab)",
+    "category": "Cognition",
+    "description": "Voice-interactive engineering quiz and flashcard companion powered by Qwen.",
+    "version": "1.0.0",
+    "status": "Active"
+  },
+  {
+    "id": "app_iot_telemetry",
+    "name": "Lab Environmental Monitor",
+    "author": "Mostafa A. (Mechatronics)",
+    "category": "Sensors",
+    "description": "Live telemetry from temperature, air quality, and 12V 9Ah battery monitors.",
+    "version": "3.1.0",
+    "status": "Active"
+  }
+]
