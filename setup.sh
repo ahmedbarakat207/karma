@@ -45,6 +45,9 @@ fix_network_and_dns() {
         fi
     fi
 
+    sudo dpkg --configure -a 2>/dev/null || true
+    sudo apt-get clean 2>/dev/null || true
+
     local retries=3
     local count=0
     local success=0
@@ -65,10 +68,9 @@ fix_network_and_dns() {
 }
 
 fix_network_and_dns
-sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
 log_info "Installing core build tools and C/C++ toolchain..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     build-essential \
     cmake \
     git \
@@ -82,7 +84,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     liblapack-dev
 
 log_info "Installing Python 3 headers and virtual environment tools..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     python3 \
     python3-dev \
     python3-pip \
@@ -91,7 +93,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3-wheel
 
 log_info "Installing Audio & Speech subsystems (ALSA, PortAudio, FFmpeg)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     libasound2 \
     libasound2-dev \
     alsa-utils \
@@ -104,7 +106,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     pulseaudio-utils
 
 log_info "Installing Vision & Camera stack (libcamera, Picamera2, OpenCV GTK)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     python3-opencv \
     libcamera-dev \
     libcamera-tools \
@@ -118,7 +120,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libxrender-dev
 
 log_info "Installing Hardware Actuation, PWM & GPIO subsystems (BTS7960, MG90S)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     i2c-tools \
     gpiod \
     libgpiod-dev \
@@ -129,7 +131,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     pigpio
 
 log_info "Installing Complete Xorg Display & Touchscreen Kiosk Stack..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install --fix-missing -y \
     xserver-xorg \
     xserver-xorg-video-fbdev \
     xserver-xorg-input-all \
