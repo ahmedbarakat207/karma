@@ -95,47 +95,12 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:var(--bg);color:va
   flex:1;display:flex;align-items:center;justify-content:center;
   min-height:0;position:relative;
 }
-#face-svg{width:100%;height:100%;max-width:760px;max-height:360px}
+#face-svg{width:100%;height:100%;max-width:820px;max-height:420px}
 .eye-shape,.mouth-shape{transition:d 160ms var(--ease),fill 160ms}
 
-/* bottom telemetry readout bar */
-.face-readout{
-  display:grid;grid-template-columns:auto 1fr auto;
-  background:#020406;border:1px solid var(--line);
-}
-.readout-cell{display:flex;align-items:center;gap:12px;padding:8px 14px}
-.readout-cell + .readout-cell{border-left:1px solid var(--line)}
-.aud-bar{width:5px;height:3px;background:var(--line-2)}
-.speaking-active .aud-bar{background:var(--blue)}
-.speaking-active .aud-bar:nth-child(odd){height:14px}
-.speaking-active .aud-bar:nth-child(3n){height:20px}
-.speaking-active .aud-bar:nth-child(4n){height:8px}
-
-.dock-segmented-btns{display:flex;gap:0;flex:1}
-.dock-seg-btn{
-  flex:1;padding:7px 10px;cursor:pointer;background:transparent;
-  border:1px solid var(--line-2);color:var(--mut);
-  font-family:var(--font-m);font-size:0.62rem;font-weight:600;letter-spacing:0.1em;
-}
-.dock-seg-btn + .dock-seg-btn{border-left:none}
-.dock-seg-btn:hover{color:var(--ink);border-color:var(--blue)}
-.dock-seg-btn.active{background:var(--blue);border-color:var(--blue);color:#00101f}
-
-.face-meta{
-  display:flex;gap:10px;justify-content:center;padding-top:8px;
-  font-family:var(--font-m);font-size:0.58rem;letter-spacing:0.18em;color:var(--faint);
-}
-.face-meta #face-link-label{color:var(--blue)}
-
 /* kiosk: face collapses to left rail */
-.mode-kiosk .companion-station{width:var(--sidebar-w);border-right:1px solid var(--line);background:#020406;padding:12px}
-.mode-kiosk .face-head-row{font-size:0.52rem}
-.mode-kiosk #face-svg{max-height:210px}
-.mode-kiosk .face-readout{grid-template-columns:1fr;gap:0}
-.mode-kiosk .readout-cell + .readout-cell{border-left:none;border-top:1px solid var(--line)}
-.mode-kiosk .readout-pitch .dock-segmented-btns{flex-direction:column}
-.mode-kiosk .dock-seg-btn + .dock-seg-btn{border-left:1px solid var(--line-2);border-top:none}
-.mode-kiosk .face-meta{display:none}
+.mode-kiosk .companion-station{width:var(--sidebar-w);border-right:1px solid var(--line);background:#020406;padding:16px 12px}
+.mode-kiosk #face-svg{max-height:260px}
 .mode-kiosk .cal-bl{bottom:12px}.mode-kiosk .cal-br{bottom:12px}
 
 /* ── console ───────────────────────────────── */
