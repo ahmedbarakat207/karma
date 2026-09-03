@@ -20,8 +20,51 @@ TARGET_USER="${SUDO_USER:-$USER}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 
 log_info "Installing for $TARGET_USER ($TARGET_HOME) in $SCRIPT_DIR"
-log_info "Updating system packages..."
-sudo apt-get update -y
+
+fix_network_and_dns() {
+    log_info "Verifying network connectivity and DNS resolution..."
+    sudo mkdir -p /etc/apt/apt.conf.d
+    echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 > /dev/null
+
+    if ! host deb.debian.org >/dev/null 2>&1 && ! getent ahosts deb.debian.org >/dev/null 2>&1; then
+        log_warn "DNS resolution failed. Updating nameservers..."
+        if [ -f /etc/resolv.conf ]; then
+            sudo sed -i '/nameserver 8.8.8.8/d' /etc/resolv.conf 2>/dev/null || true
+            sudo sed -i '/nameserver 1.1.1.1/d' /etc/resolv.conf 2>/dev/null || true
+            echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf > /dev/null
+        fi
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+            sudo systemctl restart systemd-resolved || true
+        fi
+    fi
+
+    if command -v timedatectl >/dev/null 2>&1; then
+        sudo timedatectl set-ntp true 2>/dev/null || true
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
+            sudo systemctl restart systemd-timesyncd || true
+        fi
+    fi
+
+    local retries=3
+    local count=0
+    local success=0
+    while [ $count -lt $retries ]; do
+        count=$((count + 1))
+        log_info "Updating system packages (attempt $count of $retries)..."
+        if sudo apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true -y; then
+            success=1
+            break
+        fi
+        log_warn "apt-get update failed on attempt $count. Retrying in 3 seconds..."
+        sleep 3
+    done
+
+    if [ $success -eq 0 ]; then
+        log_error "Failed to update package repositories after $retries attempts. Please check internet connection."
+    fi
+}
+
+fix_network_and_dns
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
 log_info "Installing core build tools and C/C++ toolchain..."
