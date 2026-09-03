@@ -104,7 +104,9 @@ apt_install_safe \
     python3-pip \
     python3-venv \
     python3-setuptools \
-    python3-wheel
+    python3-wheel \
+    python3-numpy \
+    python3-scipy
 
 log_info "Installing Audio & Speech subsystems (ALSA, PortAudio, FFmpeg)..."
 apt_install_safe \
@@ -254,30 +256,33 @@ fi
 
 source "$VENV_DIR/bin/activate"
 
-pip install --upgrade pip setuptools wheel
+export PIP_PREFER_BINARY=1
+export PIP_EXTRA_INDEX_URL="https://www.piwheels.org/simple"
 
-log_info "Installing Python dependencies..."
+pip install --prefer-binary --upgrade pip setuptools wheel
 
-pip install numpy scipy requests aiohttp fastapi uvicorn pydantic huggingface_hub
+log_info "Installing Python dependencies (prebuilt binaries)..."
 
-pip install torch torchvision torchaudio || pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install --prefer-binary requests aiohttp fastapi uvicorn pydantic huggingface_hub
 
-pip install sounddevice soundfile pyaudio
-pip install faster-whisper
-pip install onnxruntime
-pip install kokoro
+pip install --prefer-binary torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || pip install --prefer-binary torch torchvision torchaudio
 
-pip install opencv-python || true
-pip install ultralytics
-pip install mediapipe
+pip install --prefer-binary sounddevice soundfile pyaudio
+pip install --prefer-binary faster-whisper
+pip install --prefer-binary onnxruntime
+pip install --prefer-binary kokoro
 
-pip install sentence-transformers sqlean.py sqlite-vec
-pip install "markitdown[pdf]"
+pip install --prefer-binary opencv-python || true
+pip install --prefer-binary ultralytics
+pip install --prefer-binary mediapipe
 
-pip install pygame pigpio gpiozero
+pip install --prefer-binary sentence-transformers sqlean.py sqlite-vec
+pip install --prefer-binary "markitdown[pdf]"
 
-log_info "Compiling llama-cpp-python with native ARM NEON vectorization..."
-CMAKE_ARGS="-DGGML_CPU_ARM_ARCH=armv8-a -DGGML_BLAS=OFF" pip install --no-cache-dir llama-cpp-python
+pip install --prefer-binary pygame pigpio gpiozero
+
+log_info "Installing llama-cpp-python (prebuilt binary)..."
+pip install --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu llama-cpp-python || pip install --prefer-binary llama-cpp-python
 
 log_success "All Python AI libraries installed."
 
