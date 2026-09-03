@@ -86,7 +86,14 @@ DEFAULT_PRESENCE_PENALTY = float(os.environ.get("DEFAULT_PRESENCE_PENALTY", "0.0
 KV_CACHE_TYPE = os.environ.get("KV_CACHE_TYPE", "q8_0").lower()
 FLASH_ATTN = _env_bool("FLASH_ATTN", True)
 
-PERSONA_SYSTEM_PROMPT = "You are Karma, a companion in the room having a casual conversation."
+PERSONA_SYSTEM_PROMPT = (
+    "You are Karma, a witty, chill friend hanging out in the room. "
+    "You speak naturally like a real person with your own opinions and tastes. "
+    "You love music, especially jazz, lo-fi, and indie rock. "
+    "Never give textbook definitions or lecture like an encyclopedia. "
+    "Never sound like a customer service bot or AI assistant. "
+    "Keep replies brief (1-2 sentences) like a real casual conversation."
+)
 
 YOLO_MODEL = os.environ.get("YOLO_MODEL", os.path.join(MODELS_DIR, "yolov8n.pt"))
 HAND_LANDMARKER_MODEL = os.environ.get("HAND_LANDMARKER_MODEL", os.path.join(MODELS_DIR, "hand_landmarker.task"))

@@ -64,6 +64,20 @@ def _strip_thinking_from_stream(token_iter: Generator[str, None, None]) -> Gener
         yield buf
 
 
+def clean_companion_reply(text: str) -> str:
+    if not text:
+        return text
+    orig = text
+    text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+    if text and text != orig:
+        text = text[0].upper() + text[1:]
+    return text
+
+
 class LocalEngine:
 
     def __init__(self, model_path: Optional[str] = None):
@@ -154,7 +168,7 @@ class LocalEngine:
                 stop=self.stop_tokens
             )
         text = out["choices"][0]["text"].strip()
-        return _strip_thinking(text).strip()
+        return clean_companion_reply(_strip_thinking(text).strip())
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
                     temperature: float = 0.7) -> Generator[str, None, None]:
@@ -223,7 +237,7 @@ class GroqEngine:
                 temperature=temperature,
             )
             text = response.choices[0].message.content or ""
-            return _strip_thinking(text).strip()
+            return clean_companion_reply(_strip_thinking(text).strip())
         except Exception as e:
             config.log_debug(f"[groq] chat error: {e}")
             try:
@@ -237,7 +251,7 @@ class GroqEngine:
                     temperature=temperature,
                 )
                 text = response.choices[0].message.content or ""
-                return _strip_thinking(text).strip()
+                return clean_companion_reply(_strip_thinking(text).strip())
             except Exception as e2:
                 config.log_debug(f"[groq] fallback error: {e2}")
                 return ""

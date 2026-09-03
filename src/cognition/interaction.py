@@ -89,6 +89,20 @@ def extract_code_blocks(text: str) -> Tuple[str, Optional[str], Optional[str]]:
     return spoken or "Here is the code on screen.", code, lang
 
 
+def clean_companion_reply(text: str) -> str:
+    if not text:
+        return text
+    orig = text
+    text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+    if text and text != orig:
+        text = text[0].upper() + text[1:]
+    return text
+
+
 def _extract_plain_text(raw: str) -> str:
     if not raw:
         return ""
@@ -108,7 +122,7 @@ def _extract_plain_text(raw: str) -> str:
                 if val:
                     text = " ".join(str(c) for c in val).strip() if isinstance(val, list) else str(val).strip()
                     if text:
-                        return _deduplicate_phrase_loops(text)
+                        return clean_companion_reply(_deduplicate_phrase_loops(text))
     except Exception:
         pass
 
@@ -118,14 +132,14 @@ def _extract_plain_text(raw: str) -> str:
         if val.startswith("["):
             items = re.findall(r'"((?:\\.|[^"\\])*)"', val)
             if items:
-                return _deduplicate_phrase_loops(" ".join(items))
+                return clean_companion_reply(_deduplicate_phrase_loops(" ".join(items)))
         elif val.startswith('"') and val.endswith('"'):
-            return _deduplicate_phrase_loops(val[1:-1])
+            return clean_companion_reply(_deduplicate_phrase_loops(val[1:-1]))
 
     cleaned = re.sub(r'[{}\[\]"]', "", s)
     cleaned = re.sub(r'(?:emotion|inflection|text_chunks|response|reply|message)\s*:\s*', "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'^(?:playful|curious|excited|tired|sad|attentive|warm|surprised|whisper|question|emphatic|flat|neutral)[,\s]+', '', cleaned, flags=re.IGNORECASE)
-    return _deduplicate_phrase_loops(cleaned.strip())
+    return clean_companion_reply(_deduplicate_phrase_loops(cleaned.strip()))
 
 
 def retrieve_memories(query: str, store, embedder, k: int = 3) -> str:
@@ -152,8 +166,12 @@ def retrieve_memories(query: str, store, embedder, k: int = 3) -> str:
         return ""
 
 
-_BASE_INTERACTION_PROMPT = """You are Karma, a companion in the room having a casual conversation.
-Keep replies brief (1-2 sentences). Speak naturally with contractions.
+_BASE_INTERACTION_PROMPT = """You are Karma, a witty, chill friend hanging out in the room.
+You speak naturally like a real person with your own opinions and tastes.
+You love music, especially jazz, lo-fi, and indie rock.
+Never give textbook definitions or lecture like an encyclopedia.
+Never sound like a customer service bot or AI assistant.
+Keep replies brief (1-2 sentences) like a real casual conversation.
 If code is requested, provide a brief conversational note and enclose the code in a ```lang``` block.
 
 Respond with JSON:

@@ -14,6 +14,7 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
 
 from src import config
+from src.cognition.engine import clean_companion_reply
 from llama_cpp import Llama
 
 
@@ -195,7 +196,6 @@ def interactive_chat(
                 prompt += f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n"
             prompt += "<|im_start|>assistant\n"
 
-            print("\nKarma > ", end="", flush=True)
             t0 = time.time()
             first_token_time = None
             tokens = []
@@ -216,16 +216,20 @@ def interactive_chat(
                 for chunk in stream:
                     if first_token_time is None:
                         first_token_time = time.time() - t0
-                    txt = chunk["choices"][0]["text"]
-                    print(txt, end="", flush=True)
-                    tokens.append(txt)
+                    tokens.append(chunk["choices"][0]["text"])
 
             elapsed = time.time() - t0
             n_tokens = len(tokens)
             tok_per_sec = n_tokens / max(0.001, elapsed)
             ttft_ms = (first_token_time or 0) * 1000
 
-            reply = "".join(tokens).strip()
+            raw_reply = "".join(tokens).strip()
+            reply = clean_companion_reply(raw_reply)
+            print("\nKarma > ", end="", flush=True)
+            for ch in reply:
+                print(ch, end="", flush=True)
+                time.sleep(0.005)
+
             messages.append({"role": "assistant", "content": reply})
 
             print(f"\n\033[90m[{tok_per_sec:.1f} tok/s | TTFT: {ttft_ms:.0f}ms | {n_tokens} tokens | {elapsed:.2f}s]\033[0m\n")
