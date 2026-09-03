@@ -122,7 +122,7 @@ def test_is_valid_transcript_real():
 def test_is_valid_transcript_hallucination():
     assert not is_valid_transcript("Thanks for watching.")
     assert not is_valid_transcript("amara.org")
-    assert not is_valid_transcript("aachman! no?")
+    assert not is_valid_transcript("Subtitles by community")
 
 
 def test_audio_to_wav_bytes():

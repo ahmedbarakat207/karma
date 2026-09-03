@@ -20,9 +20,7 @@ BLOCK_SIZE = getattr(config, "BLOCK_SIZE", 512)  # 512 samples (32ms) - exact na
 HALLUCINATIONS: Set[str] = {
     "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
     "subtitles by", "amara.org", "subscribe", "bye.", "you", "okay.", "so",
-    "thank you for watching.", "listening", "unbelievable.", "foreign",
-    "i'm sorry.", "i'm sorry", "sorry.", "sorry", "aachman! no?", "aachman",
-    "see my last thing okay so", "aachman! no", "aachman no", "thank you for listening."
+    "thank you for watching.", "listening", "i'm sorry.", "i'm sorry", "sorry.", "sorry",
 }
 
 # In-process PyTorch / Silero VAD neural voice activity detector
@@ -65,7 +63,7 @@ def is_valid_transcript(text: Optional[str]) -> bool:
     lower = text.lower().strip().strip(".").strip("!").strip("?")
     if lower in HALLUCINATIONS or text.lower().strip() in HALLUCINATIONS:
         return False
-    for bad in ["subtitles by", "amara.org", "thanks for watching", "thank you for watching", "aachman"]:
+    for bad in ["subtitles by", "amara.org", "thanks for watching", "thank you for watching"]:
         if bad in lower:
             return False
     return True

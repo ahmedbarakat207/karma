@@ -7,26 +7,7 @@ import numpy as np
 
 from src import config
 
-class SilenceStderrFD:
-    def __enter__(self):
-        try:
-            sys.stderr.flush()
-            self.null_fd = os.open(os.devnull, os.O_WRONLY)
-            self.saved_stderr_fd = os.dup(2)
-            os.dup2(self.null_fd, 2)
-        except Exception:
-            self.null_fd = None
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if getattr(self, "null_fd", None) is not None:
-            try:
-                sys.stderr.flush()
-                os.dup2(self.saved_stderr_fd, 2)
-                os.close(self.saved_stderr_fd)
-                os.close(self.null_fd)
-            except Exception:
-                pass
+from src.config import SilenceStderrFD
 
 
 HAND_CONNECTIONS = [

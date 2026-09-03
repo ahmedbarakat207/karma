@@ -11,26 +11,7 @@ warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-class SilenceStderrFD:
-    def __enter__(self):
-        try:
-            sys.stderr.flush()
-            self.null_fd = os.open(os.devnull, os.O_WRONLY)
-            self.saved_stderr_fd = os.dup(2)
-            os.dup2(self.null_fd, 2)
-        except Exception:
-            self.null_fd = None
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if getattr(self, "null_fd", None) is not None:
-            try:
-                sys.stderr.flush()
-                os.dup2(self.saved_stderr_fd, 2)
-                os.close(self.saved_stderr_fd)
-                os.close(self.null_fd)
-            except Exception:
-                pass
+from src.config import SilenceStderrFD
 
 with SilenceStderrFD():
     from sentence_transformers import SentenceTransformer
@@ -46,27 +27,21 @@ with SilenceStderrFD():
     from src.vision.pipeline import run_vision
 
 
-def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder, speaking_event):
-    config.log_debug("[main] Consciousness orchestrator started.")
+def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_event):
+    config.log_debug("[main] Cognition loop started.")
     while not stop_event.is_set():
         try:
             state = memory.consciousness
-
-            # 1. Urgent environmental event -> spontaneous high-salience thought
             if state.prediction_error > 0.7:
                 think_immediately(memory, engine, tts, store, embedder, urgency="HIGH", speaking_event=speaking_event)
-
-            # 2. Spoken user input -> conversational reply
             elif memory.is_user_speaking() or memory.unhandled_speech(0):
                 run_interaction_response(memory, engine, tts, store=store, embedder=embedder)
-
-            # 3. Ambient idle reflection
             else:
                 time.sleep(0.5)
                 if random.random() < 0.05:
                     think_quietly(memory, engine, store, embedder)
         except Exception as e:
-            config.log_debug(f"[main] consciousness loop exception: {e}")
+            config.log_debug(f"[main] cognition loop error: {e}")
             time.sleep(0.5)
 
 
@@ -144,9 +119,9 @@ def main():
     threads = [
         threading.Thread(target=run_audio, args=(memory, stop_event, speaking_event, interrupt_event),
                          daemon=True, name="audio_streamer"),
-        threading.Thread(target=consciousness_orchestrator,
+        threading.Thread(target=cognition_loop,
                          args=(memory, engine, stop_event, tts, store, embedder, speaking_event),
-                         daemon=True, name="consciousness_orchestrator"),
+                         daemon=True, name="cognition"),
         threading.Thread(target=run_idle_watcher, args=(memory, stop_event, do_sleep),
                          daemon=True, name="idle_watcher"),
         threading.Thread(target=listen_stdin, daemon=True, name="stdin_listener"),
@@ -156,10 +131,7 @@ def main():
         t.start()
 
     groq_note = f" [Groq: {getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')}]" if getattr(config, "USE_GROQ", False) else ""
-    if getattr(config, "DEBUG", False):
-        print(f"\n[main] Karma is awake and running (DEBUG MODE{groq_note}: Full logs + Camera window enabled). Press Ctrl+D to exit.\n")
-    else:
-        print(f"\n✨ Karma is awake and running{groq_note}. Fullscreen face active. Press Ctrl+D to exit.\n")
+    print(f"Karma running{groq_note}. Press Ctrl+D to exit.")
 
 
     try:

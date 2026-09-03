@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Karma Autonomous Mobile AI Companion Robot
-# Master "Zero-Touch Run & Go" Installation Script
-# Target: Raspberry Pi 4 Model B (8GB RAM) running Raspberry Pi OS Lite (64-bit)
-# ==============================================================================
 set -euo pipefail
 
 BOLD="\033[1m"
@@ -11,21 +6,12 @@ GREEN="\033[0;32m"
 BLUE="\033[0;34m"
 YELLOW="\033[1;33m"
 RED="\033[0;31m"
-CYAN="\033[0;36m"
 NC="\033[0m"
 
 log_info()    { echo -e "${BLUE}${BOLD}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}${BOLD}[SUCCESS]${NC} $1"; }
+log_success() { echo -e "${GREEN}${BOLD}[OK]${NC} $1"; }
 log_warn()    { echo -e "${YELLOW}${BOLD}[WARN]${NC} $1"; }
 log_error()   { echo -e "${RED}${BOLD}[ERROR]${NC} $1"; exit 1; }
-
-echo -e "${CYAN}${BOLD}"
-echo "=================================================================="
-echo "      🤖 KARMA ROBOT — FULL AUTOMATED ZERO-TOUCH SETUP           "
-echo "  Target: Raspberry Pi 4 B (8GB) | OS: Pi OS Lite (64-bit)       "
-echo "  Features: 2.0GHz Overclock + Full Xorg Kiosk + Qwen 2.5 0.5B   "
-echo "=================================================================="
-echo -e "${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -33,13 +19,8 @@ cd "$SCRIPT_DIR"
 TARGET_USER="${SUDO_USER:-$USER}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 
-log_info "Workspace root: $SCRIPT_DIR"
-log_info "Executing for user: $TARGET_USER ($TARGET_HOME)"
-
-# ------------------------------------------------------------------------------
-# 1. System Package Updates & Full OS Dependency Installation
-# ------------------------------------------------------------------------------
-log_info "Step 1/9: Updating apt repositories and base OS packages..."
+log_info "Installing for $TARGET_USER ($TARGET_HOME) in $SCRIPT_DIR"
+log_info "Updating system packages..."
 sudo apt-get update -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
@@ -127,10 +108,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 log_success "All system packages installed."
 
-# ------------------------------------------------------------------------------
-# 2. Xorg Non-Root & Console Permissions Configuration
-# ------------------------------------------------------------------------------
-log_info "Step 2/9: Configuring Xorg non-root privileges & permissions..."
+log_info "Configuring Xorg permissions..."
 
 sudo mkdir -p /etc/X11
 sudo tee /etc/X11/Xwrapper.config > /dev/null << 'EOF'
@@ -142,10 +120,7 @@ sudo usermod -a -G video,audio,gpio,i2c,spi,render,input,tty "$TARGET_USER" || t
 
 log_success "Xorg configured to run cleanly without root restrictions."
 
-# ------------------------------------------------------------------------------
-# 3. Hardware Overclocking & Firmware Overlays
-# ------------------------------------------------------------------------------
-log_info "Step 3/9: Applying 2.0 GHz overclock & hardware overlays in config.txt..."
+log_info "Configuring hardware settings in config.txt..."
 
 CONFIG_TXT="/boot/firmware/config.txt"
 if [ ! -f "$CONFIG_TXT" ]; then
@@ -208,10 +183,7 @@ fi
 
 log_success "Hardware firmware and overclock configured."
 
-# ------------------------------------------------------------------------------
-# 4. Audio Subsystem Volume & Hardware Daemons
-# ------------------------------------------------------------------------------
-log_info "Step 4/9: Configuring audio output volume and enabling hardware daemons..."
+log_info "Configuring audio..."
 
 # Enable and start pigpiod for jitter-free servo PWM
 sudo systemctl enable pigpiod || true
@@ -226,10 +198,7 @@ sudo alsactl store 2>/dev/null || true
 
 log_success "Audio initialized and pigpiod daemon running."
 
-# ------------------------------------------------------------------------------
-# 5. Python Virtual Environment Setup
-# ------------------------------------------------------------------------------
-log_info "Step 5/9: Setting up Python virtual environment with system access..."
+log_info "Setting up Python virtual environment..."
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 if [ ! -d "$VENV_DIR" ]; then
@@ -240,10 +209,7 @@ source "$VENV_DIR/bin/activate"
 
 pip install --upgrade pip setuptools wheel
 
-# ------------------------------------------------------------------------------
-# 6. Python AI / ML Stack Installation
-# ------------------------------------------------------------------------------
-log_info "Step 6/9: Installing optimized Python AI & Robotics packages..."
+log_info "Installing Python dependencies..."
 
 pip install numpy scipy requests aiohttp fastapi uvicorn pydantic huggingface_hub
 
@@ -274,10 +240,7 @@ CMAKE_ARGS="-DGGML_CPU_ARM_ARCH=armv8-a -DGGML_BLAS=OFF" pip install --no-cache-
 
 log_success "All Python AI libraries installed."
 
-# ------------------------------------------------------------------------------
-# 7. AI Model Weights Verification & Auto-Download
-# ------------------------------------------------------------------------------
-log_info "Step 7/9: Verifying and auto-downloading model weights into models/..."
+log_info "Checking models in models/..."
 
 mkdir -p "$SCRIPT_DIR/models"
 
@@ -339,10 +302,7 @@ EOF
 
 log_success "AI model weights verified."
 
-# ------------------------------------------------------------------------------
-# 8. Openbox & Xorg Kiosk Setup (Borderless Fullscreen Face)
-# ------------------------------------------------------------------------------
-log_info "Step 8/9: Setting up Xorg borderless kiosk & launcher script..."
+log_info "Setting up kiosk launcher script..."
 
 OPENBOX_DIR="$TARGET_HOME/.config/openbox"
 mkdir -p "$OPENBOX_DIR"
@@ -389,10 +349,7 @@ chown "$TARGET_USER:$TARGET_USER" "$START_SCRIPT"
 
 log_success "Xorg kiosk script created at $START_SCRIPT."
 
-# ------------------------------------------------------------------------------
-# 9. Systemd Master Auto-Start Unit (Full Autonomous Boot on Battery Power)
-# ------------------------------------------------------------------------------
-log_info "Step 9/9: Registering karma.service systemd auto-start daemon..."
+log_info "Registering karma systemd service..."
 
 SERVICE_FILE="/etc/systemd/system/karma.service"
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
@@ -431,32 +388,14 @@ sudo systemctl enable karma.service
 
 log_success "karma.service registered and enabled for autonomous boot."
 
-# ------------------------------------------------------------------------------
-# Self-Test Validation
-# ------------------------------------------------------------------------------
-echo ""
-log_info "Running quick Cognition Engine validation self-test..."
-python3 chat.py --validate || log_warn "Self-test finished with notice (verify models)."
+log_info "Validating engine..."
+python3 chat.py --validate || log_warn "Validation returned notice (verify models)."
 
 echo ""
-echo -e "${GREEN}${BOLD}=================================================================="
-echo "   🎉 KARMA ZERO-TOUCH SETUP COMPLETE: READY TO RUN AND GO!      "
-echo "==================================================================${NC}"
+log_success "Karma setup complete."
+echo "Commands:"
+echo "  sudo systemctl status karma"
+echo "  sudo journalctl -u karma -f"
+echo "  sudo systemctl restart karma"
 echo ""
-echo -e "What happens now:"
-echo -e "  1. Whenever the robot powers on (battery or wall power):"
-echo -e "     • Boots directly in ~5 seconds with ${BOLD}2.0 GHz Cortex-A72 CPU${NC}."
-echo -e "     • ${BOLD}Xorg starts automatically on the 7\" LCD screen${NC} on :0 vt1."
-echo -e "     • Karma's animated companion face appears full-screen (0 borders, 0 cursor)."
-echo -e "     • Microphone listens, Camera tracks eyes/objects, Speaker responds."
-echo -e "     • Powered by ${BOLD}Qwen 2.5 0.5B Instruct${NC} with 4096 context."
-echo ""
-echo -e "Useful Commands (via SSH):"
-echo -e "  • Check live robot status:    ${CYAN}sudo systemctl status karma${NC}"
-echo -e "  • Follow live logs:           ${CYAN}sudo journalctl -u karma -f${NC}"
-echo -e "  • Restart robot:              ${CYAN}sudo systemctl restart karma${NC}"
-echo -e "  • Interactive terminal chat:  ${CYAN}source .venv/bin/activate && python3 chat.py${NC}"
-echo ""
-echo -e "${YELLOW}${BOLD}👉 To activate the 2.0 GHz overclock & launch Karma right now, reboot:${NC}"
-echo -e "   ${BOLD}sudo reboot${NC}"
-echo ""
+echo "Reboot to apply changes: sudo reboot"

@@ -5,11 +5,9 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 
 
 class ConsciousnessState:
-
     def __init__(self):
         self.current_focus: Optional[str] = None
         self.spatial_map: Dict[str, List[str]] = {"left": [], "center": [], "right": []}
-        self.temporal_grid: Dict[str, Optional[str]] = {"0s": None, "2s": None, "5s": None}
         self.self_model: Dict[str, str] = {
             "location": "desk",
             "orientation": "facing_user",
@@ -19,12 +17,8 @@ class ConsciousnessState:
 
     def update(self, vision_objects: List[Tuple[str, Tuple[float, float]]], speech_text: Optional[str] = None):
         self.spatial_map = self._bind_objects_to_space(vision_objects)
-        self.temporal_grid["5s"] = self.temporal_grid.get("2s")
-        self.temporal_grid["2s"] = self.temporal_grid.get("0s")
-        self.temporal_grid["0s"] = speech_text or "silence"
-
-        if self.temporal_grid["0s"] and self.temporal_grid["5s"] and self.temporal_grid["0s"] != self.temporal_grid["5s"]:
-            self.prediction_error = max(self.prediction_error, 0.6)
+        if speech_text:
+            self.current_focus = speech_text
 
     def _bind_objects_to_space(self, vision_objects: List[Tuple[str, Tuple[float, float]]]) -> Dict[str, List[str]]:
         spatial = {"left": [], "center": [], "right": []}
