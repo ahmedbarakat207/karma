@@ -19,7 +19,6 @@ class InternalState:
         self.last_karma_speech: Optional[str] = None
         self.last_karma_speech_time: float = 0.0
 
-        # code snippet shown on screen during coding requests
         self.active_code_snippet: Optional[str] = None
         self.active_code_lang: Optional[str] = None
         self.active_code_time: float = 0.0

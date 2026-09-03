@@ -115,7 +115,6 @@ class KioskManager:
                 return True
             return False
 
-        # top nav bar
         if y <= 50:
             if x >= (screen_w - 95):
                 self.close()

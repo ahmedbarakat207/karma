@@ -38,14 +38,14 @@ class WorkingMemory:
     def __init__(self):
         self._lock = threading.Lock()
         self._events: List[Dict[str, Any]] = []
-        self._recent_keys: Dict[Tuple[str, str], float] = {}  # (kind, text) -> ts for dedup
-        self._handled_ts: float = 0.0                          # Timestamp up to which events are handled
-        self._conversation: List[Dict[str, str]] = []         # Recent conversation turns
+        self._recent_keys: Dict[Tuple[str, str], float] = {}
+        self._handled_ts: float = 0.0
+        self._conversation: List[Dict[str, str]] = []
         self.last_activity_ts: float = time.time()
         self.consciousness = ConsciousnessState()
         self._user_is_speaking: bool = False
-        self._latest_face_frame = None                        # Raw BGR frame containing face
-        self._recognized_people: Set[str] = set()             # Currently recognized person names
+        self._latest_face_frame = None
+        self._recognized_people: Set[str] = set()
 
     def add(self, kind: str, text: str, dedup_seconds: float = 0.0,
             counts_as_activity: bool = True, salience: float = 0.0) -> None:

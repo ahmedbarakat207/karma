@@ -11,15 +11,12 @@ def test_neck_actuator_angles_and_tilt():
     actuator = NeckActuator(pin=18)
     assert actuator.current_angle == ANGLE_FACE_MODE
 
-    # Test kiosk tilt (135 deg)
     actuator.tilt_to_kiosk()
     assert actuator.target_angle == ANGLE_KIOSK_MODE
 
-    # Test face mode tilt (90 deg)
     actuator.tilt_to_face()
     assert actuator.target_angle == ANGLE_FACE_MODE
 
-    # Test pulse conversion
     pulse_90 = actuator._angle_to_pulse(90.0)
     pulse_135 = actuator._angle_to_pulse(135.0)
     assert 1400 <= pulse_90 <= 1600
@@ -31,7 +28,6 @@ def test_kiosk_views_and_rendering():
     assert kiosk.active_view == "face"
     assert not kiosk.is_active()
 
-    # Test switching views
     for v in ["map", "docs", "apps", "achievements"]:
         kiosk.open_view(v)
         assert kiosk.active_view == v
@@ -41,7 +37,6 @@ def test_kiosk_views_and_rendering():
         assert isinstance(frame, np.ndarray)
         assert frame.shape == (480, 800, 3)
 
-    # Test close
     kiosk.close()
     assert kiosk.active_view == "face"
     assert not kiosk.is_active()

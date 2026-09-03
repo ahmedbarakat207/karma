@@ -14,16 +14,14 @@ warnings.filterwarnings("ignore")
 from src import config
 
 SAMPLE_RATE = 16000
-BLOCK_SIZE = getattr(config, "BLOCK_SIZE", 512)  # 512 samples (32ms) - exact native Silero VAD window size
+BLOCK_SIZE = getattr(config, "BLOCK_SIZE", 512)
 
-# Common Whisper hallucinations when transcribing near-silence or background noise
 HALLUCINATIONS: Set[str] = {
     "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
     "subtitles by", "amara.org", "subscribe", "bye.", "you", "okay.", "so",
     "thank you for watching.", "listening", "i'm sorry.", "i'm sorry", "sorry.", "sorry",
 }
 
-# In-process PyTorch / Silero VAD neural voice activity detector
 _torch = None
 _silero_vad_model = None
 try:
@@ -82,16 +80,16 @@ def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
             audio_np,
             language="en",
             task="transcribe",
-            vad_filter=False,                    # Silero VAD already accurately sliced speech
-            beam_size=1,                         # Fast greedy search
-            best_of=1,                           # No sampling passes
-            temperature=0.0,                     # Deterministic
-            without_timestamps=True,             # Skips timestamp token prediction (~30-40% speedup)
-            word_timestamps=False,               # Skips alignment DTW (~50% speedup)
-            condition_on_previous_text=False,    # Skips prompt conditioning (~20% speedup)
-            compression_ratio_threshold=None,   # Disable fallback compression check
-            log_prob_threshold=None,            # Disable fallback retry on low confidence
-            no_speech_threshold=None,           # Handled by Silero VAD
+            vad_filter=False,
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            without_timestamps=True,
+            word_timestamps=False,
+            condition_on_previous_text=False,
+            compression_ratio_threshold=None,
+            log_prob_threshold=None,
+            no_speech_threshold=None,
             initial_prompt=None,
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
@@ -125,7 +123,6 @@ class AudioPipeline:
                 cpu_threads=threads,
                 num_workers=1,
             )
-            # Warm up engine on startup to eliminate cold-start delay
             try:
                 dummy = np.zeros(16000, dtype=np.float32)
                 self.local_whisper.transcribe(dummy, language="en", beam_size=1, without_timestamps=True)
@@ -192,13 +189,11 @@ class AudioPipeline:
                         or (time_since_speech < 0.6)
                     )
 
-                    # Loud sound spike detection (ignored when agent is speaking or in echo cooldown)
                     if not is_agent_speaking and energy > (bg_energy * 10) and energy > 0.05:
                         self.memory.add(kind="conscious_trigger", text="Loud noise detected!", salience=0.9)
 
                     threshold = max(bg_energy * SPEECH_MULT, 0.003)
 
-                    # Neural Silero VAD or energy gate
                     is_speech = False
                     if _silero_vad_model is not None and _torch is not None:
                         try:
@@ -213,7 +208,6 @@ class AudioPipeline:
                         gate = (bg_energy * getattr(config, "BARGE_IN_ENERGY_MULT", 3.5)) if is_agent_speaking else threshold
                         is_speech = (energy > gate)
 
-                    # When agent is speaking and barge-in is disabled, ignore self-audio echo completely
                     if is_agent_speaking and not getattr(config, "BARGE_IN_ENABLED", False):
                         is_speech = False
                         if is_speaking:
@@ -222,7 +216,6 @@ class AudioPipeline:
                             speech_buffer = []
                             pre_buffer = np.zeros(0, dtype=np.float32)
 
-                    # Barge-in handling
                     if is_agent_speaking and is_speech and getattr(config, "BARGE_IN_ENABLED", False):
                         barge_in_consec += 1
                         if barge_in_consec >= 4:

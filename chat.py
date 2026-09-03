@@ -10,7 +10,6 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 warnings.filterwarnings("ignore")
 
-# Add workspace path
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
 
@@ -178,7 +177,6 @@ def interactive_chat(
                     print(f"⚠️ Error ingesting PDF: {e}")
                 continue
 
-            # RAG semantic context retrieval
             doc_context = ""
             if rag_engine:
                 doc_context = rag_engine.get_rag_context(user_input, k=2)
@@ -192,7 +190,6 @@ def interactive_chat(
 
             messages.append({"role": "user", "content": augmented_user_input})
 
-            # Format ChatML prompt
             prompt = ""
             for m in messages:
                 prompt += f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n"

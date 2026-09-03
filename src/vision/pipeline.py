@@ -37,7 +37,6 @@ def get_display_resolution() -> Tuple[int, int]:
         return w, h
     except Exception:
         pass
-    # Default to the 7" 800x480 LCD Screen specified in PARTS.MD
     return getattr(config, "DISPLAY_WIDTH", 800), getattr(config, "DISPLAY_HEIGHT", 480)
 
 
@@ -86,9 +85,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
     face_renderer = FaceRenderer(width=screen_w, height=screen_h)
 
     face_window_name = "Karma"
-    camera_window_name = "Karma Vision [Debug]"
-
-    # Setup Fullscreen Companion Face Window
     cv2.namedWindow(face_window_name, cv2.WINDOW_NORMAL)
     if getattr(config, "FULLSCREEN_FACE", True):
         try:
@@ -100,7 +96,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
     def on_touch(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
-            # If code panel is active and user taps the code card, dismiss code
             if internal_state.get_active_code() is not None and x >= int(curr_dims[0] * 0.30):
                 internal_state.clear_active_code()
                 return
@@ -146,7 +141,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     if recognized_people:
                         memory.set_recognized_people(recognized_people)
 
-                # Update gaze tracking coordinates for Face UI
                 if primary_face:
                     fx, fy, fw, fh, fname, femotion = primary_face
                     norm_x = -((fx + fw / 2.0) - 320.0) / 320.0
@@ -159,17 +153,14 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 if hand_tracker is not None:
                     hand_labels, hand_pts = hand_tracker.process(frame)
 
-                # Aggregate observations
                 current_labels = set(obj_labels + face_labels + hand_labels)
                 for p in recognized_people:
                     current_labels.discard("person")
                     current_labels.add(p)
 
-                # Update working memory consciousness spatial map
                 spatial_objects = [(lbl, positions.get(lbl, (320.0, 240.0))) for lbl in current_labels]
                 memory.consciousness.update(spatial_objects)
 
-                # Log newly appeared objects (when enabled)
                 new_labels = current_labels - last_seen_labels
                 for label in new_labels:
                     if getattr(config, "LOG_VISION_TO_CONSOLE", False):
@@ -178,7 +169,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 last_seen_labels = current_labels
 
             else:
-                # No camera mode: gentle wandering idle gaze & steady ~30 FPS pacing
                 time.sleep(getattr(config, "VISION_POLL_SECONDS", 0.033))
                 t = time.time()
                 idle_x = 0.12 * math.sin(t * 0.5)
@@ -186,7 +176,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 internal_state.set_gaze(idle_x, idle_y, is_present=False)
                 display_fps = 30.0
 
-            # UI State
             is_talking = bool(
                 (speaking_event and speaking_event.is_set())
                 or getattr(internal_state, "is_playing_audio", False)
@@ -211,7 +200,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     fps=display_fps,
                     target_shape=(target_h, target_w)
                 )
-                # Render the interactive top-right [ :: MENU ] pill button
                 kiosk_manager.render_overlay_button(display_frame)
 
             cv2.imshow(face_window_name, display_frame)
@@ -225,24 +213,23 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 annotated = VisionRenderer.draw_hud(annotated, display_fps, display_fps, is_talking=is_talking)
                 cv2.imshow(camera_window_name, annotated)
 
-            # Handle Keyboard Events & Clean Exit
             key = cv2.waitKey(1) & 0xFF
-            if key in (4, 27, ord('q'), ord('Q')):  # 4 = Ctrl+D (EOT), 27 = Esc, 'q' = Quit
+            if key in (4, 27, ord('q'), ord('Q')):
                 stop_event.set()
                 break
-            elif key in (ord('m'), ord('M')):  # 'm' = Toggle Touchscreen Kiosk Menu
+            elif key in (ord('m'), ord('M')):
                 if kiosk_manager.is_active():
                     kiosk_manager.close()
                 else:
                     kiosk_manager.open_view("map")
-            elif key in (ord('f'), ord('F')):  # 'f' = Toggle Fullscreen
+            elif key in (ord('f'), ord('F')):
                 config.FULLSCREEN_FACE = not getattr(config, "FULLSCREEN_FACE", True)
                 prop = cv2.WINDOW_FULLSCREEN if config.FULLSCREEN_FACE else cv2.WINDOW_NORMAL
                 try:
                     cv2.setWindowProperty(face_window_name, cv2.WND_PROP_FULLSCREEN, prop)
                 except Exception:
                     pass
-            elif key in (ord('d'), ord('D')) and has_camera:  # 'd' = Toggle Debug Camera Window
+            elif key in (ord('d'), ord('D')) and has_camera:
                 config.SHOW_VISION_WINDOW = not getattr(config, "SHOW_VISION_WINDOW", False)
                 if not config.SHOW_VISION_WINDOW:
                     try:
@@ -250,7 +237,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     except Exception:
                         pass
 
-            # Check if user closed the window
             try:
                 if cv2.getWindowProperty(face_window_name, cv2.WND_PROP_VISIBLE) < 1:
                     stop_event.set()

@@ -32,7 +32,6 @@ class MemoryStore:
                     source TEXT
                 )
             """)
-            # Migration check: Ensure source column exists on existing databases
             cols = [col[1] for col in self.db.execute("PRAGMA table_info(memories)").fetchall()]
             if "source" not in cols:
                 try:

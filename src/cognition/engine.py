@@ -227,7 +227,6 @@ class GroqEngine:
         except Exception as e:
             config.log_debug(f"[groq] chat error: {e}")
             try:
-                # Fallback without max_completion_tokens for non-o1 models
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -272,7 +271,6 @@ class GroqEngine:
             except Exception as e:
                 config.log_debug(f"[groq] stream error: {e}")
                 try:
-                    # Fallback with standard max_tokens
                     stream = self.client.chat.completions.create(
                         model=self.model,
                         messages=[

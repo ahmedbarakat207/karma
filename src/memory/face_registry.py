@@ -8,7 +8,6 @@ import numpy as np
 
 from src import config
 
-# Global thread lock to protect dlib/face_recognition C++ bindings across threads
 FACE_REC_LOCK = threading.Lock()
 
 

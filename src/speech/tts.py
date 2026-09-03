@@ -17,7 +17,6 @@ def clean_for_speech(text: str) -> str:
     if not text:
         return ""
 
-    # Strip asterisks (e.g. *chuckles*, *smiles*)
     text = re.sub(r"\*.*?\*", "", text)
     text = re.sub(r"\[.*?\]", "", text)
     text = re.sub(r"\(.*?\)", "", text)
@@ -76,7 +75,6 @@ class TTSEngine:
                 config.log_debug(f"[speech] ONNX init note: {e}")
                 self.onnx_session = None
 
-        # Warmup pipeline on startup to eliminate cold-start delay
         try:
             self._synthesize("warmup", speed=1.0)
         except Exception:

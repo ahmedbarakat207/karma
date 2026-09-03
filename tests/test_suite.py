@@ -5,7 +5,6 @@ import time
 import numpy as np
 import pytest
 
-# Ensure we can import from the parent directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import src.config as config
@@ -188,7 +187,6 @@ def test_retrieve_memories_empty():
 
 
 def test_local_engine_prompt_formatting():
-    # Verify ChatML formatting logic
     class FakeLocalEngine(LocalEngine):
         def __init__(self):
             self.stop_tokens = ["<|im_end|>", "<|endoftext|>"]

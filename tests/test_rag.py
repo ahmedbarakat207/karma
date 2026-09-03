@@ -70,7 +70,6 @@ def test_rag_ingest_and_query(temp_store, sample_pdf):
     assert docs[0]["source"] == os.path.basename(sample_pdf)
     assert docs[0]["count"] == count
 
-    # Test semantic query
     context = rag.get_rag_context("What battery does the robot use?")
     assert len(context) > 0
     assert os.path.basename(sample_pdf) in context
@@ -78,15 +77,12 @@ def test_rag_ingest_and_query(temp_store, sample_pdf):
 
 def test_rag_idempotent_reindexing(temp_store, sample_pdf):
     rag = DocumentRAG(store=temp_store)
-    # First ingest
     rag.ingest_pdf(sample_pdf, verbose=False)
     initial_count = temp_store.count()
 
-    # Second ingest of same file
     rag.ingest_pdf(sample_pdf, verbose=False)
     second_count = temp_store.count()
 
-    # Counts must remain equal (no duplicate chunks)
     assert initial_count == second_count
 
 

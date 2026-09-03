@@ -109,7 +109,6 @@ def main():
                 elif cmd in ("quit", "exit"):
                     shutdown()
                     break
-            # Trigger clean shutdown when EOF (Ctrl+D) is received
             shutdown()
         except (EOFError, KeyboardInterrupt):
             shutdown()
