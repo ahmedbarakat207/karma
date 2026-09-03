@@ -12,7 +12,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 480,
     useContentSize: true,
-    backgroundColor: '#07090E',
+    backgroundColor: '#000000',
     frame: false,
     fullscreen: isKiosk,
     kiosk: isKiosk,

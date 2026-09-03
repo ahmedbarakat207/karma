@@ -3,255 +3,339 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Karma Companion Face</title>
+  <title>KARMA — Companion OS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./node_modules/@fortawesome/fontawesome-free/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
   <div id="app-container" class="mode-face">
+
+    <!-- ══ TOP STATUS STRIP ══ -->
     <header id="top-hud">
-      <div class="hud-left"></div>
-
-      <div class="hud-right">
-        <div class="telemetry-group">
-          <div class="telemetry-bar-item" title="Battery & Power">
-            <i class="fa-solid fa-bolt telemetry-icon energy-icon"></i>
-            <div class="progress-track">
-              <div id="energy-fill" class="progress-fill energy-fill" style="width: 85%;"></div>
-            </div>
-          </div>
-          <div class="telemetry-bar-item" title="Curiosity & Engagement">
-            <i class="fa-solid fa-brain telemetry-icon curiosity-icon"></i>
-            <div class="progress-track">
-              <div id="curiosity-fill" class="progress-fill curiosity-fill" style="width: 70%;"></div>
-            </div>
-          </div>
+      <div class="hud-left">
+        <span class="brand-block" aria-hidden="true">K</span>
+        <span class="brand-word">KARMA</span>
+        <span class="hud-sep" aria-hidden="true"></span>
+        <span class="system-time-badge" id="system-time">00:00</span>
+      </div>
+      <div class="hud-center">
+        <div class="os-status-pill" id="os-status-pill">
+          <span class="os-pulse-dot" aria-hidden="true"></span>
+          <span class="os-status-text" id="os-status-text">STANDBY</span>
         </div>
-
-        <button id="menu-btn" class="tactile-btn menu-btn" aria-label="Open Kiosk Hub">
-          <i class="fa-solid fa-bars"></i>
-          <span class="menu-btn-text">MENU</span>
+      </div>
+      <div class="hud-right">
+        <div class="telemetry-compact" aria-label="system telemetry">
+          <span class="telem-item"><span class="telem-key">PWR</span><span class="telem-val" id="hud-battery-val">12.4V</span></span>
+          <span class="telem-divider" aria-hidden="true"></span>
+          <span class="telem-item"><span class="telem-key">CTX</span><span class="telem-val">4096</span></span>
+          <span class="telem-divider" aria-hidden="true"></span>
+          <span class="telem-item"><span class="telem-key">MIC</span><span class="telem-val is-live" id="mic-status-label">READY</span></span>
+        </div>
+        <button id="menu-btn" class="console-trigger-btn" aria-label="Open Console">
+          <span>CONSOLE</span><span class="trig-arrow" aria-hidden="true">▸</span><kbd>M</kbd>
         </button>
       </div>
     </header>
+    <div class="rule-blue" aria-hidden="true"></div>
 
     <main id="main-stage">
-      <div id="companion-station" class="companion-station">
+
+      <!-- ══ FACE / INSTRUMENT ══ -->
+      <section id="companion-station" class="companion-station">
         <div class="face-canvas-wrapper">
-          <svg id="face-svg" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet">
-            <defs>
-              <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur1" />
-                <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="blur2" />
-                <feMerge>
-                  <feMergeNode in="blur2" />
-                  <feMergeNode in="blur1" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <linearGradient id="cyan-electric" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#38E1FF" />
-                <stop offset="100%" stop-color="#00A2FF" />
-              </linearGradient>
-            </defs>
-
-            <g id="head-assembly" class="breathing-idle">
-              <g id="eye-left-container" transform="translate(240, 160)">
-                <path id="eye-left-arc" class="eye-path" d="M -55 20 A 55 55 0 0 1 55 20" fill="none" stroke="url(#cyan-electric)" stroke-width="16" stroke-linecap="round" filter="url(#neon-glow)" />
+          <svg id="face-svg" viewBox="0 0 800 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Karma face">
+            <g id="head-assembly">
+              <g id="eye-left-container" transform="translate(280, 150)">
+                <path id="eye-left-arc" class="eye-shape" d="M -32 0 A 32 32 0 1 0 32 0 A 32 32 0 1 0 -32 0" fill="#4da3ff" stroke="#4da3ff" stroke-width="2" stroke-linecap="round"/>
               </g>
-
-              <g id="eye-right-container" transform="translate(560, 160)">
-                <path id="eye-right-arc" class="eye-path" d="M -55 20 A 55 55 0 0 1 55 20" fill="none" stroke="url(#cyan-electric)" stroke-width="16" stroke-linecap="round" filter="url(#neon-glow)" />
+              <g id="eye-right-container" transform="translate(520, 150)">
+                <path id="eye-right-arc" class="eye-shape" d="M -32 0 A 32 32 0 1 0 32 0 A 32 32 0 1 0 -32 0" fill="#4da3ff" stroke="#4da3ff" stroke-width="2" stroke-linecap="round"/>
               </g>
-
-              <g id="mouth-container" transform="translate(400, 260)">
-                <path id="mouth-path" class="mouth-path" d="M -75 -5 Q 0 38 75 -5" fill="none" stroke="url(#cyan-electric)" stroke-width="8" stroke-linecap="round" filter="url(#soft-glow)" />
+              <g id="mouth-container" transform="translate(400, 268)">
+                <path id="mouth-path" class="mouth-shape" d="M -28 0 Q 0 26 28 0" fill="none" stroke="#4da3ff" stroke-width="8" stroke-linecap="round"/>
               </g>
             </g>
           </svg>
         </div>
 
-        <div class="companion-quick-controls">
-          <button id="dock-touch-btn" class="dock-fa-btn" title="Pitch Head 135° Touch">
-            <i class="fa-solid fa-hand-pointer"></i>
-          </button>
-          <button id="dock-face-btn" class="dock-fa-btn" title="Pitch Head 90° Face">
-            <i class="fa-solid fa-eye"></i>
-          </button>
+        <div class="face-readout">
+          <div class="readout-cell">
+            <span class="readout-key">STATE</span>
+            <span class="readout-val" id="readout-mood">PLAYFUL</span>
+          </div>
+          <div class="readout-cell readout-voice">
+            <span class="readout-key">VOICE</span>
+            <span class="dock-audio-visualizer" id="dock-audio-bars" aria-hidden="true">
+              <span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span><span class="aud-bar"></span>
+            </span>
+          </div>
+          <div class="readout-cell readout-pitch">
+            <span class="readout-key">HEAD PITCH</span>
+            <span class="dock-segmented-btns">
+              <button id="dock-touch-btn" class="dock-seg-btn" type="button">135° TOUCH</button>
+              <button id="dock-face-btn" class="dock-seg-btn active" type="button">90° GAZE</button>
+            </span>
+          </div>
         </div>
-      </div>
 
-      <div id="kiosk-workspace" class="kiosk-workspace">
-        <div class="kiosk-inner-panel">
-          <header class="kiosk-nav-bar">
-            <div class="kiosk-nav-tabs">
-              <button class="tab-btn active" data-view="map">
-                <i class="fa-solid fa-map-location-dot tab-icon"></i>
-                <span class="tab-label">Campus Maps</span>
-              </button>
-              <button class="tab-btn" data-view="apps">
-                <i class="fa-solid fa-rocket tab-icon"></i>
-                <span class="tab-label">Student Apps</span>
-              </button>
-              <button class="tab-btn" data-view="achievements">
-                <i class="fa-solid fa-trophy tab-icon"></i>
-                <span class="tab-label">Achievements</span>
-              </button>
-              <button class="tab-btn" data-view="docs">
-                <i class="fa-solid fa-book-open tab-icon"></i>
-                <span class="tab-label">Reference Docs</span>
-              </button>
-              <button class="tab-btn" data-view="system">
-                <i class="fa-solid fa-microchip tab-icon"></i>
-                <span class="tab-label">Diagnostics</span>
-              </button>
-            </div>
+        <div class="face-meta">
+          <span>M — console</span><span aria-hidden="true">·</span>
+          <span>ESC — dismiss</span><span aria-hidden="true">·</span>
+          <span id="face-link-label">offline</span>
+        </div>
+      </section>
 
-            <button id="kiosk-close-btn" class="kiosk-exit-btn" title="Return to Fullscreen Companion">
-              <i class="fa-solid fa-xmark"></i>
-              <span>CLOSE</span>
+      <!-- ══ CONSOLE ══ -->
+      <section id="kiosk-workspace" class="kiosk-workspace" aria-label="Console workspace">
+        <div class="console-shell">
+          <header class="console-nav-rail">
+            <nav class="console-tabs" role="tablist" aria-label="Console views">
+              <button class="nav-tab-btn active" data-view="map" role="tab" aria-selected="true"><span class="tab-num">01</span>BLUEPRINT</button>
+              <button class="nav-tab-btn" data-view="apps" role="tab" aria-selected="false"><span class="tab-num">02</span>PROJECTS</button>
+              <button class="nav-tab-btn" data-view="achievements" role="tab" aria-selected="false"><span class="tab-num">03</span>MILESTONES</button>
+              <button class="nav-tab-btn" data-view="docs" role="tab" aria-selected="false"><span class="tab-num">04</span>MANUALS</button>
+              <button class="nav-tab-btn" data-view="system" role="tab" aria-selected="false"><span class="tab-num">05</span>TELEMETRY</button>
+            </nav>
+            <button id="kiosk-close-btn" class="console-exit-btn" type="button" title="Dismiss console">
+              <span>DISMISS</span><span aria-hidden="true">×</span>
             </button>
           </header>
 
-          <div class="kiosk-views-viewport">
-            <section id="view-map" class="kiosk-pane active">
-              <div class="pane-toolbar">
-                <div class="floor-selector">
-                  <button class="floor-pill-btn active" data-floor="0">Floor 1 (Ground Level)</button>
-                  <button class="floor-pill-btn" data-floor="1">Floor 2 (Robotics & AI Labs)</button>
+          <div class="console-viewport">
+            <!-- 01 BLUEPRINT -->
+            <div id="view-map" class="console-pane active">
+              <div class="pane-head">
+                <div>
+                  <div class="pane-eyebrow">01 / FACILITY — SPATIAL INDEX</div>
+                  <h2>Campus blueprint</h2>
                 </div>
-                <div class="map-controls">
-                  <button id="map-zoom-in" class="pill-action-btn" title="Zoom In">
-                    <i class="fa-solid fa-plus"></i>
-                  </button>
-                  <button id="map-zoom-out" class="pill-action-btn" title="Zoom Out">
-                    <i class="fa-solid fa-minus"></i>
-                  </button>
-                  <button id="map-reset" class="pill-action-btn" title="Reset View">
-                    <i class="fa-solid fa-rotate-left"></i>
-                  </button>
+                <div class="pane-head-right">
+                  <span class="coord-badge"><span id="cad-coords">X: 64.2&nbsp;&nbsp;Y: 58.1</span></span>
                 </div>
               </div>
+              <div class="cad-toolbar">
+                <div class="cad-level-picker" role="group" aria-label="Floor selector">
+                  <button class="cad-level-btn active" data-floor="0" type="button">L1 — GROUND</button>
+                  <button class="cad-level-btn" data-floor="1" type="button">L2 — LABS</button>
+                </div>
+                <div class="cad-actions">
+                  <button id="map-zoom-in" class="cad-tool-btn" type="button" aria-label="Zoom in">+</button>
+                  <button id="map-zoom-out" class="cad-tool-btn" type="button" aria-label="Zoom out">−</button>
+                  <button id="map-reset" class="cad-tool-btn" type="button" aria-label="Reset view">◎</button>
+                </div>
+              </div>
+              <div class="cad-canvas-frame" id="cad-canvas-frame">
+                <svg id="cad-svg" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Architectural blueprint">
+                  <defs>
+                    <pattern id="cad-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#12395e" stroke-opacity="0.4" stroke-width="1"/>
+                    </pattern>
+                  </defs>
+                  <rect width="1000" height="620" fill="#000000"/>
+                  <rect width="1000" height="620" fill="url(#cad-grid)"/>
+                  <rect x="60" y="50" width="880" height="520" fill="none" stroke="#1f8aff" stroke-opacity="0.5" stroke-width="1.5"/>
+                  <rect x="70" y="60" width="860" height="500" fill="none" stroke="#12395e" stroke-width="1" stroke-dasharray="6 5"/>
+                  <g id="floor-layer-0" class="cad-floor-group active">
+                    <g class="cad-room" data-room="Robotics Lab" data-code="RM-101" data-capacity="30" data-status="Active R&D">
+                      <rect x="90" y="80" width="260" height="200" class="cad-room-box"/>
+                      <text x="110" y="110" class="cad-room-code">RM-101 / BAY 1</text>
+                      <text x="110" y="134" class="cad-room-name">Robotics Systems Lab</text>
+                      <text x="110" y="154" class="cad-room-desc">Manipulator arms + nav track</text>
+                      <g transform="translate(110,232)"><rect width="62" height="18" class="cad-tag-bg"/><text x="31" y="12" text-anchor="middle" class="cad-tag-text">ACTIVE</text></g>
+                    </g>
+                    <g class="cad-room" data-room="Maker Workshop" data-code="RM-102" data-capacity="45" data-status="Open Access">
+                      <rect x="375" y="80" width="260" height="200" class="cad-room-box"/>
+                      <text x="395" y="110" class="cad-room-code">RM-102 / FABRICATION</text>
+                      <text x="395" y="134" class="cad-room-name">Maker Workshop + CNC</text>
+                      <text x="395" y="154" class="cad-room-desc">Printing + 5-axis CNC</text>
+                      <g transform="translate(395,232)"><rect width="58" height="18" class="cad-tag-bg"/><text x="29" y="12" text-anchor="middle" class="cad-tag-text">ONLINE</text></g>
+                    </g>
+                    <g class="cad-room" data-room="Auditorium A" data-code="AUD-A" data-capacity="180" data-status="Available">
+                      <rect x="660" y="80" width="260" height="200" class="cad-room-box"/>
+                      <text x="680" y="110" class="cad-room-code">AUD-A / HALL</text>
+                      <text x="680" y="134" class="cad-room-name">Main Lecture Hall</text>
+                      <text x="680" y="154" class="cad-room-desc">Acoustic stage + symposium</text>
+                      <g transform="translate(680,232)"><rect width="70" height="18" class="cad-tag-bg"/><text x="35" y="12" text-anchor="middle" class="cad-tag-text">OPEN</text></g>
+                    </g>
+                    <g class="cad-room" data-room="AI Bay" data-code="RM-104" data-capacity="25" data-status="Benchmarking">
+                      <rect x="90" y="320" width="260" height="210" class="cad-room-box"/>
+                      <text x="110" y="350" class="cad-room-code">RM-104 / PERCEPTION</text>
+                      <text x="110" y="374" class="cad-room-name">AI + Vision Rig Bay</text>
+                      <text x="110" y="394" class="cad-room-desc">Stereo depth, LiDAR, Edge TPU</text>
+                      <g transform="translate(110,480)"><rect width="88" height="18" class="cad-tag-bg"/><text x="44" y="12" text-anchor="middle" class="cad-tag-text">CALIBRATING</text></g>
+                    </g>
+                    <g class="cad-room" data-room="Student Commons" data-code="LOUNGE" data-capacity="60" data-status="Open">
+                      <rect x="660" y="320" width="260" height="210" class="cad-room-box"/>
+                      <text x="680" y="350" class="cad-room-code">HUB-01 / SOCIAL</text>
+                      <text x="680" y="374" class="cad-room-name">Student Commons</text>
+                      <text x="680" y="394" class="cad-room-desc">Recharge booths + cafe</text>
+                      <g transform="translate(680,480)"><rect width="48" height="18" class="cad-tag-bg"/><text x="24" y="12" text-anchor="middle" class="cad-tag-text">OPEN</text></g>
+                    </g>
+                    <g class="cad-corridor">
+                      <rect x="375" y="320" width="260" height="210" class="cad-corridor-box"/>
+                      <text x="505" y="362" text-anchor="middle" class="cad-corridor-title">CENTRAL ATRIUM</text>
+                      <text x="505" y="380" text-anchor="middle" class="cad-corridor-sub">WAYFINDING CORRIDOR</text>
+                    </g>
+                    <g id="cad-robot-beacon" transform="translate(505, 430)">
+                      <circle r="34" fill="none" stroke="#2e9bff" stroke-width="1" opacity="0.35" class="beacon-sonar-wave"/>
+                      <circle r="20" fill="none" stroke="#2e9bff" stroke-width="1" opacity="0.55" class="beacon-sonar-wave-2"/>
+                      <rect x="-5" y="-5" width="10" height="10" fill="#2e9bff"/>
+                      <g transform="translate(0, 30)"><rect x="-46" y="-10" width="92" height="18" fill="#000" stroke="#2e9bff" stroke-width="1"/><text x="0" y="4" text-anchor="middle" fill="#9cceff" font-family="IBM Plex Mono, monospace" font-size="9" letter-spacing="1">KARMA HERE</text></g>
+                    </g>
+                  </g>
+                  <g id="floor-layer-1" class="cad-floor-group" style="display:none">
+                    <g class="cad-room" data-room="Advanced Robotics" data-code="LAB-201" data-capacity="20" data-status="Secure">
+                      <rect x="90" y="80" width="390" height="200" class="cad-room-box"/>
+                      <text x="120" y="110" class="cad-room-code">LAB-201 / RESTRICTED</text>
+                      <text x="120" y="134" class="cad-room-name">Mechatronics + Dynamics Rig</text>
+                      <text x="120" y="154" class="cad-room-desc">Dynamometer + bipedal testbeds</text>
+                    </g>
+                    <g class="cad-room" data-room="Edge Neural Compute" data-code="LAB-202" data-capacity="15" data-status="Active">
+                      <rect x="520" y="80" width="400" height="200" class="cad-room-box"/>
+                      <text x="550" y="110" class="cad-room-code">LAB-202 / COMPUTE</text>
+                      <text x="550" y="134" class="cad-room-name">Edge Neural Compute Lab</text>
+                      <text x="550" y="154" class="cad-room-desc">GGUF + ONNX pipelines</text>
+                    </g>
+                    <g class="cad-room" data-room="Graduate Research" data-code="RM-203" data-capacity="35" data-status="Open">
+                      <rect x="90" y="320" width="830" height="210" class="cad-room-box"/>
+                      <text x="120" y="350" class="cad-room-code">RM-203 / RESEARCH</text>
+                      <text x="120" y="374" class="cad-room-name">Postgraduate Think Tank</text>
+                      <text x="120" y="394" class="cad-room-desc">ROS workstations + benches</text>
+                    </g>
+                  </g>
+                </svg>
+                <div id="room-detail-popover" class="room-detail-popover" style="display:none">
+                  <div class="popover-header"><span id="popover-code" class="popover-code">RM-101</span><span id="popover-status" class="popover-status">ACTIVE</span></div>
+                  <div id="popover-name" class="popover-title">Robotics Systems Lab</div>
+                  <div id="popover-desc" class="popover-desc">Autonomous test track</div>
+                  <div class="popover-meta"><span>CAP <strong id="popover-cap">30</strong></span><span class="popover-hint">TAP TO CLOSE</span></div>
+                </div>
+              </div>
+            </div>
 
-              <div class="map-container">
-                <div class="map-canvas-box" id="map-canvas-box">
-                  <img id="map-image" src="../data/maps/floor_1.jpg" alt="Campus Blueprint" draggable="false">
-                  <div class="karma-beacon" id="karma-beacon" title="Karma Current Position">
-                    <span class="beacon-pulse"></span>
-                  </div>
+            <!-- 02 PROJECTS -->
+            <div id="view-apps" class="console-pane">
+              <div class="pane-head">
+                <div>
+                  <div class="pane-eyebrow">02 / STUDENT WORK — DEPLOYED ON KARMA</div>
+                  <h2>Lab innovations</h2>
                 </div>
+                <div class="pane-head-right"><span class="count-badge"><span id="apps-count">4</span> PROJECTS</span></div>
               </div>
-            </section>
+              <div class="index-list" id="student-apps-grid"></div>
+            </div>
 
-            <section id="view-apps" class="kiosk-pane">
-              <div class="pane-header-info">
-                <span class="pane-title">STUDENT INNOVATION SHOWCASE</span>
-                <span class="pane-subtitle">Autonomous apps, machine learning models, and robotics club projects</span>
+            <!-- 03 MILESTONES -->
+            <div id="view-achievements" class="console-pane">
+              <div class="pane-head">
+                <div>
+                  <div class="pane-eyebrow">03 / ENGINEERING — HARDWARE + COGNITION</div>
+                  <h2>Milestones</h2>
+                </div>
               </div>
-              <div class="cards-grid" id="student-apps-grid"></div>
-            </section>
+              <div class="index-list" id="achievements-grid"></div>
+            </div>
 
-            <section id="view-achievements" class="kiosk-pane">
-              <div class="pane-header-info">
-                <span class="pane-title">COMPANION MILESTONES & AWARDS</span>
-                <span class="pane-subtitle">Autonomous hardware engineering and neural cognition accomplishments</span>
+            <!-- 04 MANUALS -->
+            <div id="view-docs" class="console-pane">
+              <div class="pane-head">
+                <div>
+                  <div class="pane-eyebrow">04 / KNOWLEDGE — RAG INDEX</div>
+                  <h2>Manuals + docs</h2>
+                </div>
               </div>
-              <div class="cards-grid" id="achievements-grid"></div>
-            </section>
+              <div class="docs-layout">
+                <aside class="docs-side" id="docs-list" aria-label="Document list"></aside>
+                <article class="docs-reader">
+                  <header class="docs-reader-head">
+                    <span class="docs-kicker">SPECIFICATION</span>
+                    <h3 id="docs-current-title" class="docs-title">Karma Robot Hardware Manual</h3>
+                  </header>
+                  <div id="docs-body" class="docs-body"></div>
+                </article>
+              </div>
+            </div>
 
-            <section id="view-docs" class="kiosk-pane">
-              <div class="docs-browser">
-                <div class="docs-sidebar" id="docs-list"></div>
-                <div class="docs-viewer">
-                  <div class="docs-viewer-header" id="docs-current-title">Reference Manual</div>
-                  <div class="docs-viewer-body" id="docs-body"></div>
+            <!-- 05 TELEMETRY -->
+            <div id="view-system" class="console-pane">
+              <div class="pane-head">
+                <div>
+                  <div class="pane-eyebrow">05 / DIAGNOSTICS — LIVE TELEMETRY</div>
+                  <h2>System telemetry</h2>
                 </div>
               </div>
-            </section>
-
-            <section id="view-system" class="kiosk-pane">
-              <div class="diagnostics-grid">
-                <div class="diag-card">
-                  <span class="diag-label">COMPUTING CORE</span>
-                  <span class="diag-value">Raspberry Pi 4 Model B</span>
-                  <span class="diag-sub">Cortex-A72 @ 2.0 GHz Turbo</span>
+              <div class="telemetry-grid">
+                <div class="telem-block">
+                  <div class="telem-block-head"><span>HOST COMPUTE</span><span class="mini-tag">ARM64</span></div>
+                  <div class="telem-big">Raspberry Pi 4B</div>
+                  <div class="telem-sub">Cortex-A72 @ 2.0 GHz</div>
+                  <div class="meter"><div class="meter-fill" style="width:32%"></div></div>
+                  <div class="meter-note">CPU 32% · 41.8°C</div>
                 </div>
-                <div class="diag-card">
-                  <span class="diag-label">MAIN POWER SOURCE</span>
-                  <span class="diag-value" id="diag-battery">12V AGM (9.0 Ah)</span>
-                  <span class="diag-sub">Dual BTS7960 43A Motor Bridges</span>
+                <div class="telem-block">
+                  <div class="telem-block-head"><span>POWER RAIL</span><span class="mini-tag">12V AGM</span></div>
+                  <div class="telem-big" id="diag-battery">12.4V — 9.0Ah</div>
+                  <div class="telem-sub">Dual BTS7960 43A + buck</div>
+                  <div class="meter"><div class="meter-fill" style="width:86%"></div></div>
+                  <div class="meter-note">SoC ~86% · NOMINAL</div>
                 </div>
-                <div class="diag-card">
-                  <span class="diag-label">EDGE NEURAL BRAIN</span>
-                  <span class="diag-value">Qwen 2.5 0.5B Instruct</span>
-                  <span class="diag-sub">GGUF 4-bit | NEON / Metal Acceleration</span>
+                <div class="telem-block">
+                  <div class="telem-block-head"><span>NEURAL ENGINE</span><span class="mini-tag blue">QWEN 2.5</span></div>
+                  <div class="telem-big">0.5B Instruct GGUF</div>
+                  <div class="telem-sub">Metal / NEON · 4096 CTX</div>
+                  <div class="meter"><div class="meter-fill" style="width:58%"></div></div>
+                  <div class="meter-note">1240 / 4096 TOKENS</div>
                 </div>
-                <div class="diag-card">
-                  <span class="diag-label">ACOUSTIC STREAMING</span>
-                  <span class="diag-value">Faster-Whisper + Kokoro</span>
-                  <span class="diag-sub">Real-Time Sub-200ms Latency Loop</span>
+                <div class="telem-block">
+                  <div class="telem-block-head"><span>ACOUSTIC LOOP</span><span class="mini-tag">REALTIME</span></div>
+                  <div class="telem-big">Whisper + Kokoro</div>
+                  <div class="telem-sub">Sub-200ms ring buffer</div>
+                  <div class="meter"><div class="meter-fill" style="width:15%"></div></div>
+                  <div class="meter-note">TTFT 165MS</div>
                 </div>
               </div>
-
-              <div class="system-actions-row">
-                <button id="act-tilt-touch" class="action-btn">
-                  <i class="fa-solid fa-hand-pointer"></i> Pitch to 135° Touch
-                </button>
-                <button id="act-tilt-face" class="action-btn">
-                  <i class="fa-solid fa-eye"></i> Pitch to 90° Face
-                </button>
-                <button id="act-restart-ui" class="action-btn">
-                  <i class="fa-solid fa-arrows-rotate"></i> Reload Display
-                </button>
+              <div class="hw-row">
+                <span class="hw-label">ACTUATOR CALIBRATION</span>
+                <div class="hw-btns">
+                  <button id="act-tilt-touch" class="hw-btn" type="button">135° TOUCH PITCH</button>
+                  <button id="act-tilt-face" class="hw-btn" type="button">90° DIRECT GAZE</button>
+                  <button id="act-restart-ui" class="hw-btn ghost" type="button">RE-SYNC LINK</button>
+                </div>
               </div>
-            </section>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div id="code-stage" class="code-stage" style="display: none;">
+      <!-- ══ CODE OVERLAY ══ -->
+      <div id="code-stage" class="code-stage" style="display:none" role="dialog" aria-label="Code snippet">
         <div class="code-card">
           <div class="code-card-header">
-            <div class="code-title-group">
-              <span id="code-lang-badge" class="code-badge">C</span>
-              <span id="code-filename" class="code-filename">snippet.c</span>
-            </div>
+            <div class="code-title-group"><span id="code-lang-badge" class="code-badge">C</span><span id="code-filename" class="code-filename">snippet.c</span></div>
             <div class="code-actions">
-              <button id="code-copy-btn" class="icon-btn" title="Copy code to clipboard">
-                <i class="fa-solid fa-copy"></i>
-                <span class="btn-label">Copy</span>
-              </button>
-              <button id="code-close-btn" class="icon-btn close-btn" title="Dismiss code view">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
+              <button id="code-copy-btn" class="code-ctrl-btn" type="button">COPY</button>
+              <button id="code-close-btn" class="code-ctrl-btn close-btn" type="button" aria-label="Dismiss">×</button>
             </div>
           </div>
-          <div class="code-card-body">
-            <pre><code id="code-content"></code></pre>
-          </div>
-          <div class="code-card-footer">
-            <span class="hint-text">Tap anywhere to dismiss</span>
-          </div>
+          <div class="code-card-body"><pre><code id="code-content"></code></pre></div>
+          <div class="code-card-footer"><span class="hint-text">TAP OUTSIDE TO DISMISS — ESC</span></div>
         </div>
       </div>
     </main>
 
-    <div id="subtitle-bar" class="subtitle-bar" style="display: none;">
+    <div id="subtitle-bar" class="subtitle-bar" style="display:none" role="status" aria-live="polite">
+      <span class="subtitle-block" aria-hidden="true"></span>
       <span id="subtitle-text"></span>
     </div>
-  </div>
 
+    <footer id="bottom-ticker">
+      <span>Karma · local companion</span>
+      <span id="ticker-link">offline</span>
+    </footer>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>
