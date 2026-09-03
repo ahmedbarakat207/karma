@@ -1,10 +1,3 @@
-"""
-assembly_server.py
-==================
-Tiny HTTP server that serves the body/ STL files and the assembly viewer HTML.
-Run with:  python assembly_server.py
-Then open  http://localhost:8787/assembly_viewer.html
-"""
 import http.server, socketserver, os, sys
 
 PORT = 8787
@@ -14,9 +7,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=BODY_DIR, **kw)
     def log_message(self, fmt, *args):
-        pass   # suppress request logs
+        pass
 
-print(f"Assembly viewer running at  http://localhost:{PORT}/assembly_viewer.html")
-print("Press Ctrl-C to stop.")
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
-    httpd.serve_forever()
+if __name__ == "__main__":
+    print(f"Assembly viewer running at http://localhost:{PORT}/assembly_viewer.html")
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass

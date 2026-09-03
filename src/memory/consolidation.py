@@ -1,9 +1,4 @@
-"""
-Sleep Consolidation Subsystem ("The Subconscious").
-Summarizes short-term working memory into episodic memories,
-embeds chunks into the long-term vector store, archives raw event streams to JSONL,
-and resets working memory for the next waking period.
-"""
+
 import json
 import os
 import time
@@ -13,7 +8,6 @@ from src import config
 
 
 def _format_raw_log(events: List[Dict[str, Any]]) -> str:
-    """Format raw event objects into human-readable timestamped log lines."""
     lines = []
     for e in events:
         t = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e["ts"]))
@@ -22,7 +16,6 @@ def _format_raw_log(events: List[Dict[str, Any]]) -> str:
 
 
 def _chunk_summary(summary_text: str, max_chars: int = 400) -> List[str]:
-    """Split the summary into discrete, self-contained bullet points for vector embedding."""
     parts = [p.strip("-* \n") for p in summary_text.split("\n") if p.strip()]
     chunks: List[str] = []
     buf = ""
@@ -39,7 +32,6 @@ def _chunk_summary(summary_text: str, max_chars: int = 400) -> List[str]:
 
 
 def consolidate(memory, engine, embedder, store, tts=None, archive_dir: str = config.ARCHIVE_DIR) -> None:
-    """Execute one complete sleep-consolidation cycle."""
     events = memory.all_events()
     if not events:
         print("[sleep] nothing to consolidate, skipping.")
@@ -54,7 +46,6 @@ def consolidate(memory, engine, embedder, store, tts=None, archive_dir: str = co
 
     raw_log = _format_raw_log(events)
 
-    # 1. Archive raw event stream to JSONL
     os.makedirs(archive_dir, exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     archive_path = os.path.join(archive_dir, f"raw_{stamp}.jsonl")
@@ -65,7 +56,6 @@ def consolidate(memory, engine, embedder, store, tts=None, archive_dir: str = co
     except Exception as e:
         print(f"[sleep] archive write warning: {e}")
 
-    # 2. Generate episodic memory summary with LLM
     prompt = (
         "Below is a raw log of everything you perceived and thought during a waking period. "
         "Summarize it into a short list of the notable, memorable moments -- skip repetitive or trivial entries. "
@@ -83,7 +73,6 @@ def consolidate(memory, engine, embedder, store, tts=None, archive_dir: str = co
         print("[sleep] summarization produced nothing, aborting consolidation.")
         return
 
-    # 3. Chunk, embed, and store in vector memory
     chunks = _chunk_summary(summary)
     for chunk in chunks:
         try:
@@ -94,13 +83,11 @@ def consolidate(memory, engine, embedder, store, tts=None, archive_dir: str = co
 
     print(f"[sleep] stored {len(chunks)} memory chunks. Raw log archived to {archive_path}")
 
-    # 4. Clear working memory for the next waking session
     memory.clear()
 
 
 def run_idle_watcher(memory, stop_event, on_sleep, idle_minutes: int = config.IDLE_SLEEP_MINUTES,
                       check_every: int = 10) -> None:
-    """Monitors activity level and triggers consolidation when inactive for idle_minutes."""
     already_fired = False
     while not stop_event.is_set():
         stop_event.wait(check_every)

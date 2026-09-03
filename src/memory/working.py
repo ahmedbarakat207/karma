@@ -1,15 +1,10 @@
-"""
-Working Memory Subsystem ("The Stream of Consciousness").
-Thread-safe in-memory buffer where sensor threads (vision, audio) write perceptual events,
-and cognition/interaction loops consume them.
-"""
+
 import threading
 import time
 from typing import List, Dict, Any, Optional, Set, Tuple
 
 
 class ConsciousnessState:
-    """Represents Karma's immediate cognitive model of its physical surroundings."""
 
     def __init__(self):
         self.current_focus: Optional[str] = None
@@ -23,7 +18,6 @@ class ConsciousnessState:
         self.prediction_error: float = 0.0
 
     def update(self, vision_objects: List[Tuple[str, Tuple[float, float]]], speech_text: Optional[str] = None):
-        """Update spatial layout and track novelty/surprise."""
         self.spatial_map = self._bind_objects_to_space(vision_objects)
         self.temporal_grid["5s"] = self.temporal_grid.get("2s")
         self.temporal_grid["2s"] = self.temporal_grid.get("0s")
@@ -46,7 +40,6 @@ class ConsciousnessState:
 
 
 class WorkingMemory:
-    """Thread-safe event store for real-time perceptual inputs."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -62,7 +55,6 @@ class WorkingMemory:
 
     def add(self, kind: str, text: str, dedup_seconds: float = 0.0,
             counts_as_activity: bool = True, salience: float = 0.0) -> None:
-        """Record an event in working memory with optional deduplication."""
         now = time.time()
         key = (kind, text)
 
@@ -85,7 +77,6 @@ class WorkingMemory:
                 self.consciousness.prediction_error = salience
 
     def recent_text(self, window_seconds: float) -> Optional[str]:
-        """Return formatted string of events within the last window_seconds."""
         cutoff = time.time() - window_seconds
         with self._lock:
             events = [e for e in self._events if e["ts"] >= cutoff]
@@ -98,7 +89,6 @@ class WorkingMemory:
         return "\n".join(lines)
 
     def all_events(self) -> List[Dict[str, Any]]:
-        """Return a copy of all current events in working memory."""
         with self._lock:
             return list(self._events)
 
@@ -107,19 +97,16 @@ class WorkingMemory:
             return len(self._events) == 0
 
     def clear(self) -> None:
-        """Clear all working memory events (called at sleep consolidation)."""
         with self._lock:
             self._events.clear()
             self._recent_keys.clear()
             self._handled_ts = time.time()
 
     def mark_handled(self, ts: float) -> None:
-        """Mark events up to timestamp as handled."""
         with self._lock:
             self._handled_ts = max(self._handled_ts, ts)
 
     def unhandled_speech(self, since_ts: float = 0.0) -> List[Dict[str, Any]]:
-        """Return speech events after max(since_ts, handled_ts)."""
         with self._lock:
             threshold = max(since_ts, self._handled_ts)
             return [
@@ -128,7 +115,6 @@ class WorkingMemory:
             ]
 
     def recent_objects(self, window_seconds: float) -> List[str]:
-        """Return recent object detection descriptions."""
         cutoff = time.time() - window_seconds
         with self._lock:
             return [
@@ -137,14 +123,12 @@ class WorkingMemory:
             ]
 
     def add_conversation(self, speech: str, reply: str) -> None:
-        """Record an interaction turn."""
         with self._lock:
             self._conversation.append({"speech": speech, "reply": reply})
             if len(self._conversation) > 10:
                 self._conversation = self._conversation[-10:]
 
     def get_conversation_context(self, n: int = 5) -> str:
-        """Return last n conversation turns formatted for prompt context."""
         with self._lock:
             recent = self._conversation[-n:]
         if not recent:
@@ -156,7 +140,6 @@ class WorkingMemory:
         return "\n".join(lines)
 
     def get_high_salience_events(self) -> Optional[str]:
-        """Extract urgent triggers and reset prediction error."""
         cutoff = time.time() - 10
         with self._lock:
             urgent = [

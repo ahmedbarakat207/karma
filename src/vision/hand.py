@@ -1,6 +1,3 @@
-"""
-MediaPipe 3D Hand and Finger Landmark Tracking.
-"""
 import atexit
 import os
 import sys
@@ -42,8 +39,6 @@ HAND_CONNECTIONS = [
 
 
 class HandTracker:
-    """Tracks 3D hand and finger landmarks via MediaPipe."""
-
     def __init__(self):
         self.detector = None
         task_path = os.path.join(config.BASE_DIR, "models", "hand_landmarker.task")
@@ -66,7 +61,6 @@ class HandTracker:
             except Exception as e:
                 config.log_debug(f"[vision] HandLandmarker init note: {e}")
 
-
     def process(self, frame: np.ndarray) -> Tuple[List[str], List[List[Tuple[int, int]]]]:
         labels: List[str] = []
         hand_landmarks_pixels: List[List[Tuple[int, int]]] = []
@@ -87,14 +81,12 @@ class HandTracker:
                     pts = [(int(lm.x * w), int(lm.y * h)) for lm in hand]
                     hand_landmarks_pixels.append(pts)
 
-                    # Finger tip coordinates
                     thumb_tip = hand[4]
                     index_tip = hand[8]
                     middle_tip = hand[12]
                     ring_tip = hand[16]
                     pinky_tip = hand[20]
 
-                    # Fingers extended checks
                     index_up = index_tip.y < hand[6].y
                     middle_up = middle_tip.y < hand[10].y
                     ring_up = ring_tip.y < hand[14].y
@@ -115,12 +107,10 @@ class HandTracker:
         return labels, hand_landmarks_pixels
 
     def close(self) -> None:
-        """Cleanly close MediaPipe detector without throwing during python interpreter shutdown."""
         if self.detector:
             try:
                 detector = self.detector
                 self.detector = None
-                # Neutralize __del__ on instance to avoid late futures submission during interpreter teardown
                 type(detector).__del__ = lambda self: None
                 with SilenceStderrFD():
                     detector.close()

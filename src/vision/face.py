@@ -1,6 +1,3 @@
-"""
-Face detection, gaze tracking, smile detection, and identity recognition.
-"""
 import time
 from typing import List, Tuple, Set, Optional
 import cv2
@@ -17,8 +14,6 @@ except ImportError:
 
 
 class FaceAndGazeTracker:
-    """Manages face detection, gaze tracking, smile emotion, and identity recognition."""
-
     def __init__(self):
         self.face_cascade = None
         self.profile_cascade = None
@@ -38,15 +33,10 @@ class FaceAndGazeTracker:
             self.face_registry = FaceRegistry()
             config.log_debug(f"[vision] Face recognition enabled ({self.face_registry.count()} known face(s))")
 
-
         self.last_face_rec_time = 0.0
         self.face_rec_interval = getattr(config, "FACE_RECOGNITION_INTERVAL", 0.5)
 
     def process(self, frame: np.ndarray, memory) -> Tuple[List[str], Set[str], Optional[Tuple[int, int, int, int, str, str]]]:
-        """
-        Detects faces, recognizes known individuals, checks smile and gaze.
-        Returns (labels, recognized_names, primary_face_bbox_info).
-        """
         labels: List[str] = []
         recognized_names: Set[str] = set()
         primary_face_info = None

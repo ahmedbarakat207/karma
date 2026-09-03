@@ -1,6 +1,3 @@
-"""
-Vision Subsystem.
-"""
 from src.vision.pipeline import run_vision
 from src.vision.face import FaceAndGazeTracker
 from src.vision.hand import HandTracker

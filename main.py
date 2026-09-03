@@ -11,7 +11,6 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 warnings.filterwarnings("ignore")
 
 class SilenceStderrFD:
-    """Temporarily silences C-level file descriptor 2 (stderr) to suppress Objective-C duplicate symbol warnings."""
     def __enter__(self):
         try:
             sys.stderr.flush()

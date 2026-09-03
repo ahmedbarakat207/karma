@@ -12,7 +12,6 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class SilenceStderrFD:
-    """Temporarily silences C-level file descriptor 2 (stderr) to suppress Objective-C duplicate symbol warnings."""
     def __enter__(self):
         try:
             sys.stderr.flush()

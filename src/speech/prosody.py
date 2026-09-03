@@ -35,9 +35,19 @@ def _resolve_speed(emotion: Optional[str], inflection: Optional[str]) -> float:
     return _SPEED_MAP.get((e, i)) or _SPEED_MAP.get((e, None)) or _SPEED_MAP.get((None, i)) or 1.0
 
 
-class _JSONPrefixParser:
-    """Pulls emotion/inflection/text_chunks out of a streaming JSON token-by-token."""
+def _flush_at_boundary(text: str):
+    if not text:
+        return [], ""
+    matches = list(_SENTENCE_RE.finditer(text))
+    if not matches:
+        return [], text
+    split_pos = matches[-1].end()
+    if split_pos < len(text) and text[split_pos - 1] == '.' and text[split_pos].isdigit():
+        return [], text
+    return [text[:split_pos].strip()], text[split_pos:].lstrip()
 
+
+class _JSONPrefixParser:
     def __init__(self):
         self.emotion: Optional[str] = None
         self.inflection: Optional[str] = None
@@ -48,6 +58,7 @@ class _JSONPrefixParser:
         self._buf = ""
         self._key: Optional[str] = None
         self._in_array = False
+        self._array_closed = False
         self._done = False
         self._escape = False
 
@@ -80,6 +91,8 @@ class _JSONPrefixParser:
             return results
 
         if (ch == ']' or ch == '}') and not self._in_string:
+            if ch == ']':
+                self._array_closed = True
             self._done = True
             self._in_array = False
             if self._buf.strip() and self._buf.strip() not in ("emotion", "inflection", "text_chunks"):
@@ -125,8 +138,6 @@ class _JSONPrefixParser:
 
 
 class CodeFilter:
-    """Strips code fences from TTS stream and shows the code on screen instead."""
-
     def __init__(self):
         self.in_code = False
         self.buf: List[str] = []

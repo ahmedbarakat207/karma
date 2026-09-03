@@ -1,6 +1,3 @@
-"""
-YOLOv8 Object Detection and Spatial Tracking.
-"""
 import time
 from collections import deque
 from typing import List, Tuple, Dict
@@ -10,8 +7,6 @@ from src import config
 
 
 class ObjectDetector:
-    """YOLOv8 object detector with spatial movement tracking."""
-
     def __init__(self):
         from ultralytics import YOLO
         self.model = YOLO(config.YOLO_MODEL)
@@ -21,10 +16,6 @@ class ObjectDetector:
         self._startle_cooldowns: Dict[str, float] = {}
 
     def process(self, frame: np.ndarray, memory) -> Tuple[List[str], Dict[str, Tuple[float, float]], List[Tuple[str, float, Tuple[int, int, int, int]]]]:
-        """
-        Runs YOLO detection, calculates movements, and triggers startle events.
-        Returns (labels, positions_dict, bboxes_for_drawing).
-        """
         labels: List[str] = []
         positions: Dict[str, Tuple[float, float]] = {}
         bboxes: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
@@ -48,7 +39,6 @@ class ObjectDetector:
                 if cls_name == "person":
                     self.user_x_history.append(cx)
 
-                # Sudden motion / startle trigger
                 if cls_name in self.previous_positions:
                     prev_cx, prev_cy = self.previous_positions[cls_name]
                     dist = ((cx - prev_cx) ** 2 + (cy - prev_cy) ** 2) ** 0.5

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Karma AI Companion — Chat & Validation CLI.
-High-speed offline GGUF inference powered by llama.cpp (ARM NEON on Raspberry Pi 4, Metal on Mac).
-"""
 import os
 import sys
 import time
@@ -23,7 +19,6 @@ from llama_cpp import Llama
 
 
 def get_default_model_path() -> str:
-    """Finds the active model GGUF in models/ directory."""
     candidates = [
         getattr(config, "MODEL_PATH", ""),
         os.path.join(config.MODELS_DIR, "model.gguf"),
@@ -36,7 +31,6 @@ def get_default_model_path() -> str:
 
 
 def load_engine(model_path: str, ctx_size: int = 2048, threads: int = 4):
-    """Loads GGUF model with optimal hardware parameters."""
     if not os.path.exists(model_path):
         print(f"📦 Model not found at '{model_path}'. Downloading {config.HF_FILENAME} from {config.HF_REPO}...")
         from huggingface_hub import hf_hub_download
@@ -75,7 +69,6 @@ def load_engine(model_path: str, ctx_size: int = 2048, threads: int = 4):
 
 
 def run_validation(llm):
-    """Runs automated validation tests on the engine."""
     print("=" * 65)
     print("🧪 Running Karma Cognition Validation Suite")
     print("=" * 65)
@@ -139,7 +132,6 @@ def interactive_chat(
     top_p: float = 0.9,
     rag_engine=None
 ):
-    """Runs high-performance streaming terminal chat loop with optional RAG."""
     print("=" * 65)
     print("💬 Interactive Conversation Mode (Qwen 2.5 0.5B Instruct)")
     print("   Commands: /exit (quit) | /clear (reset history)")

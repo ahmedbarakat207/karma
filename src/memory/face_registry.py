@@ -1,8 +1,4 @@
-"""
-Face Registry Subsystem ("The Visual Identity Store").
-Thread-safe persistent store mapping 128-dimensional face embeddings to human names.
-Uses atomic file writing to prevent JSON corruption.
-"""
+
 import json
 import os
 import threading
@@ -17,7 +13,6 @@ FACE_REC_LOCK = threading.Lock()
 
 
 class FaceRegistry:
-    """Thread-safe persistent database for learned human faces."""
 
     def __init__(self, path: Optional[str] = None):
         self._path = path or getattr(config, "FACE_REGISTRY_PATH",
@@ -39,7 +34,6 @@ class FaceRegistry:
             self._entries = []
 
     def _save_atomic(self) -> None:
-        """Atomically persist entries by writing to a temporary file then renaming."""
         tmp_path = f"{self._path}.tmp"
         try:
             parent = os.path.dirname(self._path)
@@ -57,7 +51,6 @@ class FaceRegistry:
                     pass
 
     def register(self, name: str, face_encoding: Union[np.ndarray, List[float]]) -> None:
-        """Register a face encoding under a given name."""
         name = name.strip().title()
         enc_list = face_encoding.tolist() if isinstance(face_encoding, np.ndarray) else list(face_encoding)
 
@@ -82,7 +75,6 @@ class FaceRegistry:
 
     def recognize(self, face_encoding: Union[np.ndarray, List[float]],
                   tolerance: Optional[float] = None) -> Optional[str]:
-        """Find the closest matching name within tolerance."""
         if tolerance is None:
             tolerance = getattr(config, "FACE_RECOGNITION_TOLERANCE", 0.55)
 
@@ -107,11 +99,9 @@ class FaceRegistry:
         return None
 
     def known_names(self) -> List[str]:
-        """Return list of all registered names."""
         with self._lock:
             return [e["name"] for e in self._entries]
 
     def count(self) -> int:
-        """Return count of registered faces."""
         with self._lock:
             return len(self._entries)

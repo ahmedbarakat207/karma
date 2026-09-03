@@ -1,6 +1,3 @@
-"""
-Memory Subsystem.
-"""
 from src.memory.working import WorkingMemory, ConsciousnessState
 from src.memory.store import MemoryStore
 from src.memory.face_registry import FaceRegistry

@@ -14,7 +14,6 @@ from src.vision.render import VisionRenderer, FaceRenderer
 
 
 def get_display_resolution() -> Tuple[int, int]:
-    """Auto-detects native display resolution across macOS, Linux, and Windows."""
     try:
         from AppKit import NSScreen
         f = NSScreen.mainScreen().frame()
@@ -43,12 +42,10 @@ def get_display_resolution() -> Tuple[int, int]:
 
 
 def run_vision(memory, stop_event, speaking_event=None) -> None:
-    """Main camera capture, face rendering, and computer vision loop."""
     cam_idx = getattr(config, "CAMERA_INDEX", 0)
     cap = None
     has_camera = False
 
-    # 1. Probe for camera availability
     try:
         test_cap = cv2.VideoCapture(cam_idx)
         if test_cap is not None and test_cap.isOpened():
@@ -63,7 +60,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
     except Exception as e:
         config.log_debug(f"[vision] camera probe note: {e}")
 
-    # 2. Conditionally initialize vision trackers & YOLO
     if not has_camera:
         print(f"\n[vision] ⚠️ No camera hardware found at index {cam_idx}.")
         print("[vision] 💤 YOLO object detection & spatial trackers are DISABLED to save CPU and RAM.")
@@ -140,12 +136,10 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     frame_count = 0
                     fps_time = now
 
-                # 1. Object detection (only if object_detector is active)
                 obj_labels, positions, bboxes = ([], {}, [])
                 if object_detector is not None:
                     obj_labels, positions, bboxes = object_detector.process(frame, memory)
 
-                # 2. Face, gaze, and identity tracking
                 face_labels, recognized_people, primary_face = ([], [], None)
                 if face_tracker is not None:
                     face_labels, recognized_people, primary_face = face_tracker.process(frame, memory)
@@ -161,7 +155,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 else:
                     internal_state.set_gaze(0.0, 0.0, is_present=False)
 
-                # 3. 3D Hand tracking
                 hand_labels = []
                 if hand_tracker is not None:
                     hand_labels, hand_pts = hand_tracker.process(frame)
@@ -200,7 +193,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             )
             is_user_speaking = bool(memory.is_user_speaking())
 
-            # 4. Render Primary Full-Screen Face or Active Kiosk Menu
             target_w, target_h = screen_w, screen_h
             try:
                 rect = cv2.getWindowImageRect(face_window_name)
@@ -224,7 +216,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
             cv2.imshow(face_window_name, display_frame)
 
-            # 5. Render Debug Camera Window (only when camera is active and debug window enabled)
             if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
                 annotated = frame.copy()
                 VisionRenderer.draw_objects(annotated, bboxes)

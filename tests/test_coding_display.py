@@ -1,11 +1,3 @@
-"""
-Unit Tests for Coding Request UI & TTS Filtering Subsystem.
-Verifies that:
-1. Code inside ``` ``` is NEVER spoken by TTS.
-2. Code is cleanly extracted and displayed in the center.
-3. Karma's animated face is scaled smaller and positioned to the left.
-4. Tapping the code card dismisses it back to fullscreen companion face.
-"""
 import pytest
 import numpy as np
 
@@ -73,12 +65,10 @@ def test_code_filter_streaming():
 def test_face_renderer_coding_mode():
     renderer = FaceRenderer(width=800, height=480)
 
-    # 1. Normal face mode (no active code)
     internal_state.clear_active_code()
     frame_normal = renderer.render(target_shape=(480, 800))
     assert frame_normal.shape == (480, 800, 3)
 
-    # 2. Coding mode: code active in internal_state
     code_snippet = "def solve():\n    return 42"
     internal_state.set_active_code(code_snippet, lang="python")
 
@@ -89,6 +79,5 @@ def test_face_renderer_coding_mode():
     diff = np.abs(frame_coding.astype(int) - frame_normal.astype(int))
     assert np.mean(diff) > 1.0, "Coding frame should have distinct layout with code card"
 
-    # 3. Dismiss code snippet
     internal_state.clear_active_code()
     assert internal_state.get_active_code() is None

@@ -1,6 +1,3 @@
-"""
-Unit and Integration Tests for Document RAG (MarkItDown + sqlite-vec).
-"""
 import os
 import tempfile
 import pytest
@@ -11,7 +8,6 @@ from src.memory.rag import DocumentRAG, retrieve_document_context
 
 @pytest.fixture
 def temp_store():
-    """Provides a temporary, isolated SQLite vector database."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
     store = MemoryStore(db_path=db_path)
@@ -22,7 +18,6 @@ def temp_store():
 
 @pytest.fixture
 def sample_pdf():
-    """Generates a valid 1-page PDF document for testing."""
     pdf_bytes = (
         b'%PDF-1.4\n'
         b'1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n'

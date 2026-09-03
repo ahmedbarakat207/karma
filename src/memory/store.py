@@ -1,7 +1,4 @@
-"""
-Long-Term Memory Subsystem ("The Archive").
-Single-file sqlite-vec vector database for semantic retrieval of episodic memories.
-"""
+
 import time
 from typing import List, Dict, Any, Optional
 
@@ -15,7 +12,6 @@ from src import config
 
 
 class MemoryStore:
-    """Thread-safe vector store backed by SQLite and sqlite-vec."""
 
     def __init__(self, db_path: str = config.MEMORY_DB_PATH, dim: int = config.EMBED_DIM):
         self.dim = dim
@@ -26,7 +22,6 @@ class MemoryStore:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        """Create relational and virtual vector tables if they do not exist."""
         with self.db:
             self.db.execute("""
                 CREATE TABLE IF NOT EXISTS memories (
@@ -52,7 +47,6 @@ class MemoryStore:
 
     def add(self, text: str, embedding: List[float], kind: str = "episodic_summary",
             ts: Optional[float] = None, source: Optional[str] = None) -> int:
-        """Insert a memory or document chunk and its corresponding vector embedding."""
         ts = ts or time.time()
         serialized = sqlite_vec.serialize_float32(embedding)
 
@@ -69,7 +63,6 @@ class MemoryStore:
         return row_id
 
     def query(self, embedding: List[float], k: int = 5, kind: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Perform K-Nearest Neighbors (KNN) search over memories with optional kind filter."""
         serialized = sqlite_vec.serialize_float32(embedding)
         if kind:
             fetch_k = max(k * 4, 20)
@@ -109,7 +102,6 @@ class MemoryStore:
         ]
 
     def delete_by_source(self, source: str) -> int:
-        """Delete all records with the specified source tag (e.g. filename)."""
         with self.db:
             rows = self.db.execute("SELECT id FROM memories WHERE source = ?", (source,)).fetchall()
             for (r_id,) in rows:
@@ -118,7 +110,6 @@ class MemoryStore:
         return len(rows)
 
     def delete_by_kind(self, kind: str) -> int:
-        """Delete all records of a specific kind (e.g. document)."""
         with self.db:
             rows = self.db.execute("SELECT id FROM memories WHERE kind = ?", (kind,)).fetchall()
             for (r_id,) in rows:
@@ -127,7 +118,6 @@ class MemoryStore:
         return len(rows)
 
     def list_sources(self, kind: Optional[str] = "document") -> List[Dict[str, Any]]:
-        """List distinct sources and their item counts."""
         query = "SELECT source, COUNT(*) FROM memories WHERE source IS NOT NULL"
         params = []
         if kind:
@@ -138,7 +128,6 @@ class MemoryStore:
         return [{"source": r[0], "count": r[1]} for r in rows]
 
     def prune_memories(self, max_age_days: int = 60, max_total_records: int = 1500) -> int:
-        """Prunes memories older than cutoff or exceeding max total count."""
         cutoff_ts = time.time() - (max_age_days * 86400)
         pruned_count = 0
 
@@ -168,6 +157,5 @@ class MemoryStore:
         return pruned_count
 
     def count(self) -> int:
-        """Return total number of memories stored."""
         row = self.db.execute("SELECT COUNT(*) FROM memories").fetchone()
         return row[0] if row else 0

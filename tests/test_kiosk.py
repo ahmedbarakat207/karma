@@ -1,6 +1,3 @@
-"""
-Unit and Integration Tests for Kiosk Touchscreen Menu & MG90S Neck Actuator.
-"""
 import os
 import pytest
 import numpy as np
@@ -54,32 +51,23 @@ def test_kiosk_touch_interaction():
     kiosk = KioskManager()
     kiosk.close()
 
-    # 1. Touch top-right MENU pill button from face mode
     handled = kiosk.handle_touch(750, 25, 800, 480)
     assert handled is True
     assert kiosk.is_active()
     assert kiosk.active_view == "map"
 
-    # 2. Touch DOCS tab in top bar
-    # Tabs: [DOCS] width - 640..width - 525 (160..275)
     handled = kiosk.handle_touch(200, 25, 800, 480)
     assert handled is True
     assert kiosk.active_view == "docs"
 
-    # 3. Touch APPS tab in top bar
-    # [APPS] width - 385..width - 250 (415..550)
     handled = kiosk.handle_touch(450, 25, 800, 480)
     assert handled is True
     assert kiosk.active_view == "apps"
 
-    # 4. Touch AWARDS tab in top bar
-    # [AWARDS] width - 240..width - 105 (560..695)
     handled = kiosk.handle_touch(600, 25, 800, 480)
     assert handled is True
     assert kiosk.active_view == "achievements"
 
-    # 5. Touch EXIT button in top right
-    # [EXIT] width - 95..width - 15 (705..785)
     handled = kiosk.handle_touch(750, 25, 800, 480)
     assert handled is True
     assert kiosk.active_view == "face"

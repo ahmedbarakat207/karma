@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Memory Store Query CLI.
-Allows searching through long-term episodic memories from the terminal.
-
-Usage:
-    python recall.py "what did we talk about earlier"
-"""
 import sys
 import time
 

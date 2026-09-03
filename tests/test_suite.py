@@ -1,7 +1,3 @@
-"""
-Comprehensive Karma Unit & Integration Test Suite.
-Tests 100% local execution: llama_cpp formatting, faster-whisper, prosody, face registry, state, and memory.
-"""
 import os
 import sys
 import threading
@@ -26,9 +22,6 @@ from src.vision.render import FaceRenderer, VisionRenderer
 
 
 
-# ==============================================================================
-# Thinking Tag Stripper Tests
-# ==============================================================================
 
 def test_strip_thinking_tags():
     assert _strip_thinking("<think>reasoning here</think>Hello world!") == "Hello world!"
@@ -47,9 +40,6 @@ def test_strip_thinking_stream():
     assert result2 == "All good."
 
 
-# ==============================================================================
-# Prosody & Streaming JSON Parser Tests
-# ==============================================================================
 
 def test_flush_sentence():
     buf = "Hello there. How are you?"
@@ -124,9 +114,6 @@ def test_resolve_speed_range():
 
 
 
-# ==============================================================================
-# Audio & Hallucination Filter Tests
-# ==============================================================================
 
 def test_is_valid_transcript_real():
     assert is_valid_transcript("Hey, how is it going today?")
@@ -158,9 +145,6 @@ def test_transcribe_audio_local():
     assert res == "Hello from local whisper"
 
 
-# ==============================================================================
-# Interaction & Memory Context Tests
-# ==============================================================================
 
 def test_extract_plain_text_json():
     raw = '{"emotion": "neutral", "text_chunks": ["Hello.", "World."]}'
@@ -202,9 +186,6 @@ def test_retrieve_memories_empty():
 
 
 
-# ==============================================================================
-# Local LLM Prompt Format Tests
-# ==============================================================================
 
 def test_local_engine_prompt_formatting():
     # Verify ChatML formatting logic
@@ -219,9 +200,6 @@ def test_local_engine_prompt_formatting():
     assert "<|im_start|>assistant" in formatted
 
 
-# ==============================================================================
-# Working Memory Tests
-# ==============================================================================
 
 def test_memory_dedup():
     wm = WorkingMemory()
@@ -262,9 +240,6 @@ def test_working_memory_recognized_people():
     assert wm.get_recognized_people() == set()
 
 
-# ==============================================================================
-# Face Registry Tests
-# ==============================================================================
 
 def test_face_registry_register_and_recognize(tmp_path):
     registry = FaceRegistry(path=str(tmp_path / "test_faces.json"))
@@ -299,9 +274,6 @@ def test_face_registry_persistence(tmp_path):
     assert "Sarah" in reg2.known_names()
 
 
-# ==============================================================================
-# Name Extraction Tests
-# ==============================================================================
 
 def test_extract_name_im():
     assert _extract_name_introduction("Hey, I'm Mike") == "Mike"
@@ -325,9 +297,6 @@ def test_extract_name_false_positive():
     assert _extract_name_introduction("I'm going to go") is None
 
 
-# ==============================================================================
-# State & Emotional Mood Tests
-# ==============================================================================
 
 def test_internal_state_mood_decay():
     internal_state.energy = 0.90
@@ -337,9 +306,6 @@ def test_internal_state_mood_decay():
     assert "(" in expr and ")" in expr
 
 
-# ==============================================================================
-# Barge-In & Speech Interruption Tests
-# ==============================================================================
 
 def test_barge_in_config():
     assert isinstance(getattr(config, "BARGE_IN_ENABLED", False), bool)
@@ -379,9 +345,6 @@ def test_barge_in_prosody_interrupt():
     assert speaking_event.is_set() is False
 
 
-# ==============================================================================
-# FaceRenderer & Fullscreen UI Tests
-# ==============================================================================
 
 def test_face_renderer_canvas_shape():
     renderer = FaceRenderer(width=1280, height=720)
@@ -416,9 +379,6 @@ def test_face_renderer_subtitles_overlay():
     assert frame.shape == (600, 800, 3)
 
 
-# ==============================================================================
-# Subtitles & Gaze Tracking State Tests
-# ==============================================================================
 
 def test_internal_state_subtitles():
     internal_state.set_user_speech("How are you?")
@@ -446,9 +406,6 @@ def test_internal_state_gaze_clamping():
     assert abs(internal_state.gaze_y - 0.4) < 1e-4
 
 
-# ==============================================================================
-# CLI Argument Configuration Tests
-# ==============================================================================
 
 def test_apply_cli_args_debug():
     config.apply_cli_args(["--debug"])

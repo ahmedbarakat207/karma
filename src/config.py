@@ -123,13 +123,11 @@ GROQ_MODEL = f"openai/{_raw_groq}" if _raw_groq in ("gpt-oss-20b", "gpt-oss-120b
 
 
 def log_debug(*args, **kwargs) -> None:
-    """Print message only when DEBUG mode is active."""
     if DEBUG:
         print(*args, **kwargs)
 
 
 def apply_cli_args(argv=None) -> None:
-    """Applies command-line arguments to global configuration."""
     global DEBUG, SHOW_VISION_WINDOW, LOG_VISION_TO_CONSOLE, FULLSCREEN_FACE, USE_GROQ, GROQ_MODEL
     if argv is None:
         import sys
