@@ -79,7 +79,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     llvm \
     ninja-build \
     libopenblas-dev \
-    libatlas-base-dev \
     liblapack-dev
 
 log_info "Installing Python 3 headers and virtual environment tools..."
@@ -112,7 +111,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3-libcamera \
     python3-picamera2 \
     v4l-utils \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
