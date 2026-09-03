@@ -133,6 +133,17 @@ class WorkingMemory:
             lines.append(f"You: {ex['reply']}")
         return "\n".join(lines)
 
+    def get_conversation_turns(self, n: int = 5) -> List[Dict[str, str]]:
+        with self._lock:
+            recent = self._conversation[-n:]
+        turns = []
+        for ex in recent:
+            if ex.get("speech"):
+                turns.append({"role": "user", "content": ex["speech"]})
+            if ex.get("reply"):
+                turns.append({"role": "assistant", "content": ex["reply"]})
+        return turns
+
     def get_high_salience_events(self) -> Optional[str]:
         cutoff = time.time() - 10
         with self._lock:

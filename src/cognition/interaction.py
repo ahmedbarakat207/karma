@@ -93,11 +93,16 @@ def clean_companion_reply(text: str) -> str:
     if not text:
         return text
     orig = text
-    text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+    while True:
+        prev = text
+        text = re.sub(r'^(?:friend said|user said|user|karma|friend)[!:,.\s\"-]*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+        if text == prev:
+            break
     if text and text != orig:
         text = text[0].upper() + text[1:]
     return text
@@ -108,7 +113,10 @@ def _extract_plain_text(raw: str) -> str:
         return ""
 
     s = raw.strip()
-    if "```" in s:
+    if "```" in s and not s.startswith("```json"):
+        return clean_companion_reply(s)
+
+    if s.startswith("```json"):
         s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.MULTILINE).strip()
         s = re.sub(r"\s*```$", "", s, flags=re.MULTILINE).strip()
 
@@ -136,10 +144,13 @@ def _extract_plain_text(raw: str) -> str:
         elif val.startswith('"') and val.endswith('"'):
             return clean_companion_reply(_deduplicate_phrase_loops(val[1:-1]))
 
-    cleaned = re.sub(r'[{}\[\]"]', "", s)
-    cleaned = re.sub(r'(?:emotion|inflection|text_chunks|response|reply|message)\s*:\s*', "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'^(?:playful|curious|excited|tired|sad|attentive|warm|surprised|whisper|question|emphatic|flat|neutral)[,\s]+', '', cleaned, flags=re.IGNORECASE)
-    return clean_companion_reply(_deduplicate_phrase_loops(cleaned.strip()))
+    if s.startswith("{") and s.endswith("}"):
+        cleaned = re.sub(r'[{}\[\]"]', "", s)
+        cleaned = re.sub(r'(?:emotion|inflection|text_chunks|response|reply|message)\s*:\s*', "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'^(?:playful|curious|excited|tired|sad|attentive|warm|surprised|whisper|question|emphatic|flat|neutral)[,\s]+', '', cleaned, flags=re.IGNORECASE)
+        return clean_companion_reply(_deduplicate_phrase_loops(cleaned.strip()))
+
+    return clean_companion_reply(_deduplicate_phrase_loops(s))
 
 
 def retrieve_memories(query: str, store, embedder, k: int = 3) -> str:
@@ -172,14 +183,7 @@ You love music, especially jazz, lo-fi, and indie rock.
 Never give textbook definitions or lecture like an encyclopedia.
 Never sound like a customer service bot or AI assistant.
 Keep replies brief (1-2 sentences) like a real casual conversation.
-If code is requested, provide a brief conversational note and enclose the code in a ```lang``` block.
-
-Respond with JSON:
-{
-  "emotion": "curious|playful|warm|excited|tired|sad|surprised|neutral",
-  "inflection": "flat|question|excited|whisper|emphatic",
-  "text_chunks": ["sentence 1", "sentence 2"]
-}"""
+If code is requested, provide a brief conversational note and enclose the code in a ```lang``` block."""
 
 
 def _check_kiosk_intent(text: str) -> Optional[Tuple[str, Optional[int]]]:
@@ -265,8 +269,7 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
     visible = memory.recent_objects(config.VISION_CONTEXT_WINDOW_SECONDS)
     vision_ctx = f"Current Environment: {', '.join(sorted(set(visible)))}\n" if visible else ""
 
-    conv_ctx = memory.get_conversation_context(n=4)
-    conv_section = f"Recent conversation:\n{conv_ctx}\n" if conv_ctx else ""
+    history = memory.get_conversation_turns(n=4)
 
     mem_ctx = retrieve_memories(speech_text, store, embedder, k=2)
     mem_section = f"Relevant past memories:\n{mem_ctx}\n" if mem_ctx else ""
@@ -284,11 +287,12 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
     if doc_section:   parts.append(doc_section)
     if mem_section:   parts.append(mem_section)
     if vision_ctx:    parts.append(vision_ctx)
-    if conv_section:  parts.append(conv_section)
     if people_ctx:    parts.append(people_ctx)
-    parts.append(f'Friend said: "{speech_text}"\n\nYour reply (JSON only):')
 
-    prompt = "\n".join(parts)
+    if parts:
+        user_prompt = f"{''.join(parts)}\n{speech_text}"
+    else:
+        user_prompt = speech_text
 
     try:
         reply_text = ""
@@ -296,7 +300,7 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
             collected: List[str] = []
 
             def collecting_stream():
-                for tok in engine.stream_chat(sys_prompt, prompt, max_tokens=180):
+                for tok in engine.stream_chat(sys_prompt, user_prompt, max_tokens=180, history=history):
                     collected.append(tok)
                     yield tok
 
@@ -304,32 +308,33 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
             reply_text = _extract_plain_text("".join(collected).strip())
 
             if not reply_text:
-                raw = engine.chat(sys_prompt, prompt, max_tokens=180)
+                raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
                 reply_text = _extract_plain_text(raw)
                 if tts and reply_text and len(reply_text) > 1:
                     spoken, code, lang = extract_code_blocks(reply_text)
                     if code:
                         internal_state.set_active_code(code, lang=lang)
                     if spoken:
-                        tts.speak(spoken)
+                        tts.speak(clean_companion_reply(spoken))
         else:
-            raw = engine.chat(sys_prompt, prompt, max_tokens=180)
+            raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
             reply_text = _extract_plain_text(raw)
             if tts and reply_text and len(reply_text) > 1:
                 spoken, code, lang = extract_code_blocks(reply_text)
                 if code:
                     internal_state.set_active_code(code, lang=lang)
                 if spoken:
-                    tts.speak(spoken)
+                    tts.speak(clean_companion_reply(spoken))
 
         if reply_text and len(reply_text) > 1:
             spoken, code, lang = extract_code_blocks(reply_text)
+            clean_spoken = clean_companion_reply(spoken)
             if code:
                 internal_state.set_active_code(code, lang=lang)
-            print(f"[reply] ({internal_state.mood}) {spoken}")
-            internal_state.set_karma_speech(spoken)
-            memory.add(kind="reply", text=reply_text, counts_as_activity=True)
-            memory.add_conversation(speech_text, reply_text)
+            print(f"[reply] ({internal_state.mood}) {clean_spoken}")
+            internal_state.set_karma_speech(clean_spoken)
+            memory.add(kind="reply", text=clean_spoken, counts_as_activity=True)
+            memory.add_conversation(speech_text, clean_spoken)
 
     except Exception as e:
         config.log_debug(f"[interaction] generation error: {e}")

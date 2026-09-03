@@ -54,6 +54,9 @@ class _JSONPrefixParser:
         self.text_chunks: List[str] = []
 
         self._in_object = False
+        self._is_plain_text: Optional[bool] = None
+        self._prefix_buf = ""
+        self._plain_buf = ""
         self._in_string = False
         self._buf = ""
         self._key: Optional[str] = None
@@ -65,12 +68,42 @@ class _JSONPrefixParser:
     def feed(self, token: str) -> List[str]:
         if self._done:
             return []
+
+        if self._is_plain_text is None and not self._in_object:
+            self._prefix_buf += token
+            stripped = self._prefix_buf.strip()
+            if "{" in self._prefix_buf:
+                self._is_plain_text = False
+                token = self._prefix_buf
+                self._prefix_buf = ""
+            elif stripped and not "```json".startswith(stripped):
+                self._is_plain_text = True
+                token = self._prefix_buf
+                self._prefix_buf = ""
+            else:
+                return []
+
+        if self._is_plain_text:
+            self._plain_buf += token
+            chunks, self._plain_buf = _flush_at_boundary(self._plain_buf)
+            if chunks:
+                self.text_chunks.extend(chunks)
+            return chunks
+
         out = []
         for ch in token:
             got = self._char(ch)
             if got:
                 out.extend(got)
         return out
+
+    def flush(self) -> List[str]:
+        if self._is_plain_text and self._plain_buf.strip():
+            rem = self._plain_buf.strip()
+            self._plain_buf = ""
+            self.text_chunks.append(rem)
+            return [rem]
+        return []
 
     def _char(self, ch: str) -> List[str]:
         results = []
@@ -315,6 +348,11 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
     except Exception as e:
         config.log_debug(f"[prosody] token loop error: {e}")
     finally:
+        for rem in parser.flush():
+            for spoken in code_filter.filter_chunk(rem):
+                if spoken.strip():
+                    synth_q.put((spoken.strip(), speed))
+
         if code_filter.in_code and code_filter.buf:
             code = "".join(code_filter.buf).strip()
             if code:

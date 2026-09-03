@@ -68,11 +68,16 @@ def clean_companion_reply(text: str) -> str:
     if not text:
         return text
     orig = text
-    text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
-    text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+    while True:
+        prev = text
+        text = re.sub(r'^(?:friend said|user said|user|karma|friend)[!:,.\s\"-]*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^(?:hello|hi|hey)(?: there)?[!,.]?\s*how can i (?:assist|help) you(?: today)?\??', "Hey! What's up?", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'how can i (?:assist|help) you(?: today)?\??', "what's up?", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^as (?:an? )?(?:ai|artificial intelligence|language model|human friend|friend|machine)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^i (?:do not|don\'t) have (?:personal )?(?:preferences|emotions|feelings)[^.!?\n]*(?:[.,!?]|\b(?:but|however),?)\s*', '', text, flags=re.IGNORECASE).strip()
+        text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
+        if text == prev:
+            break
     if text and text != orig:
         text = text[0].upper() + text[1:]
     return text
@@ -144,18 +149,23 @@ class LocalEngine:
                 pass
             self.llm = None
 
-    def _format_prompt(self, system_prompt: str, user_prompt: str) -> str:
-        return (
-            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-            f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
+    def _format_prompt(self, system_prompt: str, user_prompt: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        prompt = f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        if history:
+            for turn in history:
+                role = turn.get("role", "user")
+                content = turn.get("content", "").strip()
+                if content:
+                    prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        prompt += f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
+        prompt += "<|im_start|>assistant\n"
+        return prompt
 
     def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
-             temperature: float = 0.7) -> str:
+             temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
         if self.llm is None:
             return ""
-        prompt = self._format_prompt(system_prompt, user_prompt)
+        prompt = self._format_prompt(system_prompt, user_prompt, history=history)
         with config.SilenceStderrFD():
             out = self.llm(
                 prompt,
@@ -171,10 +181,10 @@ class LocalEngine:
         return clean_companion_reply(_strip_thinking(text).strip())
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
-                    temperature: float = 0.7) -> Generator[str, None, None]:
+                    temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
         if self.llm is None:
             return
-        prompt = self._format_prompt(system_prompt, user_prompt)
+        prompt = self._format_prompt(system_prompt, user_prompt, history=history)
 
         def raw_tokens():
             with config.SilenceStderrFD():
@@ -220,8 +230,18 @@ class GroqEngine:
             except Exception as e2:
                 config.log_debug(f"[llm] Groq client init note: {e2}")
 
+    def _build_groq_messages(self, system_prompt: str, user_prompt: str,
+                             history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
+        msgs = [{"role": "system", "content": system_prompt}]
+        if history:
+            for turn in history:
+                if turn.get("content"):
+                    msgs.append({"role": turn.get("role", "user"), "content": turn["content"]})
+        msgs.append({"role": "user", "content": user_prompt})
+        return msgs
+
     def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
-             temperature: float = 0.7) -> str:
+             temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
         if not self.client:
             config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
             return ""
@@ -229,10 +249,7 @@ class GroqEngine:
             budget = max(max_tokens, 1024)
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+                messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
                 max_completion_tokens=budget,
                 temperature=temperature,
             )
@@ -243,10 +260,7 @@ class GroqEngine:
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
                     max_tokens=budget,
                     temperature=temperature,
                 )
@@ -257,21 +271,19 @@ class GroqEngine:
                 return ""
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
-                    temperature: float = 0.7) -> Generator[str, None, None]:
+                    temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
         if not self.client:
             config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
             return
 
         budget = max(max_tokens, 1024)
+        groq_msgs = self._build_groq_messages(system_prompt, user_prompt, history=history)
 
         def raw_tokens():
             try:
                 stream = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    messages=groq_msgs,
                     max_completion_tokens=budget,
                     temperature=temperature,
                     stream=True
