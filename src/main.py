@@ -159,9 +159,6 @@ def main():
                 elif cmd in ("quit", "exit"):
                     shutdown()
                     break
-            shutdown()
-        except (EOFError, KeyboardInterrupt):
-            shutdown()
         except Exception:
             pass
 
@@ -182,11 +179,14 @@ def main():
     groq_note = f" [Groq: {getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')}]" if getattr(config, "USE_GROQ", False) else ""
     print(f"Karma running{groq_note}. Press Ctrl+D to exit.")
 
-
     try:
         run_vision(memory, stop_event, speaking_event)
     except (KeyboardInterrupt, SystemExit):
         pass
+    except Exception as e:
+        config.log_debug(f"[main] vision loop caught: {e}")
+        while not stop_event.is_set():
+            time.sleep(1.0)
     finally:
         shutdown()
         for t in threads:

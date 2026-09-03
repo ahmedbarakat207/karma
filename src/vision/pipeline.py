@@ -184,11 +184,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
             )
             is_user_speaking = bool(memory.is_user_speaking())
 
-            if primary_face:
-                internal_state.set_gaze(primary_face.gaze_x, primary_face.gaze_y, is_present=True)
-            else:
-                internal_state.set_gaze(0.0, 0.0, is_present=False)
-
             if not use_electron:
                 target_w, target_h = screen_w, screen_h
                 try:
