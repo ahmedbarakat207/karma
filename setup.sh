@@ -298,6 +298,11 @@ export PIP_EXTRA_INDEX_URL="https://www.piwheels.org/simple"
 
 pip install --prefer-binary --upgrade pip setuptools wheel
 
+if ! python3 -c "import numpy" >/dev/null 2>&1; then
+    log_info "Repairing NumPy installation..."
+    pip install --prefer-binary --force-reinstall numpy
+fi
+
 log_info "Installing Python dependencies (prebuilt binaries)..."
 
 pip install --prefer-binary requests aiohttp fastapi uvicorn pydantic huggingface_hub
