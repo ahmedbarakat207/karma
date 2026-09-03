@@ -203,54 +203,54 @@ class FaceRenderer:
         y1 = 18
         y2 = height - 18
 
-        # Divider line between face on left and code in center
-        cv2.line(canvas, (left_w + 2, 20), (left_w + 2, height - 20), (45, 55, 70), 1, cv2.LINE_AA)
+        # Divider line between face on left and code in center (soft slate blue)
+        cv2.line(canvas, (left_w + 2, 20), (left_w + 2, height - 20), (90, 60, 40), 1, cv2.LINE_AA)
 
-        # Card shadow / background
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), (20, 24, 32), -1)
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 200, 255), 1)
+        # Card shadow / background (deep midnight navy blue)
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), (30, 20, 14), -1)
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), (255, 160, 20), 2)  # Glowing electric blue border
 
-        # Header bar
-        header_h = 32
-        cv2.rectangle(canvas, (x1, y1), (x2, y1 + header_h), (28, 34, 46), -1)
-        cv2.line(canvas, (x1, y1 + header_h), (x2, y1 + header_h), (50, 65, 85), 1)
+        # Header bar (rich dark navy slate)
+        header_h = 34
+        cv2.rectangle(canvas, (x1, y1), (x2, y1 + header_h), (46, 32, 22), -1)
+        cv2.line(canvas, (x1, y1 + header_h), (x2, y1 + header_h), (110, 75, 50), 1)
 
         # 3 Terminal dots (macOS style)
-        cv2.circle(canvas, (x1 + 16, y1 + 16), 5, (70, 70, 255), -1, cv2.LINE_AA)
-        cv2.circle(canvas, (x1 + 32, y1 + 16), 5, (50, 210, 255), -1, cv2.LINE_AA)
-        cv2.circle(canvas, (x1 + 48, y1 + 16), 5, (90, 220, 100), -1, cv2.LINE_AA)
+        cv2.circle(canvas, (x1 + 18, y1 + 17), 5, (70, 70, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, (x1 + 34, y1 + 17), 5, (255, 200, 50), -1, cv2.LINE_AA)
+        cv2.circle(canvas, (x1 + 50, y1 + 17), 5, (90, 220, 100), -1, cv2.LINE_AA)
 
-        # Language title badge
+        # Language title badge (electric cyber blue)
         lang_title = f"{code_lang.upper()} SNIPPET"
-        cv2.putText(canvas, lang_title, (x1 + 68, y1 + 22),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 220, 255), 1, cv2.LINE_AA)
+        cv2.putText(canvas, lang_title, (x1 + 72, y1 + 23),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.46, (255, 185, 40), 1, cv2.LINE_AA)
 
-        # Touch dismiss hint
-        cv2.putText(canvas, "[TAP TO CLOSE]", (x2 - 110, y1 + 22),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, (120, 140, 160), 1, cv2.LINE_AA)
+        # Touch dismiss hint (soft muted ice blue)
+        cv2.putText(canvas, "[TAP TO CLOSE]", (x2 - 120, y1 + 23),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 160, 120), 1, cv2.LINE_AA)
 
         # Split and draw code lines with line numbers
         lines = code_text.splitlines()
-        line_y = y1 + 54
-        max_lines = max(5, (y2 - y1 - 45) // 22)
+        line_y = y1 + 56
+        max_lines = max(5, (y2 - y1 - 48) // 22)
 
         for i, line in enumerate(lines[:max_lines]):
-            # Line number
-            cv2.putText(canvas, f"{i+1:02d}", (x1 + 14, line_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (80, 100, 125), 1, cv2.LINE_AA)
+            # Line number (steel blue)
+            cv2.putText(canvas, f"{i+1:02d}", (x1 + 16, line_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (170, 120, 80), 1, cv2.LINE_AA)
 
             # Code text
             line_str = line[:60]
             is_kw = any(line_str.strip().startswith(kw) for kw in ["def ", "class ", "import ", "from ", "return ", "if ", "for ", "while ", "const ", "let ", "function "])
-            text_color = (0, 220, 255) if is_kw else (235, 245, 255)
+            text_color = (255, 180, 50) if is_kw else (245, 240, 230)  # Electric ice blue keywords
 
-            cv2.putText(canvas, line_str, (x1 + 44, line_y),
+            cv2.putText(canvas, line_str, (x1 + 46, line_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, text_color, 1, cv2.LINE_AA)
             line_y += 22
 
         if len(lines) > max_lines:
-            cv2.putText(canvas, f"... [{len(lines) - max_lines} more lines]", (x1 + 44, line_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (100, 200, 255), 1, cv2.LINE_AA)
+            cv2.putText(canvas, f"... [{len(lines) - max_lines} more lines]", (x1 + 46, line_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 185, 40), 1, cv2.LINE_AA)
 
     def _draw_eye(self, canvas: np.ndarray, cx: int, cy: int, w: int, h: int,
                   blink: float, gx: int, gy: int, mood: str,
