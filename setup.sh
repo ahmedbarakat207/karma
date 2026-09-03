@@ -306,8 +306,8 @@ pip install --prefer-binary sounddevice soundfile
 pip install --prefer-binary faster-whisper
 pip install --prefer-binary onnxruntime
 
-pip install --prefer-binary loguru transformers "misaki>=0.9.4"
-pip install --prefer-binary --no-deps kokoro
+pip install --prefer-binary --ignore-requires-python loguru transformers "misaki>=0.9.4" kokoro-onnx
+pip install --prefer-binary --ignore-requires-python --no-deps kokoro
 
 pip install --prefer-binary --no-build-isolation ultralytics
 pip install --prefer-binary --no-build-isolation mediapipe
