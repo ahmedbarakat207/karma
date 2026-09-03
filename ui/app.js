@@ -340,9 +340,10 @@
 
   function setEnergy(val) {
     currentState.energy = Math.max(0, Math.min(1, val));
+    const pct = Math.round(currentState.energy * 100);
     const volt = (11.6 + currentState.energy * 0.9).toFixed(1);
-    if (hudBatteryVal) hudBatteryVal.textContent = `${volt}V`;
-    if (diagBattery) diagBattery.textContent = `${volt}V — 9.0Ah`;
+    if (hudBatteryVal) hudBatteryVal.textContent = `${pct}%`;
+    if (diagBattery) diagBattery.textContent = `${pct}% (${volt}V AGM)`;
   }
 
   function setCuriosity(val) {
