@@ -79,14 +79,25 @@ def extract_code_blocks(text: str) -> Tuple[str, Optional[str], Optional[str]]:
     if not text or "```" not in text:
         return text, None, None
 
-    m = re.search(r'```(?:(\w+)\s*\n)?(.*?)```', text, flags=re.DOTALL)
-    if not m:
+    code_blocks = []
+    langs = []
+
+    def repl(m):
+        lang = m.group(1) or "code"
+        code = m.group(2).strip()
+        langs.append(lang)
+        code_blocks.append(code)
+        return ""
+
+    spoken = re.sub(r'```(?:(\w+)\s*)?\n?(.*?)```', repl, text, flags=re.DOTALL)
+    spoken = re.sub(r'\s+', ' ', spoken).strip()
+
+    if not code_blocks:
         return text, None, None
 
-    lang = m.group(1) or "code"
-    code = m.group(2).strip()
-    spoken = re.sub(r'\s+', ' ', (text[:m.start()] + " " + text[m.end():])).strip()
-    return spoken or "Here is the code on screen.", code, lang
+    combined_code = "\n\n".join(code_blocks)
+    primary_lang = langs[0] if langs else "code"
+    return spoken or "Here is the code on screen.", combined_code, primary_lang
 
 
 def clean_companion_reply(text: str) -> str:
@@ -153,16 +164,20 @@ def _extract_plain_text(raw: str) -> str:
     return clean_companion_reply(_deduplicate_phrase_loops(s))
 
 
-def retrieve_memories(query: str, store, embedder, k: int = 3) -> str:
+def retrieve_memories(query: str, store, embedder, k: int = 3, threshold: float = 1.25) -> str:
     if not store or not embedder or not query.strip():
         return ""
     try:
-        results = store.query(embedder.encode(query).tolist(), k=k)
+        results = store.query(embedder.encode(query).tolist(), k=k, kind="memory")
+        if not results:
+            results = store.query(embedder.encode(query).tolist(), k=k, kind="episodic_summary")
         if not results:
             return ""
         now = time.time()
         lines = []
         for r in results:
+            if r.get("distance", 2.0) > threshold:
+                continue
             age = now - r["ts"]
             if age < 3600:
                 age_str = f"{int(age / 60)}m ago"
@@ -282,17 +297,15 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
         pass
     doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
 
-    parts = []
-    if kiosk_notice:  parts.append(f"System Action: {kiosk_notice}")
-    if doc_section:   parts.append(doc_section)
-    if mem_section:   parts.append(mem_section)
-    if vision_ctx:    parts.append(vision_ctx)
-    if people_ctx:    parts.append(people_ctx)
+    sys_parts = [f"{_BASE_INTERACTION_PROMPT}\n{mood_instruction}"]
+    if people_ctx:    sys_parts.append(f"\nPeople present: {people_ctx.strip()}")
+    if vision_ctx:    sys_parts.append(f"\nVisual observations: {vision_ctx.strip()}")
+    if mem_section:   sys_parts.append(f"\nRelevant memories:\n{mem_section.strip()}")
+    if doc_section:   sys_parts.append(f"\nReference knowledge:\n{doc_section.strip()}")
+    if kiosk_notice:  sys_parts.append(f"\nSystem note: {kiosk_notice}")
 
-    if parts:
-        user_prompt = f"{''.join(parts)}\n{speech_text}"
-    else:
-        user_prompt = speech_text
+    sys_prompt = "\n".join(sys_parts)
+    user_prompt = speech_text
 
     try:
         reply_text = ""

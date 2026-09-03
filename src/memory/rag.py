@@ -136,14 +136,14 @@ class DocumentRAG:
                         results[f] = 0
         return results
 
-    def retrieve(self, query: str, k: int = 3, threshold: float = 1.35) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 3, threshold: float = 1.28) -> List[Dict[str, Any]]:
         if not query.strip():
             return []
         emb = self.embedder.encode(query).tolist()
         hits = self.store.query(emb, k=k, kind="document")
         return [h for h in hits if h["distance"] <= threshold]
 
-    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.35) -> str:
+    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.28) -> str:
         hits = self.retrieve(query, k=k, threshold=threshold)
         if not hits:
             return ""
