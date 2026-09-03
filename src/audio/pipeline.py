@@ -1,7 +1,4 @@
-"""
-Audio & Speech-to-Text Subsystem ("The Ears").
-100% In-Process Offline Microphone Capture, Neural Silero VAD, and faster-whisper.
-"""
+
 import io
 import os
 import queue
@@ -51,7 +48,6 @@ except Exception as e:
 
 
 def audio_to_wav_bytes(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
-    """Converts normalized float32 numpy audio array to 16-bit PCM WAV bytes."""
     pcm16 = (np.clip(audio_np, -1.0, 1.0) * 32767).astype(np.int16)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
@@ -64,7 +60,6 @@ def audio_to_wav_bytes(audio_np: np.ndarray, sample_rate: int = SAMPLE_RATE) -> 
 
 
 def is_valid_transcript(text: Optional[str]) -> bool:
-    """Validate transcription against minimum length and hallucination filters."""
     if not text or len(text) < config.MIN_TRANSCRIPT_CHARS:
         return False
     lower = text.lower().strip().strip(".").strip("!").strip("?")
@@ -77,7 +72,6 @@ def is_valid_transcript(text: Optional[str]) -> bool:
 
 
 def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
-    """Transcribes audio purely in-process using local faster-whisper with ultra-low latency settings."""
     if not local_whisper or len(audio_np) == 0:
         return None
     try:
@@ -111,7 +105,6 @@ def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
 
 
 class AudioPipeline:
-    """Manages local microphone capture, VAD state machine, and in-process transcription."""
 
     def __init__(self, memory, stop_event, speaking_event=None, interrupt_event=None):
         self.memory = memory
@@ -284,6 +277,5 @@ class AudioPipeline:
 
 
 def run_audio(memory, stop_event, speaking_event=None, interrupt_event=None) -> None:
-    """Entrypoint for the background audio thread."""
     pipeline = AudioPipeline(memory, stop_event, speaking_event, interrupt_event)
     pipeline.run()

@@ -1,8 +1,4 @@
-"""
-Karma Entry Point & Orchestration Supervisor.
-Initializes perception subsystems (vision + audio), cognition loops, and sleep management.
-Runs vision on the main thread for macOS Cocoa OpenCV UI compatibility.
-"""
+
 import os
 import random
 import signal
@@ -52,7 +48,6 @@ with SilenceStderrFD():
 
 
 def consciousness_orchestrator(memory, engine, stop_event, tts, store, embedder, speaking_event):
-    """Coordinates cognition, user interaction turns, and spontaneous idle reflection."""
     config.log_debug("[main] Consciousness orchestrator started.")
     while not stop_event.is_set():
         try:
@@ -106,7 +101,6 @@ def main():
                 consolidation_lock.release()
 
     def shutdown(signum=None, frame=None):
-        """Clean shutdown handler: notifies threads and frees audio/vision hardware."""
         if not stop_event.is_set():
             if getattr(config, "DEBUG", False):
                 print("\n[main] shutting down Karma cleanly...")

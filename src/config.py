@@ -1,8 +1,4 @@
-"""
-Karma Central Configuration.
-100% Offline & Local Execution.
-All Models Stored Locally Inside the models/ Directory.
-"""
+
 import os
 import warnings
 
@@ -20,7 +16,6 @@ warnings.filterwarnings("ignore")
 
 
 class SilenceStderrFD:
-    """Temporarily silences C-level file descriptor 2 (stderr) to suppress C-level engine notices."""
     def __enter__(self):
         try:
             sys.stderr.flush()
@@ -74,9 +69,6 @@ N_THREADS = int(os.environ.get("N_THREADS", str(min(4, os.cpu_count() or 4))))
 _DEFAULT_YOLO_DEVICE = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
 _DEFAULT_GPU_LAYERS = -1 if _DEFAULT_YOLO_DEVICE == "mps" else 0
 
-# ==============================================================================
-# 1. Local Language Model (Qwen 2.5 0.5B Instruct - Ultra-fast on Raspberry Pi 4)
-# ==============================================================================
 MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(MODELS_DIR, "model.gguf"))
 HF_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 HF_FILENAME = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
@@ -109,9 +101,6 @@ PERSONA_SYSTEM_PROMPT = (
     "Never mention cameras, sensors, vision models, or technical mechanics."
 )
 
-# ==============================================================================
-# 2. Local Vision & Object Understanding
-# ==============================================================================
 YOLO_MODEL = os.environ.get("YOLO_MODEL", os.path.join(MODELS_DIR, "yolov8n.pt"))
 HAND_LANDMARKER_MODEL = os.environ.get("HAND_LANDMARKER_MODEL", os.path.join(MODELS_DIR, "hand_landmarker.task"))
 YOLO_DEVICE = os.environ.get("YOLO_DEVICE", _DEFAULT_YOLO_DEVICE)
@@ -181,9 +170,6 @@ FACE_REGISTRY_PATH = os.path.join(BASE_DIR, "faces.json")
 FACE_RECOGNITION_TOLERANCE = 0.55                              # Euclidean distance threshold (lower = stricter)
 FACE_RECOGNITION_INTERVAL = 0.5                                # Interval between face encodings (seconds)
 
-# ==============================================================================
-# 3. Local Speech-to-Text (STT) & VAD
-# ==============================================================================
 WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", os.path.join(MODELS_DIR, "whisper-tiny.en"))
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny.en")
 SILERO_VAD_MODEL_PATH = os.environ.get("SILERO_VAD_MODEL_PATH", os.path.join(MODELS_DIR, "silero_vad.jit"))
@@ -198,9 +184,6 @@ BARGE_IN_ENABLED = False                                      # Set True when us
 BARGE_IN_VAD_CONFIDENCE = 0.70                                # Silero VAD confidence required during speech
 BARGE_IN_ENERGY_MULT = 3.5                                    # Energy gate multiplier fallback
 
-# ==============================================================================
-# 4. Local Speech Synthesis (TTS) & Prosody
-# ==============================================================================
 USE_KOKORO_ONNX = bool(int(os.environ.get("USE_KOKORO_ONNX", "0"))) if os.environ.get("USE_KOKORO_ONNX", "0").isdigit() else os.environ.get("USE_KOKORO_ONNX", "").lower() in ("true", "yes", "1")
 KOKORO_MODEL_PATH = os.environ.get("KOKORO_MODEL_PATH", os.path.join(MODELS_DIR, "kokoro_q4.onnx"))
 KOKORO_VOICES_PATH = os.environ.get("KOKORO_VOICES_PATH", os.path.join(MODELS_DIR, "voices-v1.0.bin"))
@@ -212,9 +195,6 @@ TTS_STREAMING = True                                          # Stream LLM token
 PROSODY_SENTENCE_BOUNDARIES = r'[.!?]+'
 
 
-# ==============================================================================
-# 5. Cognition, Memory & Sleep Consolidation
-# ==============================================================================
 THINK_INTERVAL_SECONDS = 5                                    # How often background thoughts evaluate
 RECENT_WINDOW_SECONDS = 180                                   # Working memory context window for thoughts
 VISION_CONTEXT_WINDOW_SECONDS = 8                             # Visual object window for dialogue context

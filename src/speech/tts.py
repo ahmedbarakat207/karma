@@ -1,7 +1,4 @@
-"""
-Text-to-Speech Subsystem ("The Voice").
-High-quality, in-process local speech synthesis via 4-bit Quantized Kokoro-82M ONNX.
-"""
+
 import io
 import os
 import re
@@ -17,7 +14,6 @@ from src.state import internal_state
 
 
 def clean_for_speech(text: str) -> str:
-    """Pre-process text for natural speech synthesis, stripping markdown and bracketed tags."""
     if not text:
         return ""
 
@@ -30,18 +26,15 @@ def clean_for_speech(text: str) -> str:
 
 
 def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
-    """Softly normalizes peak volume and applies anti-click micro cosine edge fade."""
     if audio is None or len(audio) == 0:
         return audio
 
-    # 1. Peak normalization (target 0.88 to prevent DAC distortion/clipping)
     max_val = float(np.max(np.abs(audio)))
     if max_val > 0.95:
         audio = (audio / max_val) * 0.88
     elif 0.05 < max_val < 0.60:
         audio = (audio / max_val) * 0.85
 
-    # 2. Apply gentle 2.5ms cosine edge fade (60 samples @ 24kHz)
     fade_len = min(60, len(audio) // 4)
     if fade_len > 4:
         fade_in = 0.5 * (1.0 - np.cos(np.linspace(0, np.pi, fade_len, dtype=np.float32)))
@@ -53,7 +46,6 @@ def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
 
 
 class TTSEngine:
-    """Coordinates Kokoro high-fidelity synthesis and sounddevice hardware playback."""
 
     def __init__(self, lang_code: str = config.TTS_LANG_CODE, voice: str = config.TTS_VOICE,
                  speaking_event: Optional[threading.Event] = None,
@@ -68,11 +60,9 @@ class TTSEngine:
         model_path = getattr(config, "KOKORO_MODEL_PATH", "")
         voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
 
-        # 1. Initialize high-fidelity pipeline
         from kokoro import KPipeline
         self.pipeline = KPipeline(lang_code=lang_code)
 
-        # 2. Optionally load ONNX model if explicitly enabled via USE_KOKORO_ONNX
         if getattr(config, "USE_KOKORO_ONNX", False) and model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
             try:
                 import onnxruntime as ort
@@ -93,7 +83,6 @@ class TTSEngine:
             pass
 
     def _load_voice_tensor(self, voices_path: str, voice_name: str) -> Optional[np.ndarray]:
-        """Loads a single voice embedding tensor from voices-v1.0.bin."""
         if voice_name in self._voices_cache:
             return self._voices_cache[voice_name]
         try:
@@ -109,14 +98,12 @@ class TTSEngine:
         return None
 
     def _synthesize(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
-        """Synthesize text chunk to normalized float32 numpy array."""
         spoken = clean_for_speech(text)
         if not spoken:
             return None
 
         with self._synth_lock:
             try:
-                # Quantized ONNX path (when enabled)
                 if self.onnx_session is not None:
                     voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
                     voice_arr = self._load_voice_tensor(voices_path, self.voice)
@@ -135,7 +122,6 @@ class TTSEngine:
                             if waveform is not None:
                                 return _normalize_audio(waveform.flatten().astype(np.float32))
 
-                # High-fidelity native PyTorch path
                 chunks: List[np.ndarray] = []
                 for _, _, audio in self.pipeline(spoken, voice=self.voice, speed=speed):
                     if audio is not None:
@@ -153,7 +139,6 @@ class TTSEngine:
         return None
 
     def _play_audio(self, audio: Optional[np.ndarray]) -> None:
-        """Play a pre-synthesized audio chunk through sounddevice."""
         if audio is None or len(audio) == 0:
             return
         if self.interrupt_event and self.interrupt_event.is_set():
@@ -171,7 +156,6 @@ class TTSEngine:
 
 
     def speak(self, text: str, speed: float = 1.0) -> None:
-        """Synthesize full text and play it in a single blocking call."""
         spoken_text = clean_for_speech(text)
         if not spoken_text:
             return

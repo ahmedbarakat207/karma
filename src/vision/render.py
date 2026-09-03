@@ -1,7 +1,4 @@
-"""
-Karma Face Renderer & Vision HUD Drawing.
-Renders high-FPS, expressive procedural digital companion face and debug vision overlays.
-"""
+
 import math
 import random
 import time
@@ -14,11 +11,6 @@ from src.vision.hand import HAND_CONNECTIONS
 
 
 class FaceRenderer:
-    """
-    Renders Karma's full-screen animated digital companion face.
-    Features expressive procedural eyes, smooth blinking, gaze tracking,
-    audio-reactive mouth lip-sync, mood glow, and dialogue subtitles.
-    """
 
     def __init__(self, width: int = 1280, height: int = 720):
         self.width = width
@@ -85,7 +77,6 @@ class FaceRenderer:
         return self.palettes["playful"]
 
     def _update_blinking(self, now: float) -> float:
-        """Returns eye height multiplier (0.05 when closed, 1.0 when open)."""
         dt = now - self._last_blink
         if dt > self._blink_interval:
             self._last_blink = now
@@ -99,7 +90,6 @@ class FaceRenderer:
         return 1.0
 
     def _update_gaze(self, now: float) -> Tuple[float, float]:
-        """Calculates smoothed gaze coordinates with natural saccades."""
         target_x = internal_state.gaze_x
         target_y = internal_state.gaze_y
 
@@ -123,7 +113,6 @@ class FaceRenderer:
 
     def render(self, is_talking: bool = False, is_user_speaking: bool = False,
                fps: float = 0.0, target_shape: Optional[Tuple[int, int]] = None) -> np.ndarray:
-        """Renders full-screen face frame."""
         now = time.time()
         w = target_shape[1] if target_shape else self.width
         h = target_shape[0] if target_shape else self.height
@@ -197,7 +186,6 @@ class FaceRenderer:
 
     def _draw_code_panel(self, canvas: np.ndarray, left_w: int, width: int, height: int,
                          code_text: str, code_lang: str, primary_color: Tuple[int, int, int]) -> None:
-        """Renders center-right IDE code editor card on screen when coding requests are active."""
         x1 = left_w + 14
         x2 = width - 16
         y1 = 18
@@ -255,7 +243,6 @@ class FaceRenderer:
     def _draw_eye(self, canvas: np.ndarray, cx: int, cy: int, w: int, h: int,
                   blink: float, gx: int, gy: int, mood: str,
                   color: Tuple[int, int, int], glow: Tuple[int, int, int], is_left: bool) -> None:
-        """Draws an expressive, anti-aliased glowing eye with mood styling."""
         cur_h = max(4, int(h * blink))
 
         # Mood-specific eye expressions
@@ -306,7 +293,6 @@ class FaceRenderer:
     def _draw_mouth(self, canvas: np.ndarray, cx: int, cy: int, w: int, h: int,
                     is_talking: bool, is_user_speaking: bool, mood: str,
                     color: Tuple[int, int, int], glow: Tuple[int, int, int]) -> None:
-        """Draws dynamic lip-sync mouth or resting pleasant smile."""
         if is_talking:
             # Dynamic talking mouth waveform
             self._mouth_phase += 0.35
@@ -345,7 +331,6 @@ class FaceRenderer:
     def _draw_top_bar(self, canvas: np.ndarray, w: int, h: int, mood: str,
                       is_talking: bool, is_user_speaking: bool, fps: float,
                       color: Tuple[int, int, int]) -> None:
-        """Renders top header with companion identity, pulse indicator, mood tag, and energy meters."""
         bar_h = max(55, int(h * 0.072))
         mid_y = bar_h // 2
 
@@ -401,7 +386,6 @@ class FaceRenderer:
 
 
     def _draw_subtitles(self, canvas: np.ndarray, w: int, h: int, color: Tuple[int, int, int]) -> None:
-        """Renders dialogue subtitles overlay with smooth word wrapping."""
         sub = internal_state.get_active_subtitle(max_age=7.0)
         if not sub:
             return
@@ -439,7 +423,6 @@ class FaceRenderer:
 
 
 class VisionRenderer:
-    """Renders debug camera HUD, bounding boxes, face tracking, and hand landmarks."""
 
     @staticmethod
     def draw_hud(frame: np.ndarray, fps: float, display_fps: float, is_talking: bool = False) -> np.ndarray:

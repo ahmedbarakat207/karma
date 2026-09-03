@@ -1,7 +1,4 @@
-"""
-Language Model Subsystem ("The Mind").
-100% In-Process Offline GGUF Inference via llama-cpp-python.
-"""
+
 import os
 import re
 from typing import Generator, Optional, Union, Any
@@ -14,7 +11,6 @@ _MAX_TAG_LEN = max(len(t) for t in list(_OPEN_TAGS.keys()) + list(_OPEN_TAGS.val
 
 
 def _strip_thinking(text: str) -> str:
-    """Removes complete or unclosed thinking blocks from full response strings."""
     if not text:
         return ""
     for open_t, close_t in _OPEN_TAGS.items():
@@ -28,7 +24,6 @@ def _strip_thinking(text: str) -> str:
 
 
 def _strip_thinking_from_stream(token_iter: Generator[str, None, None]) -> Generator[str, None, None]:
-    """Filters <think>...</think> tags in real-time from a streaming token iterator."""
     buf = ""
     active_close_tag = None
 
@@ -70,7 +65,6 @@ def _strip_thinking_from_stream(token_iter: Generator[str, None, None]) -> Gener
 
 
 class LocalEngine:
-    """100% in-process offline GGUF inference via llama-cpp-python (0 servers, 0 internet)."""
 
     def __init__(self, model_path: Optional[str] = None):
         from llama_cpp import Llama
@@ -129,7 +123,6 @@ class LocalEngine:
         atexit.register(self.close)
 
     def close(self) -> None:
-        """Cleanly free llama model and Metal resources."""
         if hasattr(self, "llm") and self.llm is not None:
             try:
                 self.llm.close()
@@ -138,7 +131,6 @@ class LocalEngine:
             self.llm = None
 
     def _format_prompt(self, system_prompt: str, user_prompt: str) -> str:
-        """Formats into standard ChatML for Qwen 2.5."""
         return (
             f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
             f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
@@ -191,11 +183,6 @@ class LocalEngine:
 
 
 class GroqEngine:
-    """
-    High-speed cloud inference engine using Groq API.
-    Activated only when --groq CLI argument is parsed.
-    Defaults to gpt-oss-20b.
-    """
 
     def __init__(self, model_name: Optional[str] = None, api_key: Optional[str] = None):
         raw = model_name or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
@@ -313,7 +300,6 @@ class GroqEngine:
 
 
 def create_engine(use_groq: Optional[bool] = None, model_name: Optional[str] = None) -> Union[LocalEngine, GroqEngine]:
-    """Factory: Instantiates the local llama_cpp engine or Groq cloud engine."""
     should_use_groq = getattr(config, "USE_GROQ", False) if use_groq is None else use_groq
     if should_use_groq:
         model = model_name or getattr(config, "GROQ_MODEL", "gpt-oss-20b")

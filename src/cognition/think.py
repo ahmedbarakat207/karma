@@ -1,7 +1,4 @@
-"""
-Cognition Subsystem ("The Mind & Free Will").
-Generates spontaneous, autonomous thoughts and inner monologue driven by environmental salience.
-"""
+
 import random
 import time
 
@@ -31,7 +28,6 @@ _THINK_PROMPT = (
 
 
 def think_immediately(memory, engine, tts, store, embedder, urgency: str = "HIGH", speaking_event=None) -> None:
-    """Triggered when surprise or a sudden physical event occurs in the room."""
     workspace = memory.get_workspace()
     urgent_triggers = memory.get_high_salience_events()
 
@@ -84,7 +80,6 @@ _last_thought_time = 0.0
 
 
 def think_quietly(memory, engine, store, embedder) -> None:
-    """Triggered periodically during quiet ambient periods."""
     global _last_thought_text, _last_thought_time
     now = time.time()
     if now - _last_thought_time < 6.0:
