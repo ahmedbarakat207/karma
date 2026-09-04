@@ -1,152 +1,244 @@
 # Karma
 
-An offline physical companion robot built with Python, OpenCV, and local models. It combines local vision (YOLOv8, face and hand tracking), local speech recognition (Whisper), local TTS (Kokoro), an animated companion face with interactive touchscreen kiosk menu, and servo-controlled head tilt.
+An offline physical companion robot. It hangs out in the room as a witty, chill friend — talking, listening, watching, remembering — in English and Egyptian Arabic. Everything runs locally: speech recognition, voices, vision, memory, and the language model. No cloud account needed (Groq is an optional fallback).
 
-Runs locally on Apple Silicon (MPS) or a Raspberry Pi 4 with zero required cloud services (optional Groq support via `--groq`).
+Runs on Apple Silicon (MPS) or a Raspberry Pi 4.
 
 ---
 
 ## Hardware
 
 - **Compute**: Raspberry Pi 4 (4GB / 8GB) or Apple Silicon Mac
-- **Display**: 7" 800x480 Capacitive Touch LCD
-- **Neck Tilt**: TowerPro MG90S Micro Servo (GPIO 18 / PWM)
-- **Camera**: Raspberry Pi Camera v2 or standard USB webcam
+- **Display**: 7" 800x480 capacitive touch LCD
+- **Neck**: TowerPro MG90S micro servo on GPIO 18 (PWM)
+- **Camera**: Raspberry Pi Camera v2 or USB webcam
 - **Audio**: USB microphone + speaker / 3.5mm DAC
+- **Body**: 3D-printable chassis (STL files generated from `body/`, 11 parts)
 
 ---
 
 ## Quickstart
 
-### 1. Install dependencies
 ```bash
 # macOS
 brew install portaudio espeak-ng
 pip install -r requirements.txt
 
-# Raspberry Pi / Debian
+# Raspberry Pi / Debian — or just run ./setup.sh (does all of this + models + service)
 sudo apt-get update && sudo apt-get install -y portaudio19-dev espeak-ng libatlas-base-dev pigpio python3-pigpio
 pip install -r requirements.txt
 ```
 
-### 2. Run
 ```bash
-# Standard local mode
-python main.py
-
-# With camera debug window
-python main.py --debug
-
-# Cloud inference (Groq)
-python main.py --groq
+python main.py                 # standard local mode
+python main.py --debug         # + camera window and verbose logging
+python main.py --groq          # cloud inference instead of local model
+python main.py --no-electron   # OpenCV face window instead of the Electron UI
 ```
+
+`main.py` also accepts: `--camera` / `--no-camera`, `--windowed` / `--fullscreen`, `--electron`, `--groq=<model>`, `--groq-model=<model>`. While running, type `sleep` to force a memory-consolidation nap, `quit` to exit cleanly.
 
 ---
 
-## Features
+## What it does
 
-### Companion Face & Kiosk UI
-- **Procedural Animated Face**: Glowing eyes with gaze tracking, natural blinking, mood palette shifts, and lip-sync audio waveforms.
-- **Kiosk Menu**: Press `m` or tap the top-right `[ :: MENU ]` button to open the 7" LCD touchscreen kiosk:
-  - **Facility Map**: Multi-floor visual layout with floor switching.
-  - **Documents / RAG**: On-screen document reader powered by MarkItDown + sqlite-vec embeddings.
-  - **Student Projects & Achievements**: Interactive project cards and milestone showcase.
-- **135° Neck Tilt**: MG90S servo tilts the head down to 135° when the kiosk menu opens so the touchscreen is easy to use, then returns to 90° for face-to-face interaction.
-- **Coding Display Mode**: When asked coding questions, code snippets are filtered out of speech and displayed in a center code viewer while Karma speaks the conversational explanation. Tap the code card to dismiss it.
+### Brain (local LLM)
 
-### Voice & Perception
-- **Speech-to-Text**: Local `faster-whisper` (tiny.en) with `silero-vad` voice activity detection.
-- **Text-to-Speech**: Local `Kokoro-82M` synthesis with dynamic prosody and speed modulation based on emotion tags.
-- **Vision Pipeline**: Real-time object detection via YOLOv8n, face recognition with automatic name learning, and MediaPipe 3D hand tracking.
-- **Episodic Memory**: SQLite vector store (`sqlite-vec` + `all-MiniLM-L6-v2`) with automatic sleep consolidation for long-term memory retrieval.
+- **Qwen2.5-0.5B-Instruct at Q4_K_M** (`models/model.gguf`, ~379 MB) served by llama.cpp, ChatML-prompted. CTX 4096, `q8_0` KV cache, flash attention. Expects ~12–18 tok/s generation on a Pi 4 overclocked to 2 GHz.
+- **Custom fine-tune**: the weights are LoRA-trained on Karma's own 1426-sample bilingual dataset (persona, thoughts, vision grounding, coding, refusals). See `training/`.
+- **Model auto-download**: if `models/model.gguf` is missing, it pulls the stock Qwen GGUF from Hugging Face on first run.
+- **Groq fallback**: `--groq` routes inference to a cloud model (`openai/gpt-oss-20b` default) through the same engine interface.
+- **Prompt-lookup speculative decoding** is wired in (`SPECULATIVE_DECODING=prompt_lookup`) but off by default; helps most on RAG-grounded answers.
+
+### A conversation turn
+
+Each reply is assembled from, in order: mood instruction (playful / curious / tired / attentive, driven by the energy model) → Arabic auto-detect (answers in Egyptian Arabic when spoken to in Arabic) → people currently recognized → YOLO objects seen in the last 8 s → top episodic memories → top RAG document excerpts → kiosk notices. Last 4 conversation turns go along as history. Replies stream token-by-token into speech (see voices), code blocks are split off to the screen instead of being read aloud, and both sides are stored back to memory.
+
+### Spontaneous thoughts
+
+Karma thinks out loud on its own, in two ways:
+
+- **Urgent**: something startling happens (loud noise, sudden movement, prediction error spike) → immediate remark or `[silence]`.
+- **Idle**: every few seconds there is a small chance of a quiet remark about recent activity, throttled so it can't ramble.
+- Thoughts come back as JSON (`emotion`, `inflection`, `text_chunks`) which drives the speaking speed and the face mood — or `[silence]`, in which case nothing happens. Spoken thoughts are off by default (`SPEAK_THOUGHTS`).
+
+### Sleep and long-term memory
+
+After 20 minutes idle, Karma announces it's resting, archives the raw session log to `memory_archive/`, and has the LLM summarize the session into first-person bullet memories stored as vectors. `recall.py "query"` searches all of it from the terminal (top 5 hits with timestamps and distances).
+
+### Hearing
+
+- **Speech-to-text**: local `faster-whisper` (`tiny`, int8 on CPU) with Silero VAD. Tunables: speech confidence, silence timeout (0.35 s), post-speech grace, minimum speech length.
+- **Hallucination filter**: drops classic Whisper ghosts ("thank you", subtitle-site spam, <3 chars).
+- **Loud-noise trigger**: a sudden bang registers as a high-salience event and can interrupt into an urgent thought.
+- **Barge-in** (interrupt Karma by talking over it) is fully plumbed through audio → TTS → prosody but stays **off** by default (`BARGE_IN_ENABLED=False`).
+
+### Voices (bilingual TTS)
+
+- **English**: Kokoro-82M (`af_bella` default, any bundled voice selectable), with a quantized ONNX option.
+- **Arabic**: Nabra-82M, auto-selected whenever the reply contains Arabic script. Downloaded on first Arabic reply.
+- **Streaming prosody**: the reply is synthesized sentence-by-sentence while the LLM is still generating, and each chunk's speed follows the reply's emotion (excited ~1.15x, tired whisper ~0.85x, warm ~0.95x).
+- **Code is never spoken**: fenced code blocks are filtered to the on-screen code panel while only the explanation is voiced. Arabic punctuation (`،؟`) is treated as sentence boundaries.
+
+### Seeing
+
+- **Objects**: YOLOv8n at 320 px, confidence 0.50, on MPS or CPU. Detections feed the conversation ("Current Environment: ...") and the vision table in the knowledge base. A person moving suddenly fires a high-salience trigger.
+- **Faces**: Haar + HOG detection with smile tracking. Karma **learns names**: say "my name is Sara" while visible and the face embedding is registered (tolerance 0.55, averaged on re-register). Recognized people are greeted by name and listed in the prompt context.
+- **Hands**: MediaPipe landmarks (up to 2 hands) with three named gestures — waving, thumbs up, pointing.
+
+### Face and displays
+
+Two interchangeable front-ends:
+
+- **OpenCV window** (default off, `--no-electron`): procedural face with 8 mood palettes, gaze tracking that follows you (plus idle wander), blinking, talking mouth waveforms, energy/curiosity HUD bars, 7-second subtitle pills, and a side code panel with syntax tint.
+- **Electron app** (default): 800x480 kiosk UI over WebSocket (`127.0.0.1:8765`) showing the animated SVG face, battery/telemetry, a CAD floor map with room beacons, project/achievement grids, a document reader, and tilt buttons. Reconnects automatically; also runs under plain Chromium kiosk if Electron is absent.
+
+### Touchscreen kiosk
+
+Five views — face, facility map (2 floors, switchable), documents (RAG reader with chunk paging), student apps, achievements — all operable by touch and by voice, in both languages:
+
+| View | English triggers | Arabic triggers |
+|---|---|---|
+| Map | "open the map", "show floor 2", "where are we" | "افتح الخريطة", "الدور التاني", "احنا فين" |
+| Achievements | "show achievements", "milestones" | "افتح الانجازات", "الشهادات" |
+| Apps | "show student apps", "open projects" | "افتح المشاريع", "مشاريع الطلاب" |
+| Documents | "open documents", "read manual" | "افتح الملفات", "الكتالوج" |
+| Face (close) | "close menu", "back to face" | "اقفل القائمة", "ارجع للوش" |
+
+Opening anything but the face tilts the head up for touchscreen use (see neck).
+
+### Neck servo
+
+MG90S on GPIO 18 (pigpio, mock when no daemon). 90° face-to-face, 135° kiosk angle, cosine-ramped moves at 60°/s, pulse cut on cleanup. Same 90→135 range of motion is mirrored in the CAD hinge.
+
+### Memory and knowledge (RAG)
+
+- **Working memory**: thread-safe event buffer with dedup windows, 10-turn conversation history, 180 s recent window, face frames, recognized people, and a salience system (`conscious_trigger` events above 0.7 force an urgent thought).
+- **Vector store**: SQLite + `sqlite-vec`, `all-MiniLM-L6-v2` 384-dim embeddings, auto-pruned past 60 days / 1500 rows.
+- **Document RAG**: hybrid dense + Arabic-aware keyword search fused per chunk (450 chars, 80 overlap), markdown/PDF/TXT ingestion with per-section attribution. `data/documents/karma_knowledge.md` (~550 lines: persona, coding manual, science, vision table, culture, music, safety) is ingested at setup and retrieved at k=2 every turn.
+- **CLIs**: `python -m src.memory.rag --ingest/--dir/--query/--list/--clear`, `python recall.py "..."`, in-chat `/pdf <path>` and `/docs` (chat.py).
+
+### Body
+
+`body/` generates the printable robot: 11 STL parts (base with motors + battery, column with Pi + speakers, servo neck with 90→135° hinge, head with 7" LCD window + camera port + dome). `assembly_server.py` serves a Three.js assembly viewer on `:8787`.
+
+### Training its brain
+
+`training/` holds the full fine-tuning pipeline for the GGUF: a 1426-sample EN/AR dataset builder (persona 276+312, thoughts 291, vision 222, coding 110, QA 103, refusals 112), a Kaggle notebook (train → merge → Q4_K_M in one run), and a local `train_lora.py` (LoRA r=16, completion-only loss, works on old and new `trl`). Details in [`training/README.md`](./training/README.md).
 
 ---
 
 ## Controls
 
-### Keyboard
-| Key | Action |
-|---|---|
-| `m` | Toggle touchscreen kiosk menu (triggers 135° neck tilt) |
-| `f` | Toggle fullscreen mode |
-| `d` | Toggle debug camera HUD |
-| `Ctrl+D` / `q` | Clean exit |
+**Keyboard** (face window): `m` kiosk menu · `f` fullscreen · `d` debug camera HUD · `q` / `Ctrl+D` quit.
 
-### Voice Commands
-- *"Open the map"* / *"Show floor 2"*
-- *"Show student projects"* / *"Open apps"*
-- *"Open documents"* / *"Read manual"*
-- *"Close menu"* / *"Back to face"*
+**Voice**: the kiosk table above, plus anything conversational. Say your name with "my name is ..." once to be remembered.
+
+**Terminal** (while running): `sleep` forces a consolidation nap, `quit`/`exit` shuts down.
 
 ---
 
-## Document RAG CLI
+## Configuration
 
-Index and query PDFs or text documents into the local vector database:
+Everything is an env var (or `.env` file) read by `src/config.py`. The service profile in `setup.sh` runs lean (`N_THREADS=2`, `N_BATCH=256`, CTX 4096).
 
-```bash
-# Ingest a PDF
-python -m src.memory.rag --ingest path/to/document.pdf
+**LLM**: `MODEL_PATH` · `CTX_SIZE` (4096) · `N_BATCH` (512) · `N_THREADS` (min(4,cpu)) · `N_GPU_LAYERS` (auto: Metal on Mac, 0 on Pi) · `DEFAULT_TEMPERATURE` (0.7) · `DEFAULT_TOP_P` (0.9) · `DEFAULT_REPEAT_PENALTY` (1.05) · `DEFAULT_FREQUENCY_PENALTY` / `DEFAULT_PRESENCE_PENALTY` (0.0) · `KV_CACHE_TYPE` (q8_0) · `FLASH_ATTN` (true) · `SPECULATIVE_DECODING` (none) + `SPECULATIVE_NGRAM_SIZE` (2) / `SPECULATIVE_NUM_PRED_TOKENS` (8).
 
-# List indexed documents
-python -m src.memory.rag --list
+**Vision**: `YOLO_MODEL` · `HAND_LANDMARKER_MODEL` · `YOLO_DEVICE` (auto mps/cpu) · `YOLO_IMGSZ` (320) · `ENABLE_YOLO` (true) · `CAMERA_INDEX` (0). Fixed: confidence 0.50, 3 s object dedup.
 
-# Query from terminal
-python -m src.memory.rag --query "battery specifications"
-```
+**Hearing**: `WHISPER_MODEL_PATH` · `WHISPER_MODEL_SIZE` (tiny) · `WHISPER_LANGUAGE` (auto) · `SILERO_VAD_MODEL_PATH` · `VAD_SPEECH_CONFIDENCE` (0.35) · `VAD_SILENCE_TIMEOUT` (0.35) · `VAD_POST_SPEECH_GRACE_MS` (200) · `MIN_SPEECH_DURATION` (0.20).
+
+**Voices**: `TTS_VOICE` (af_bella) · `USE_KOKORO_ONNX` (false) · `KOKORO_MODEL_PATH` / `KOKORO_VOICES_PATH` · `NABRA_ENABLED` (true) · `NABRA_MODEL_DIR` / `NABRA_REPO_ID` / `NABRA_VOICE`.
+
+**Memory**: `EMBED_MODEL_PATH` (models/all-MiniLM-L6-v2). Fixed: `memory.db`, `memory_archive/`, prune at 60 d / 1500 rows, think every 5 s, 180 s recent window, 8 s vision window, 20 min idle sleep.
+
+**Display/UI**: `UI_WS_HOST` / `UI_WS_PORT` (127.0.0.1:8765) · `USE_ELECTRON` (true). CLI-only: `--debug`, `--camera`, `--windowed`, `--fullscreen`, `--no-electron`, `--groq`.
+
+**Cloud (optional)**: `USE_GROQ` (false) · `GROQ_MODEL` (openai/gpt-oss-20b) · `GROQ_API_KEY` (in `.env`, never committed).
 
 ---
 
-## Project Structure
+## Terminal CLIs
+
+**`chat.py`** — talk to the GGUF without the robot: `python chat.py [--model/-m] [--ctx-size/-c] [--threads/-t] [--temperature] [--top-p] [--repeat-penalty] [--max-tokens] [--pdf/-p file] [--validate/-v] [--system-prompt/-s]`. In-chat: `/exit`, `/clear`, `/docs`, `/pdf <path>`. Prints tok/s + time-to-first-token per reply; `--validate` runs a 3-prompt smoke suite.
+
+**RAG**: `python -m src.memory.rag --ingest file | --dir dir | --query "..." [--k N] | --list | --clear`.
+
+**Memory**: `python recall.py "what did we talk about"`.
+
+---
+
+## Setup and service
+
+- **`setup.sh`**: full Pi provision — IPv4/DNS fix, apt packages (build, audio, camera, GPIO, Xorg/Chromium), `karma` user + autologin, `config.txt` (camera, I2C/SPI, PWM, gpu_mem), audio levels, venv + Pi-wheels PyTorch/whisper/ultralytics stack, Node + Electron UI build, all model downloads, openbox kiosk config, `start_robot.sh` + `karma.service` (`Restart=always`), knowledge-base ingest, validation run.
+- **`start_robot.sh`**: kiosk X setup (no blanking, no cursor) and a restart loop around `main.py` logging to `karma.log`.
+- **`scripts/`**: `overclock.sh [moderate|turbo]` (Pi 4: 1800/2000 MHz, Pi 5: 2800/3000) · `revert_clock.sh` (back to stock) · `repair_numpy.sh` (venv numpy fix + service restart).
+
+---
+
+## Models (`models/`)
+
+| File | What | Size |
+|---|---|---|
+| `model.gguf` | Qwen2.5-0.5B-Instruct Q4_K_M (the brain) | 469 MB on disk |
+| `yolov8n.pt` | Object detection | ~6 MB |
+| `hand_landmarker.task` | MediaPipe hand landmarks | ~8 MB |
+| `whisper-tiny.en/` | Speech recognition | ~72 MB |
+| `silero_vad.jit` | Voice activity detection | ~2 MB |
+| `kokoro_q4.onnx` + `voices-v1.0.bin` | English TTS (quantized option) | ~291 + 27 MB |
+| `all-MiniLM-L6-v2/` | Memory/RAG embeddings | ~87 MB |
+| `nabra/` | Arabic TTS (auto-downloaded on first Arabic reply) | — |
+
+---
+
+## Project structure
 
 ```
 karma/
-├── main.py                     # Root entrypoint
-├── chat.py                     # Terminal chat & model validation CLI
-├── recall.py                   # Memory recall query CLI
-├── setup.sh                    # Automated system & hardware installer
+├── main.py                 # launcher (env silencing, then src.main)
+├── chat.py                 # terminal chat + validation for the GGUF
+├── recall.py               # memory search CLI
+├── setup.sh / start_robot.sh
+├── Modelfile              # unused Ollama stub (llama.cpp path doesn't read it)
 ├── data/
-│   ├── student_apps.json       # Kiosk showcase app list
-│   ├── achievements.json       # Kiosk achievements data
-│   └── maps/                   # Floor plan images
+│   ├── documents/karma_knowledge.md   # RAG knowledge base (ingested at setup)
+│   ├── maps/               # kiosk floor plans (floor_1/2)
+│   ├── student_apps.json / achievements.json  # kiosk content
+│   └── memory.db / faces.json / memory_archive/  # created at runtime
 ├── src/
-│   ├── config.py               # Settings & CLI arguments
-│   ├── state.py                # Thread-safe shared state & UI bus
-│   ├── audio/
-│   │   └── pipeline.py         # Mic input, VAD & faster-whisper STT
+│   ├── config.py           # all settings + CLI flags
+│   ├── main.py             # thread orchestration + shutdown
+│   ├── state.py            # shared internal state + energy/mood model
+│   ├── audio/pipeline.py   # mic, VAD, Whisper STT
 │   ├── cognition/
-│   │   ├── engine.py           # llama.cpp (GGUF) & Groq clients
-│   │   ├── interaction.py      # Conversation turn handling
-│   │   └── think.py            # Idle reflection & spontaneous thoughts
-│   ├── hardware/
-│   │   └── neck.py             # MG90S servo driver & smooth ramp thread
-│   ├── memory/
-│   │   ├── working.py          # Short-term event buffer
-│   │   ├── store.py            # sqlite-vec vector database
-│   │   ├── rag.py              # PDF parsing (MarkItDown) & RAG pipeline
-│   │   ├── face_registry.py    # Face embedding matcher
-│   │   └── consolidation.py    # Background memory consolidation
-│   ├── speech/
-│   │   ├── tts.py              # Kokoro TTS engine
-│   │   └── prosody.py          # Real-time token streaming & code filter
-│   ├── ui/
-│   │   └── kiosk.py            # 7" touchscreen menu state machine
-│   └── vision/
-│       ├── pipeline.py         # OpenCV camera loop
-│       ├── detector.py         # YOLOv8 object detection
-│       ├── face.py             # Face & smile tracker
-│       ├── hand.py             # MediaPipe hand landmarks
-│       └── render.py           # FaceRenderer & debug HUD
-├── body/                       # 3D printable CAD models & assembly
-└── tests/                      # Pytest test suite
+│   │   ├── engine.py       # llama.cpp + Groq engines
+│   │   ├── interaction.py  # turn assembly, intents, face learning
+│   │   └── think.py        # urgent + idle thoughts
+│   ├── hardware/neck.py    # MG90S servo driver
+│   ├── memory/             # working, sqlite-vec store, RAG, consolidation, faces
+│   ├── speech/             # kokoro/nabra TTS, streaming prosody, arabic g2p
+│   ├── ui/                 # kiosk state machine + Electron app + WS server
+│   └── vision/             # camera loop, YOLO, faces, hands, renderers
+├── body/                   # CAD generators + assembly viewer
+├── models/                 # see table above
+├── scripts/                # overclock / revert / numpy repair
+├── training/               # dataset + fine-tuning pipeline
+└── tests/                  # pytest suite
 ```
 
 ---
 
 ## Testing
 
-Run unit and integration tests:
-
 ```bash
 pytest tests/ -v
 ```
+
+| File | Covers |
+|---|---|
+| `test_suite.py` | thinking-strip, prosody/JSON parser, audio helpers, reply parsing, prompt format, working memory, face registry, mood/subtitles, renderer, CLI flags |
+| `test_bilingual_tts.py` | Arabic detection, speech cleanup, Arabic G2P phonemes, EN/AR TTS routing, Arabic kiosk intents |
+| `test_coding_display.py` | code-block extraction, streaming code filter, coding renderer frame |
+| `test_kiosk.py` | servo angles/pulses, kiosk views + touch zones, English intents |
+| `test_rag.py` | parsing, chunking, ingest/query/list/clear, knowledge-base content |
+| `test_ui_server.py` | websocket state updates, kiosk actions over WS |

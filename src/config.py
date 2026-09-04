@@ -165,8 +165,9 @@ FACE_REGISTRY_PATH = os.path.join(BASE_DIR, "faces.json")
 FACE_RECOGNITION_TOLERANCE = 0.55
 FACE_RECOGNITION_INTERVAL = 0.5
 
-WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", os.path.join(MODELS_DIR, "whisper-tiny.en"))
-WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny.en")
+WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", os.path.join(MODELS_DIR, "whisper-tiny"))
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")
+WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "")
 SILERO_VAD_MODEL_PATH = os.environ.get("SILERO_VAD_MODEL_PATH", os.path.join(MODELS_DIR, "silero_vad.jit"))
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 512
@@ -187,7 +188,14 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "af_bella")
 TTS_SAMPLE_RATE = 24000
 SPEAK_THOUGHTS = False
 TTS_STREAMING = True
-PROSODY_SENTENCE_BOUNDARIES = r'[.!?]+'
+PROSODY_SENTENCE_BOUNDARIES = r'[.!?،؟]+'
+
+# Nabra (Arabic Neural TTS)
+NABRA_MODEL_DIR = os.environ.get("NABRA_MODEL_DIR", os.path.join(MODELS_DIR, "nabra"))
+NABRA_REPO_ID = os.environ.get("NABRA_REPO_ID", "oddadmix/Nabra-82M-v0.1")
+NABRA_VOICE = os.environ.get("NABRA_VOICE", "af_msa")
+NABRA_ENABLED = _env_bool("NABRA_ENABLED", True)
+AUTO_LANG_DETECT = _env_bool("AUTO_LANG_DETECT", True)
 
 THINK_INTERVAL_SECONDS = 5
 RECENT_WINDOW_SECONDS = 180

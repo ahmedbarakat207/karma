@@ -374,19 +374,39 @@ models = [
         "file": "voices-v1.0.bin",
         "repo": "hexgrad/Kokoro-82M",
         "hf_file": "voices/v1.0.bin"
+    },
+    {
+        "name": "Nabra Arabic TTS Weights",
+        "file": os.path.join("nabra", "kokoro_arabic.pth"),
+        "repo": "oddadmix/Nabra-82M-v0.1",
+        "hf_file": "kokoro_arabic.pth"
+    },
+    {
+        "name": "Nabra Arabic Voicepack (af_msa)",
+        "file": os.path.join("nabra", "af_msa.pt"),
+        "repo": "oddadmix/Nabra-82M-v0.1",
+        "hf_file": "af_msa.pt"
+    },
+    {
+        "name": "Nabra Arabic Config",
+        "file": os.path.join("nabra", "config.json"),
+        "repo": "oddadmix/Nabra-82M-v0.1",
+        "hf_file": "config.json"
     }
 ]
 
 for m in models:
     dest = os.path.join(MODELS_DIR, m["file"])
+    dest_parent = os.path.dirname(dest)
+    os.makedirs(dest_parent, exist_ok=True)
     if os.path.exists(dest):
         size_mb = os.path.getsize(dest) / (1024 * 1024)
         print(f"✓ Found {m['name']}: {dest} ({size_mb:.1f} MB)")
     else:
         print(f"⬇ Downloading {m['name']} from {m['repo']}...")
         try:
-            downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=MODELS_DIR)
-            if os.path.basename(downloaded) != m["file"]:
+            downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=dest_parent)
+            if os.path.basename(downloaded) != os.path.basename(dest):
                 os.rename(downloaded, dest)
             print(f"✓ Successfully downloaded {m['file']}")
         except Exception as e:
@@ -489,6 +509,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable karma.service
 
 log_success "karma.service registered and enabled for autonomous boot."
+
+log_info "Ingesting Karma Knowledge Base into RAG..."
+if [ -f "data/documents/karma_knowledge.md" ]; then
+    python3 -m src.memory.rag --ingest data/documents/karma_knowledge.md || log_warn "Knowledge base RAG indexing deferred."
+fi
 
 log_info "Validating engine..."
 python3 chat.py --validate || log_warn "Validation returned notice (verify models)."

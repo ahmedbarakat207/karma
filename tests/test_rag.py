@@ -102,3 +102,34 @@ def test_retrieve_document_context_helper(temp_store, sample_pdf):
 
     ctx = retrieve_document_context("battery voltage", store=temp_store, embedder=rag.embedder)
     assert len(ctx) > 0
+
+
+def test_rag_direct_markdown_parsing():
+    rag = DocumentRAG()
+    kb_path = os.path.abspath("data/documents/karma_knowledge.md")
+    assert os.path.exists(kb_path)
+    text = rag.parse_pdf(kb_path)
+    assert len(text) > 500
+    assert "Karma Knowledge Base" in text
+    assert "Sorting Arrays in Python" in text
+
+
+def test_rag_bilingual_knowledge_enforcement(temp_store):
+    rag = DocumentRAG(store=temp_store)
+    kb_path = os.path.abspath("data/documents/karma_knowledge.md")
+    assert os.path.exists(kb_path)
+
+    count = rag.ingest_pdf(kb_path, verbose=False)
+    assert count >= 15
+
+    # English Coding Query
+    en_code_ctx = rag.get_rag_context("How do I sort an array in Python?")
+    assert "sort()" in en_code_ctx or "numbers.sort()" in en_code_ctx
+
+    # Egyptian Arabic Astronomy Query
+    ar_astro_ctx = rag.get_rag_context("ليه السما زرقا؟")
+    assert "تشتت الضوء" in ar_astro_ctx or "السما زرقا" in ar_astro_ctx
+
+    # Egyptian Arabic Coding Query
+    ar_code_ctx = rag.get_rag_context("ازاي ارتب مصفوفة في بايثون؟")
+    assert "sort()" in ar_code_ctx or "بايثون" in ar_code_ctx

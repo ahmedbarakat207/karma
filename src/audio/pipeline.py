@@ -76,9 +76,10 @@ def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
         if not audio_np.flags["C_CONTIGUOUS"]:
             audio_np = np.ascontiguousarray(audio_np)
 
+        target_lang = getattr(config, "WHISPER_LANGUAGE", "") or None
         segments, _ = local_whisper.transcribe(
             audio_np,
-            language="en",
+            language=target_lang,
             task="transcribe",
             vad_filter=False,
             beam_size=1,
@@ -113,7 +114,7 @@ class AudioPipeline:
             from faster_whisper import WhisperModel
             whisper_path = getattr(config, "WHISPER_MODEL_PATH", "")
             if not os.path.exists(whisper_path):
-                whisper_path = "tiny.en"
+                whisper_path = getattr(config, "WHISPER_MODEL_SIZE", "tiny")
             threads = getattr(config, "N_THREADS", 4)
             config.log_debug(f"[audio] loading local faster-whisper from {whisper_path} with {threads} threads...")
             self.local_whisper = WhisperModel(
@@ -125,7 +126,8 @@ class AudioPipeline:
             )
             try:
                 dummy = np.zeros(16000, dtype=np.float32)
-                self.local_whisper.transcribe(dummy, language="en", beam_size=1, without_timestamps=True)
+                target_lang = getattr(config, "WHISPER_LANGUAGE", "") or None
+                self.local_whisper.transcribe(dummy, language=target_lang, beam_size=1, without_timestamps=True)
             except Exception:
                 pass
             config.log_debug("[audio] local faster-whisper ready and warmed up!")

@@ -42,6 +42,9 @@ class DocumentRAG:
     def parse_pdf(self, file_path: str) -> str:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
+        if file_path.lower().endswith((".md", ".txt", ".markdown")):
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
         result = self.md.convert(file_path)
         return (getattr(result, "text_content", "") or "").strip()
 
@@ -139,9 +142,67 @@ class DocumentRAG:
     def retrieve(self, query: str, k: int = 3, threshold: float = 1.28) -> List[Dict[str, Any]]:
         if not query.strip():
             return []
+        # 1. Dense vector semantic search
         emb = self.embedder.encode(query).tolist()
-        hits = self.store.query(emb, k=k, kind="document")
-        return [h for h in hits if h["distance"] <= threshold]
+        vector_hits = self.store.query(emb, k=k * 2, kind="document")
+
+        # 2. Sparse keyword matching for cross-lingual terms & exact tokens
+        stop_words = {
+            'the', 'is', 'in', 'at', 'of', 'on', 'and', 'a', 'an', 'to', 'for', 'with', 'do', 'does',
+            'how', 'what', 'why', 'who', 'when', 'where', 'can', 'you', 'me', 'my', 'it', 'this', 'that',
+            'are', 'was', 'were', 'will', 'would', 'should', 'could', 'have', 'has', 'had',
+            'في', 'من', 'على', 'إلى', 'عن', 'مع', 'هو', 'هي', 'دا', 'دي', 'ده', 'أن', 'ان', 'إن', 'لو', 'هل'
+        }
+        words = [
+            w.strip().lower() for w in re.split(r'[\s,.?!:;،؟]+', query)
+            if len(w.strip()) >= 2 and w.strip().lower() not in stop_words
+        ]
+        keyword_hits = []
+        if words and hasattr(self.store, "db"):
+            try:
+                conditions = " OR ".join(["m.text LIKE ?" for _ in words])
+                params = [f"%{w}%" for w in words]
+                sql = f"""
+                    SELECT m.text, m.ts, m.kind, m.source, m.id
+                    FROM memories m
+                    WHERE m.kind = 'document' AND ({conditions})
+                    LIMIT ?
+                """
+                kw_rows = self.store.db.execute(sql, (*params, k * 5)).fetchall()
+                for r in kw_rows:
+                    text_lower = r[0].lower()
+                    overlap = sum(
+                        1 for w in words
+                        if re.search(r'\b' + re.escape(w) + r'\b', text_lower) or (not w.isascii() and w in text_lower)
+                    )
+                    if overlap > 0:
+                        kw_dist = max(0.2, 0.95 - (0.22 * overlap))
+                        keyword_hits.append({
+                            "text": r[0],
+                            "ts": r[1],
+                            "kind": r[2],
+                            "distance": kw_dist,
+                            "source": r[3],
+                            "id": r[4]
+                        })
+            except Exception:
+                pass
+
+        # 3. Hybrid fusion: merge hits, boost items found by both modalities
+        hit_map: Dict[str, Dict[str, Any]] = {}
+        for h in vector_hits:
+            hit_map[h["text"]] = dict(h)
+
+        for kh in keyword_hits:
+            text = kh["text"]
+            if text in hit_map:
+                hit_map[text]["distance"] = min(hit_map[text]["distance"], kh["distance"]) * 0.85
+            else:
+                hit_map[text] = kh
+
+        ranked = [h for h in hit_map.values() if h["distance"] <= threshold]
+        ranked.sort(key=lambda x: x["distance"])
+        return ranked[:k]
 
     def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.28) -> str:
         hits = self.retrieve(query, k=k, threshold=threshold)

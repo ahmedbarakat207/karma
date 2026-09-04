@@ -8,6 +8,7 @@ import numpy as np
 
 from src import config
 from src.speech.prosody import prosody_stream
+from src.speech.arabic_g2p import is_arabic
 from src.state import internal_state
 from src.memory.face_registry import FACE_REC_LOCK
 
@@ -204,28 +205,43 @@ If code is requested, provide a brief conversational note and enclose the code i
 def _check_kiosk_intent(text: str) -> Optional[Tuple[str, Optional[int]]]:
     t = text.lower()
 
-    if any(p in t for p in ["open the map", "show the map", "show map", "open map", "facility map",
-                              "where are we", "floor map", "where am i", "show floor", "open floor", "view floor"]):
-        if "floor 2" in t or "second floor" in t:
+    if any(p in t for p in [
+        "open the map", "show the map", "show map", "open map", "facility map",
+        "where are we", "floor map", "where am i", "show floor", "open floor", "view floor",
+        "افتح الخريطة", "افتح خريطة", "وريني الخريطة", "وريني خريطة", "الخريطة", "خريطة", "إحنا فين", "احنا فين", "خريطة المبنى", "فين الدور"
+    ]):
+        if any(f in t for f in ["floor 2", "second floor", "الدور التاني", "الدور الثاني", "دور 2", "دور تاني"]):
             return ("map", 1)
-        elif "floor 1" in t or "first floor" in t or "ground floor" in t:
+        elif any(f in t for f in ["floor 1", "first floor", "ground floor", "الدور الاول", "الدور الأول", "دور 1", "الأرضي", "الارضي"]):
             return ("map", 0)
         return ("map", None)
 
-    if any(p in t for p in ["show achievements", "open achievements", "view achievements",
-                              "show awards", "my achievements", "what are our achievements", "show milestones"]):
+    if any(p in t for p in [
+        "show achievements", "open achievements", "view achievements",
+        "show awards", "my achievements", "what are our achievements", "show milestones",
+        "افتح الإنجازات", "افتح الانجازات", "وريني الانجازات", "الانجازات", "إنجازاتنا", "انجازاتنا", "الشهادات"
+    ]):
         return ("achievements", None)
 
-    if any(p in t for p in ["student apps", "student projects", "show apps",
-                              "open apps", "show student apps", "open projects"]):
+    if any(p in t for p in [
+        "student apps", "student projects", "show apps",
+        "open apps", "show student apps", "open projects",
+        "افتح المشاريع", "وريني المشاريع", "مشاريع الطلاب", "المشاريع", "البرامج", "التطبيقات", "افتح التطبيقات"
+    ]):
         return ("apps", None)
 
-    if any(p in t for p in ["open documents", "show documents", "open pdf",
-                              "show pdf", "read manual", "open menu", "show menu"]):
+    if any(p in t for p in [
+        "open documents", "show documents", "open pdf",
+        "show pdf", "read manual", "open menu", "show menu",
+        "اقرا الملفات", "اقرأ الملفات", "افتح الملفات", "افتح المستندات", "المستندات", "الكتالوج", "المانيوال", "الملفات"
+    ]):
         return ("docs", None)
 
-    if any(p in t for p in ["close menu", "close map", "back to face",
-                              "show face", "exit kiosk", "hide menu"]):
+    if any(p in t for p in [
+        "close menu", "close map", "back to face",
+        "show face", "exit kiosk", "hide menu",
+        "اقفل القائمة", "اقفل الخريطة", "ارجع للوش", "ارجع للشاشة", "اقفل", "كفاية", "الوش"
+    ]):
         return ("face", None)
 
     return None
@@ -298,6 +314,8 @@ def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> 
     doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
 
     sys_parts = [f"{_BASE_INTERACTION_PROMPT}\n{mood_instruction}"]
+    if is_arabic(speech_text):
+        sys_parts.append("\nLANGUAGE NOTE: The user is speaking in Arabic. Respond naturally in friendly, witty Egyptian Arabic (عامية مصرية), keeping your answer brief (1-2 sentences).")
     if people_ctx:    sys_parts.append(f"\nPeople present: {people_ctx.strip()}")
     if vision_ctx:    sys_parts.append(f"\nVisual observations: {vision_ctx.strip()}")
     if mem_section:   sys_parts.append(f"\nRelevant memories:\n{mem_section.strip()}")
