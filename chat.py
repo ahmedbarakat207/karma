@@ -200,23 +200,29 @@ def interactive_chat(
             first_token_time = None
             tokens = []
 
-            with config.SilenceStderrFD():
-                stream = llm(
-                    prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    repeat_penalty=repeat_penalty,
-                    frequency_penalty=getattr(config, "DEFAULT_FREQUENCY_PENALTY", 0.0),
-                    presence_penalty=getattr(config, "DEFAULT_PRESENCE_PENALTY", 0.0),
-                    stop=["<|im_end|>", "<|endoftext|>"],
-                    stream=True
-                )
-
+            if hasattr(llm, "stream_chat"):
+                stream = llm.stream_chat(system_prompt, augmented_user_input, max_tokens=max_tokens)
                 for chunk in stream:
                     if first_token_time is None:
                         first_token_time = time.time() - t0
-                    tokens.append(chunk["choices"][0]["text"])
+                    tokens.append(chunk)
+            else:
+                with config.SilenceStderrFD():
+                    stream = llm(
+                        prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        repeat_penalty=repeat_penalty,
+                        frequency_penalty=getattr(config, "DEFAULT_FREQUENCY_PENALTY", 0.0),
+                        presence_penalty=getattr(config, "DEFAULT_PRESENCE_PENALTY", 0.0),
+                        stop=["<|im_end|>", "<|endoftext|>"],
+                        stream=True
+                    )
+                    for chunk in stream:
+                        if first_token_time is None:
+                            first_token_time = time.time() - t0
+                        tokens.append(chunk["choices"][0]["text"])
 
             elapsed = time.time() - t0
             n_tokens = len(tokens)
@@ -242,6 +248,8 @@ def interactive_chat(
 def main():
     parser = argparse.ArgumentParser(description="Karma Brain Interactive CLI")
     parser.add_argument("--model", "-m", type=str, default=get_default_model_path(), help="Path to .gguf model")
+    parser.add_argument("--groq", "-g", action="store_true", help="Use Groq cloud API instead of local GGUF")
+    parser.add_argument("--groq-model", type=str, default=getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b"), help="Groq model name")
     parser.add_argument("--ctx-size", "-c", type=int, default=getattr(config, "CTX_SIZE", 4096), help="Context window")
     parser.add_argument("--threads", "-t", type=int, default=getattr(config, "N_THREADS", 4), help="CPU thread count")
     parser.add_argument("--temperature", type=float, default=getattr(config, "DEFAULT_TEMPERATURE", 0.7), help="Sampling temperature")
@@ -255,15 +263,28 @@ def main():
     args = parser.parse_args()
 
     rag_engine = None
-    if args.pdf:
+    try:
         from src.memory.rag import DocumentRAG
         rag_engine = DocumentRAG()
-        rag_engine.ingest_pdf(args.pdf)
+        if args.pdf:
+            rag_engine.ingest_pdf(args.pdf)
+    except Exception as e:
+        config.log_debug(f"[chat] RAG init note: {e}")
 
-    llm = load_engine(args.model, ctx_size=args.ctx_size, threads=args.threads)
+    if args.groq:
+        from src.cognition.engine import create_engine
+        print("=" * 65)
+        print(f"⚡ Karma Brain — Groq Cloud Engine ({args.groq_model})")
+        print("=" * 65)
+        llm = create_engine(use_groq=True, model_name=args.groq_model)
+    else:
+        llm = load_engine(args.model, ctx_size=args.ctx_size, threads=args.threads)
 
     if args.validate:
-        run_validation(llm)
+        if args.groq:
+            print("Validation suite runs with local GGUF engine.")
+        else:
+            run_validation(llm)
     else:
         interactive_chat(
             llm,
