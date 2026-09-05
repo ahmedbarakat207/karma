@@ -82,6 +82,19 @@ class InternalState:
             if not val:
                 self.last_audio_played_time = time.time()
 
+    def set_camera_frame(self, jpeg: Optional[bytes]) -> None:
+        with self._lock:
+            self.last_camera_jpeg = jpeg
+            self.last_camera_jpeg_time = time.time() if jpeg else 0.0
+
+    def get_camera_frame(self, max_age: float = 5.0) -> Optional[bytes]:
+        with self._lock:
+            if not getattr(self, "last_camera_jpeg", None):
+                return None
+            if time.time() - getattr(self, "last_camera_jpeg_time", 0.0) > max_age:
+                return None
+            return self.last_camera_jpeg
+
     def update(self, events: Optional[List[Dict[str, Any]]] = None) -> None:
         with self._lock:
             now = time.time()

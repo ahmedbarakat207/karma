@@ -11,13 +11,14 @@ class ObjectDetector:
         from ultralytics import YOLO
         self.model = YOLO(config.YOLO_MODEL)
         self.device = config.YOLO_DEVICE
-        self.previous_positions: Dict[str, Tuple[float, float]] = {}
+        # label -> list of (cx, cy), multi-instance safe (two persons = two entries)
+        self.previous_positions: Dict[str, List[Tuple[float, float]]] = {}
         self.user_x_history = deque(maxlen=10)
         self._startle_cooldowns: Dict[str, float] = {}
 
-    def process(self, frame: np.ndarray, memory) -> Tuple[List[str], Dict[str, Tuple[float, float]], List[Tuple[str, float, Tuple[int, int, int, int]]]]:
+    def process(self, frame: np.ndarray, memory) -> Tuple[List[str], Dict[str, List[Tuple[float, float]]], List[Tuple[str, float, Tuple[int, int, int, int]]]]:
         labels: List[str] = []
-        positions: Dict[str, Tuple[float, float]] = {}
+        positions: Dict[str, List[Tuple[float, float]]] = {}
         bboxes: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
 
         now = time.time()
@@ -33,15 +34,18 @@ class ObjectDetector:
                 cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
                 labels.append(cls_name)
-                positions[cls_name] = (cx, cy)
+                positions.setdefault(cls_name, []).append((cx, cy))
                 bboxes.append((cls_name, conf, (x1, y1, x2, y2)))
 
                 if cls_name == "person":
                     self.user_x_history.append(cx)
 
-                if cls_name in self.previous_positions:
-                    prev_cx, prev_cy = self.previous_positions[cls_name]
-                    dist = ((cx - prev_cx) ** 2 + (cy - prev_cy) ** 2) ** 0.5
+                prev_list = self.previous_positions.get(cls_name, [])
+                if prev_list:
+                    dist = min(
+                        ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5
+                        for px, py in prev_list
+                    )
                     if dist > 80:
                         last_startle = self._startle_cooldowns.get(cls_name, 0.0)
                         if (now - last_startle) > 10:

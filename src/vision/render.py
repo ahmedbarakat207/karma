@@ -406,7 +406,15 @@ class VisionRenderer:
     def draw_objects(frame: np.ndarray, bboxes: List[Tuple[str, float, Tuple[int, int, int, int]]]) -> None:
         for name, conf, (x1, y1, x2, y2) in bboxes:
             if name == "person":
-                continue
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 100, 100), 2, cv2.LINE_AA)
-            cv2.putText(frame, f"{name} {conf:.2f}", (x1, max(20, y1 - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 100), 1, cv2.LINE_AA)
+                color = (255, 100, 100)
+                label = f"person {conf:.2f}"
+            elif name and name != "Face":
+                # Fused identity: YOLO person box relabeled by face registry.
+                color = (0, 255, 150)
+                label = f"{name} {conf:.2f}"
+            else:
+                color = (255, 100, 100)
+                label = f"{name} {conf:.2f}"
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+            cv2.putText(frame, label, (x1, max(20, y1 - 5)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)

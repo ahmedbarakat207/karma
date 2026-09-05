@@ -1,6 +1,7 @@
 
 import os
 import re
+import time
 from typing import Any, Dict, Generator, List, Optional, Union
 
 
@@ -166,6 +167,7 @@ class LocalEngine:
         if self.llm is None:
             return ""
         prompt = self._format_prompt(system_prompt, user_prompt, history=history)
+        t0 = time.time()
         with config.SilenceStderrFD():
             out = self.llm(
                 prompt,
@@ -178,6 +180,13 @@ class LocalEngine:
                 stop=self.stop_tokens
             )
         text = out["choices"][0]["text"].strip()
+        try:
+            from src.ui import telemetry as _telemetry
+            usage = out.get("usage", {}) or {}
+            _telemetry.record_llm(time.time() - t0, time.time() - t0,
+                                  int(usage.get("completion_tokens") or max(1, len(text) // 4)))
+        except Exception:
+            pass
         return clean_companion_reply(_strip_thinking(text).strip())
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
@@ -185,6 +194,10 @@ class LocalEngine:
         if self.llm is None:
             return
         prompt = self._format_prompt(system_prompt, user_prompt, history=history)
+
+        _t0 = time.time()
+        _first = [0.0]
+        _count = [0]
 
         def raw_tokens():
             with config.SilenceStderrFD():
@@ -200,7 +213,16 @@ class LocalEngine:
                     stream=True
                 )
                 for chunk in stream:
+                    if not _first[0]:
+                        _first[0] = time.time()
+                    _count[0] += 1
                     yield chunk["choices"][0]["text"]
+            try:
+                from src.ui import telemetry as _telemetry
+                _telemetry.record_llm((_first[0] or time.time()) - _t0,
+                                      time.time() - _t0, max(1, _count[0]))
+            except Exception:
+                pass
 
         yield from _strip_thinking_from_stream(raw_tokens())
 
@@ -247,6 +269,7 @@ class GroqEngine:
             return ""
         try:
             budget = max(max_tokens, 1024)
+            t0 = time.time()
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
@@ -254,6 +277,13 @@ class GroqEngine:
                 temperature=temperature,
             )
             text = response.choices[0].message.content or ""
+            try:
+                from src.ui import telemetry as _telemetry
+                usage = getattr(response, "usage", None)
+                done = int(getattr(usage, "completion_tokens", 0) or max(1, len(text) // 4))
+                _telemetry.record_llm(time.time() - t0, time.time() - t0, done)
+            except Exception:
+                pass
             return clean_companion_reply(_strip_thinking(text).strip())
         except Exception as e:
             config.log_debug(f"[groq] chat error: {e}")
@@ -278,6 +308,9 @@ class GroqEngine:
 
         budget = max(max_tokens, 1024)
         groq_msgs = self._build_groq_messages(system_prompt, user_prompt, history=history)
+        _t0 = time.time()
+        _first = [0.0]
+        _count = [0]
 
         def raw_tokens():
             try:
@@ -293,6 +326,9 @@ class GroqEngine:
                         delta = getattr(chunk.choices[0], "delta", None)
                         content = getattr(delta, "content", None) if delta else None
                         if content:
+                            if not _first[0]:
+                                _first[0] = time.time()
+                            _count[0] += 1
                             yield content
             except Exception as e:
                 config.log_debug(f"[groq] stream error: {e}")
@@ -316,7 +352,14 @@ class GroqEngine:
                 except Exception as e2:
                     config.log_debug(f"[groq] stream fallback error: {e2}")
 
-        yield from _strip_thinking_from_stream(raw_tokens())
+        for tok in _strip_thinking_from_stream(raw_tokens()):
+            yield tok
+        try:
+            from src.ui import telemetry as _telemetry
+            _telemetry.record_llm((_first[0] or time.time()) - _t0,
+                                  time.time() - _t0, max(1, _count[0]))
+        except Exception:
+            pass
 
     def close(self) -> None:
         pass

@@ -152,7 +152,28 @@ Everything is an env var (or `.env` file) read by `src/config.py`. The service p
 
 **Memory**: `EMBED_MODEL_PATH` (models/all-MiniLM-L6-v2). Fixed: `memory.db`, `memory_archive/`, prune at 60 d / 1500 rows, think every 5 s, 180 s recent window, 8 s vision window, 20 min idle sleep.
 
-**Display/UI**: `UI_WS_HOST` / `UI_WS_PORT` (127.0.0.1:8765) · `USE_ELECTRON` (true). CLI-only: `--debug`, `--camera`, `--windowed`, `--fullscreen`, `--no-electron`, `--groq`.
+**Display/UI**: `UI_WS_HOST` / `UI_WS_PORT` (127.0.0.1:8765, Electron, localhost-only) · `UI_DASH_HOST` / `UI_DASH_PORT` (0.0.0.0:8080, LAN dashboard) · `KARMA_UI_PASSWORD` (dashboard password, auto-generated to `data/.dashboard_pass` if unset) · `USE_ELECTRON` (true). CLI-only: `--debug`, `--camera`, `--windowed`, `--fullscreen`, `--no-electron`, `--groq`.
+
+---
+
+## Remote dashboard (phone/laptop on the same WiFi)
+
+When Karma runs, it also serves a password-gated dashboard (default `http://<pi-ip>:8080`). The URL is printed at boot and shown on the robot's own TELEMETRY tab. First boot generates a password into `data/.dashboard_pass` (mode 600) and prints it to the console; set `KARMA_UI_PASSWORD` to use your own. Sessions last 12 h, login is rate-limited, and every route (HTTP + live socket + camera) requires auth — the Electron websocket stays localhost-only and untouched. Tick "trust this device" at login to stay signed in for 30 days (a revocable token — logout kills it); only hashes are stored, so the secret never touches disk. Open it over wifi (`http://…`), never as a local file: a `file://` page has no provable origin and is deliberately never let in.
+
+From the dashboard you can:
+
+- **Logs** — live/filterable stream of thoughts, replies, heard speech, kiosk actions, system and error events
+- **Camera** — real-time MJPEG of what the robot sees (or 503 if no camera)
+- **Thoughts** — the think-loop feed, including `[silence]` decisions
+- **Knowledge** — upload PDF/MD/TXT to the RAG (auto-ingested), list/delete indexed docs, test retrieval
+- **Prompt** — view/edit the system prompt live (takes effect on the next reply, persisted to `data/persona.json`, reset restores default)
+- **Settings** — temperature, top_p, repeat penalty, spoken thoughts, think interval, YOLO on/off, VAD silence timeout (validated, persisted to `data/config_overrides.json`, restored at boot)
+- **Shell** — live terminal on the Pi as the service user (same login, idle sessions die after 15 min, `SHELL_ENABLED=0` disables it)
+- **Status** — real telemetry: CPU %, SoC temp, throttle state, RAM/disk, load, uptime, LLM tok/s + TTFT averages, host IPs
+
+Opening `ui/dashboard.html` straight from disk shows a labeled demo of the same UI (sample data, everything fenced off) — the live version only ever comes from `http://…:8080`.
+
+The on-device TELEMETRY tab shows the same real data (it used to be hardcoded) plus the dashboard URL for discovery.
 
 **Cloud (optional)**: `USE_GROQ` (false) · `GROQ_MODEL` (openai/gpt-oss-20b) · `GROQ_API_KEY` (in `.env`, never committed).
 

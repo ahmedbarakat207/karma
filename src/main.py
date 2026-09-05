@@ -20,10 +20,13 @@ with SilenceStderrFD():
     from src.cognition.engine import create_engine
     from src.cognition.interaction import run_interaction_response
     from src.cognition.think import think_immediately, think_quietly
+    from src.hardware.drive import drive_base
     from src.memory.consolidation import consolidate, run_idle_watcher
     from src.memory.store import MemoryStore
     from src.memory.working import WorkingMemory
+    from src.navigation.explorer import run_explorer
     from src.speech.tts import TTSEngine
+    from src.state import internal_state
     from src.vision.pipeline import run_vision
 
 
@@ -47,6 +50,13 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
 
 def main():
     config.apply_cli_args()
+
+    from src.ui.server import apply_saved_overrides, load_persona_override
+    applied = apply_saved_overrides()
+    if applied:
+        print(f"[main] restored settings: {', '.join(sorted(applied))}")
+    if load_persona_override():
+        print("[main] custom system prompt loaded from data/persona.json")
 
     stop_event = threading.Event()
     speaking_event = threading.Event()
@@ -110,6 +120,35 @@ def main():
     store = MemoryStore()
     memory = WorkingMemory()
 
+    try:
+        from src.ui.server import set_runtime
+        set_runtime(store, embedder)
+    except Exception as e:
+        config.log_debug(f"[main] dashboard runtime note: {e}")
+
+    try:
+        from src.ui.server import (
+            dashboard_password,
+            dashboard_password_generated,
+            start_dashboard_server,
+        )
+        from src.ui import telemetry as _telemetry
+        dash_host = getattr(config, "UI_DASH_HOST", "0.0.0.0")
+        dash_port = int(getattr(config, "UI_DASH_PORT", 8080))
+        if start_dashboard_server(host=dash_host, port=dash_port):
+            net = _telemetry.net_info(dash_port)
+            for ip in net["ips"]:
+                print(f"[dash] dashboard: http://{ip}:{dash_port}")
+            if not net["ips"]:
+                print(f"[dash] dashboard on port {dash_port} (no LAN ip found yet)")
+            if dashboard_password_generated():
+                print(f"[dash] generated password: {dashboard_password()}")
+                print("[dash] set KARMA_UI_PASSWORD to use your own")
+            from src.ui import events as _events
+            _events.post("system", f"dashboard up on port {dash_port}")
+    except Exception as e:
+        config.log_debug(f"[main] dashboard init note: {e}")
+
     tts = None
     try:
         config.log_debug("[main] loading TTS engine...")
@@ -134,6 +173,12 @@ def main():
             time.sleep(0.3)
 
             try:
+                drive_base.stop()
+                drive_base.cleanup()
+            except Exception:
+                pass
+
+            try:
                 import sounddevice as _sd
                 _sd.stop()
             except Exception:
@@ -152,8 +197,9 @@ def main():
                     pass
 
             try:
-                from src.ui.server import stop_ui_server
+                from src.ui.server import stop_ui_server, stop_dashboard_server
                 stop_ui_server()
+                stop_dashboard_server()
             except Exception:
                 pass
 
@@ -171,6 +217,26 @@ def main():
                 elif cmd in ("quit", "exit"):
                     shutdown()
                     break
+                elif cmd in ("stop", "halt"):
+                    try:
+                        from src.navigation.explorer import explorer
+                        explorer.stop()
+                    except Exception:
+                        pass
+                elif cmd in ("explore", "wander"):
+                    try:
+                        from src.navigation.explorer import explorer
+                        explorer.start_explore()
+                    except Exception:
+                        pass
+                elif cmd in ("forward", "back", "left", "right"):
+                    try:
+                        fn = {"forward": drive_base.forward, "back": drive_base.backward,
+                              "left": drive_base.turn_left, "right": drive_base.turn_right}[cmd]
+                        threading.Thread(target=fn, kwargs={"duration": 1.0},
+                                         daemon=True, name="manual_drive").start()
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -182,6 +248,8 @@ def main():
                          daemon=True, name="cognition"),
         threading.Thread(target=run_idle_watcher, args=(memory, stop_event, do_sleep),
                          daemon=True, name="idle_watcher"),
+        threading.Thread(target=run_explorer, args=(memory, stop_event, drive_base, internal_state),
+                         daemon=True, name="explorer"),
         threading.Thread(target=listen_stdin, daemon=True, name="stdin_listener"),
     ]
 

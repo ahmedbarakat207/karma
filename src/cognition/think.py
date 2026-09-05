@@ -4,6 +4,7 @@ import time
 from src import config
 from src.cognition.interaction import _extract_plain_text, retrieve_memories
 from src.speech.prosody import prosody_stream
+from src.ui import events as _events
 
 _THINK_PROMPT = """You are Karma, observing the room. Produce a brief casual remark, or [silence] if nothing notable is happening.
 
@@ -54,9 +55,11 @@ def think_immediately(memory, engine, tts, store, embedder, urgency: str = "HIGH
 
         thought = _extract_plain_text(raw.strip())
         if not thought or thought.lower() == "[silence]" or ("silence" in thought.lower() and len(thought) < 12):
+            _events.post("thought", "[silence]", {"urgency": urgency})
             return
 
         config.log_debug(f"[thought] (URGENT) {thought}")
+        _events.post("thought", thought, {"urgency": urgency})
         memory.add(kind="thought", text=thought, salience=0.2)
 
     except Exception as e:
@@ -91,6 +94,7 @@ def think_quietly(memory, engine, store, embedder) -> None:
         raw = engine.chat(_THINK_PROMPT, prompt, max_tokens=150)
         thought = _extract_plain_text(raw.strip())
         if not thought or thought.lower() == "[silence]" or ("silence" in thought.lower() and len(thought) < 12):
+            _events.post("thought", "[silence]", {"urgency": "idle"})
             return
         if thought.strip().lower() == _last_thought_text.strip().lower():
             return
@@ -98,6 +102,7 @@ def think_quietly(memory, engine, store, embedder) -> None:
         _last_thought_text = thought
         _last_thought_time = now
         config.log_debug(f"[thought] (IDLE) {thought}")
+        _events.post("thought", thought, {"urgency": "idle"})
         memory.add(kind="thought", text=thought, salience=0.1, counts_as_activity=False)
     except Exception:
         pass

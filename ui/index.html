@@ -233,31 +233,37 @@
               <div class="telemetry-grid">
                 <div class="telem-block">
                   <div class="telem-block-head"><span>HOST COMPUTE</span><span class="mini-tag">ARM64</span></div>
-                  <div class="telem-big">Raspberry Pi 4B</div>
-                  <div class="telem-sub">Cortex-A72 @ 2.0 GHz</div>
-                  <div class="meter"><div class="meter-fill" style="width:32%"></div></div>
-                  <div class="meter-note">CPU 32% · 41.8°C</div>
+                  <div class="telem-big" id="tm-cpu-big">–</div>
+                  <div class="telem-sub">SoC temp + load</div>
+                  <div class="meter"><div class="meter-fill" id="tm-cpu-fill" style="width:0%"></div></div>
+                  <div class="meter-note" id="tm-cpu-note">waiting for data…</div>
                 </div>
                 <div class="telem-block">
-                  <div class="telem-block-head"><span>POWER RAIL</span><span class="mini-tag">12V AGM</span></div>
-                  <div class="telem-big" id="diag-battery">12.4V — 9.0Ah</div>
-                  <div class="telem-sub">Dual BTS7960 43A + buck</div>
-                  <div class="meter"><div class="meter-fill" style="width:86%"></div></div>
-                  <div class="meter-note">SoC ~86% · NOMINAL</div>
+                  <div class="telem-block-head"><span>MEMORY + DISK</span><span class="mini-tag" id="tm-throttle-tag">SYS</span></div>
+                  <div class="telem-big" id="tm-mem-big">–</div>
+                  <div class="telem-sub">RAM / disk / load</div>
+                  <div class="meter"><div class="meter-fill" id="tm-mem-fill" style="width:0%"></div></div>
+                  <div class="meter-note" id="tm-mem-note">waiting for data…</div>
                 </div>
                 <div class="telem-block">
                   <div class="telem-block-head"><span>NEURAL ENGINE</span><span class="mini-tag blue">QWEN 2.5</span></div>
-                  <div class="telem-big">0.5B Instruct GGUF</div>
-                  <div class="telem-sub">Metal / NEON · 4096 CTX</div>
-                  <div class="meter"><div class="meter-fill" style="width:58%"></div></div>
-                  <div class="meter-note">1240 / 4096 TOKENS</div>
+                  <div class="telem-big" id="tm-nn-big">0.5B Instruct GGUF</div>
+                  <div class="telem-sub">local llama.cpp · 4096 ctx</div>
+                  <div class="meter"><div class="meter-fill" id="tm-nn-fill" style="width:0%"></div></div>
+                  <div class="meter-note" id="tm-nn-note">no inference yet</div>
                 </div>
                 <div class="telem-block">
                   <div class="telem-block-head"><span>ACOUSTIC LOOP</span><span class="mini-tag">REALTIME</span></div>
                   <div class="telem-big">Whisper + Kokoro</div>
-                  <div class="telem-sub">Sub-200ms ring buffer</div>
-                  <div class="meter"><div class="meter-fill" style="width:15%"></div></div>
-                  <div class="meter-note">TTFT 165MS</div>
+                  <div class="telem-sub">local STT + TTS</div>
+                  <div class="meter"><div class="meter-fill" id="tm-ac-fill" style="width:0%"></div></div>
+                  <div class="meter-note" id="tm-ac-note">–</div>
+                </div>
+              </div>
+              <div class="hw-row">
+                <span class="hw-label">REMOTE DASHBOARD</span>
+                <div class="hw-btns">
+                  <span class="meter-note" id="dash-url">starting…</span>
                 </div>
               </div>
               <div class="hw-row">

@@ -263,13 +263,15 @@
       if (msg.code !== undefined) {
         setCodeDisplay(msg.code, msg.code_lang || 'c');
       }
-      if (msg.kiosk_view && msg.kiosk_view !== currentState.kioskView) {
+      if (msg.kiosk_view && msg.kiosk_view !== currentState.kioskView && currentState.kioskView !== 'system') {
         if (msg.kiosk_view === 'face') {
           closeKiosk(false);
         } else {
           openKiosk(msg.kiosk_view, false);
         }
       }
+      if (msg.telemetry) renderTelemetry(msg.telemetry);
+      if (msg.net) renderNet(msg.net);
     } else if (msg.type === 'kiosk_data') {
       if (msg.student_apps) {
         kioskData.studentApps = msg.student_apps;
@@ -289,6 +291,48 @@
         docsBody.textContent = msg.chunks.length ? msg.chunks[0] : 'No passages in this document yet.';
       }
     }
+  }
+
+  function setText(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+
+  function setFill(id, pct) {
+    const el = document.getElementById(id);
+    if (el && pct != null && isFinite(pct)) el.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  }
+
+  function renderTelemetry(t) {
+    if (!t) return;
+    const llm = t.llm || {};
+    setText('tm-cpu-big', t.cpu_temp_c != null ? t.cpu_temp_c + '°C' : 'n/a');
+    setText('tm-cpu-note', 'CPU ' + (t.cpu_pct != null ? t.cpu_pct + '%' : 'n/a') + ' · ' +
+      (t.cpu_temp_c != null ? t.cpu_temp_c + '°C' : 'no sensor') +
+      (t.throttled && t.throttled !== 'clean' && t.throttled !== 'unknown' ? ' · THROTTLED ' + t.throttled : ''));
+    setFill('tm-cpu-fill', t.cpu_pct);
+    setText('tm-mem-big', t.mem_used_pct != null ? t.mem_used_pct + '% RAM' : 'n/a');
+    setText('tm-mem-note', 'RAM ' + (t.mem_used_pct != null ? t.mem_used_pct + '%' : 'n/a') +
+      ' · disk ' + (t.disk_used_pct != null ? t.disk_used_pct + '%' : 'n/a') +
+      ' · load ' + (t.load_1 != null ? t.load_1 : 'n/a'));
+    setFill('tm-mem-fill', t.mem_used_pct);
+    const calls = llm.calls || 0;
+    setText('tm-nn-big', calls > 0 ? llm.last_tps + ' tok/s' : 'Qwen 2.5 0.5B');
+    setText('tm-nn-note', calls > 0
+      ? ('last ' + llm.last_tps + ' tok/s · TTFT ' + llm.last_ttft_ms + 'ms · ' + llm.last_tokens + ' tok')
+      : 'Qwen 2.5 0.5B Instruct GGUF · 4096 ctx');
+    setFill('tm-nn-fill', calls > 0 ? Math.min(100, llm.last_tps * 5) : 0);
+    setText('tm-ac-note', calls > 0 ? ('TTFT ' + llm.last_ttft_ms + 'ms · avg ' + llm.avg_tps + ' tok/s') : 'idle');
+    setFill('tm-ac-fill', calls > 0 ? Math.min(100, (llm.last_ttft_ms || 0) / 30) : 0);
+    if (t.throttled && t.throttled !== 'clean' && t.throttled !== 'unknown') {
+      setText('tm-throttle-tag', 'THROTTLED');
+    }
+  }
+
+  function renderNet(n) {
+    if (!n) return;
+    const url = n.dash_url || ((n.ips && n.ips[0]) ? 'http://' + n.ips[0] + ':' + (n.dash_port || 8080) : '');
+    setText('dash-url', url ? ('dashboard: ' + url) : 'dashboard: starting…');
   }
 
   function setMood(mood) {
@@ -567,7 +611,8 @@
   tabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-view');
-      openKiosk(view, true);
+      // 'system' is a client-only tab: no backend view for it
+      openKiosk(view, view !== 'system');
     });
   });
 

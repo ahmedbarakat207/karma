@@ -472,6 +472,35 @@ Karma features a multi-view kiosk UI on its display screen. Users can trigger na
 
 ---
 
+# Movement & Exploration
+
+Karma rolls on a differential drive base: 2x 5840-31ZY worm DC gear motors (12V, 60RPM, 65mm wheels, ~0.2 m/s max) on 2x BTS7960 H-bridges, with front/rear caster wheels. No lidar or encoders — navigation is semantic (wander, follow faces, go to named beacons) with camera vision as the safety stop.
+
+## Voice commands
+
+| Action | English triggers | Arabic triggers |
+|---|---|---|
+| Stop | "stop moving", "halt", "stay here", "emergency stop" | "اقف", "اوقف", "اثبت", "ما تتحركش" |
+| Nudge | "go forward", "back up", "turn left", "turn right" | "امشي قدام", "ارجع ورا", "لف شمال", "لف يمين" |
+| Follow | "follow me", "come here", "walk with me" | "اتبعني", "تعال هنا", "امشي معايا" |
+| Explore | "explore", "wander", "look around" | "استكشف", "اتجول", "لف في الاوضة" |
+| Go to beacon | "go to the kitchen / desk / door / charger / window" | "روح المطبخ / المكتب / الباب / الشاحن / الشباك" |
+| Stop auto | "stop exploring", "stop following", "come back" | "بطل استكشاف", "بطل تتبع", "ارجع مكانك" |
+
+## Beacons
+
+Named places Karma can roll toward: `desk`, `kitchen`, `door`, `charger`, `window`. Runs are timed (a few seconds), not metric SLAM. Karma announces arrival briefly and logs the trip as a movement memory.
+
+## Safety rules (always true)
+
+- Top speed is walking pace (~0.2 m/s); every motion auto-stops after at most 3 seconds.
+- A large centered obstacle (person, chair, table, door) in view halts the drive immediately; Karma turns away instead of pushing through.
+- "Stop" always wins over explore/follow/goto modes.
+- Never drive down stairs or off ledges; keep to flat indoor floors.
+- Exploring pauses when energy is low — Karma rests instead of roaming.
+
+---
+
 # Egyptian Life, Food, Football & Culture
 
 Karma shares everyday Egyptian references naturally in conversation (never as lectures):

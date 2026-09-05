@@ -10,7 +10,74 @@ from src.ui.kiosk import kiosk_manager
 from src.vision.detector import ObjectDetector
 from src.vision.face import FaceAndGazeTracker
 from src.vision.hand import HandTracker
+from src.vision.identity import fuse_person_identities, positions_from_bboxes
 from src.vision.render import VisionRenderer, FaceRenderer
+from src.vision.vlm import verifier as _vlm_verifier
+
+
+CAMERA_WINDOW_NAME = "Karma Vision"
+_last_published = 0.0
+# Presence hysteresis: don't clear a recognized name on a single missed frame.
+_last_presence_names: Set[str] = set()
+_last_presence_time: float = 0.0
+PRESENCE_CLEAR_SECONDS = 2.0
+
+
+def _store_vlm_result(memory, result, job) -> None:
+    """Persist one VLM snapshot: scene note for memory/prompts.
+
+    Corrections are already in the verifier's cache (applied to prompt
+    context + HUD labels); here we store the human-readable scene so the
+    think loop and replies can talk about what was actually seen.
+    """
+    try:
+        if not result or not (result.get("scene") or result.get("objects")
+                              or result.get("people") or result.get("corrections")):
+            config.log_debug("[vlm] empty result, ignoring")
+            return
+        parts = []
+        if result.get("scene"):
+            parts.append(result["scene"].strip())
+        for p in result.get("people", []):
+            desc = (p.get("appearance") or "").strip()
+            name = p.get("name")
+            if desc:
+                parts.append(f"Person ({name}): {desc}" if name else f"Person: {desc}")
+        objs = result.get("objects", []) or []
+        if objs:
+            parts.append("Things here: " + ", ".join(o for o in objs[:8] if o))
+        corr = result.get("corrections", {}) or {}
+        if corr:
+            parts.append("Corrections: " + ", ".join(
+                f"{k}->{v}" for k, v in list(corr.items())[:6]))
+        text = " ".join(p for p in parts if p).strip()[:600]
+        if not text:
+            return
+        memory.add(kind="vlm_scene", text=text, counts_as_activity=True, salience=0.35)
+        config.log_debug(f"[vlm] scene: {text}")
+        try:
+            from src.ui import events as _events
+            _events.post("vlm", text)
+        except Exception:
+            pass
+    except Exception as e:
+        config.log_debug(f"[vlm] store note: {e}")
+
+
+def _publish_frame(frame) -> None:
+    """Downscaled JPEG for the dashboard MJPEG stream (throttled)."""
+    global _last_published
+    now = time.time()
+    if now - _last_published < 0.2:
+        return
+    _last_published = now
+    try:
+        small = cv2.resize(frame, (480, 360))
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if ok:
+            internal_state.set_camera_frame(bytes(buf))
+    except Exception:
+        pass
 
 
 def get_display_resolution() -> Tuple[int, int]:
@@ -41,6 +108,7 @@ def get_display_resolution() -> Tuple[int, int]:
 
 
 def run_vision(memory, stop_event, speaking_event=None) -> None:
+    global _last_presence_names, _last_presence_time
     cam_idx = getattr(config, "CAMERA_INDEX", 0)
     cap = None
     has_camera = False
@@ -137,11 +205,53 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 if object_detector is not None:
                     obj_labels, positions, bboxes = object_detector.process(frame, memory)
 
-                face_labels, recognized_people, primary_face = ([], [], None)
+                face_labels, recognized_people, primary_face, all_faces = ([], set(), None, [])
                 if face_tracker is not None:
-                    face_labels, recognized_people, primary_face = face_tracker.process(frame, memory)
+                    face_result = face_tracker.process(frame, memory)
+                    # Backward compat with 3-tuple callers/tests.
+                    if len(face_result) == 4:
+                        face_labels, recognized_people, primary_face, all_faces = face_result
+                    else:
+                        face_labels, recognized_people, primary_face = face_result
+                        all_faces = [primary_face] if primary_face else []
+                    recognized_people = set(recognized_people or [])
                     if recognized_people:
+                        _last_presence_names = set(recognized_people)
+                        _last_presence_time = now
                         memory.set_recognized_people(recognized_people)
+                    elif primary_face is None and all_faces == []:
+                        # No face at all: clear after grace period, else keep last.
+                        if now - _last_presence_time >= PRESENCE_CLEAR_SECONDS:
+                            if _last_presence_names:
+                                _last_presence_names = set()
+                            memory.set_recognized_people(set())
+                    # else: face visible but throttled frame -> keep previous presence
+
+                # YOLO `person` + face names -> `Sara` boxes. The HUD, memory,
+                # and prompt context then see names instead of `person`.
+                try:
+                    bboxes = fuse_person_identities(bboxes, all_faces)
+                except Exception:
+                    pass
+                fused_labels = [lbl for lbl, _conf, _box in bboxes]
+
+                # Vision e-stop: worm base has no bump sensors, so a large
+                # centered obstacle box halts the drive (throttled).
+                try:
+                    from src.navigation.explorer import explorer as _explorer
+                    from src.navigation.explorer import is_blocked as _is_blocked
+                    blocker = _is_blocked(bboxes, frame_w=frame.shape[1],
+                                          frame_h=frame.shape[0])
+                    if blocker:
+                        from src.hardware.drive import drive_base as _drive
+                        if _drive.is_moving:
+                            _drive.stop()
+                            _explorer.note_blocked(blocker)
+                            memory.add(kind="obstacle", text=f"Blocked by {blocker}, stopped",
+                                       counts_as_activity=True, salience=0.85,
+                                       dedup_seconds=getattr(config, "OBSTACLE_COOLDOWN_SECONDS", 3.0))
+                except Exception as e:
+                    config.log_debug(f"[vision] estop check note: {e}")
 
                 if primary_face:
                     fx, fy, fw, fh, fname, femotion = primary_face
@@ -155,12 +265,29 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 if hand_tracker is not None:
                     hand_labels, hand_pts = hand_tracker.process(frame)
 
-                current_labels = set(obj_labels + face_labels + hand_labels)
+                current_labels = set(fused_labels + face_labels + hand_labels)
+                # Safety net: if fusion missed (no person box) still surface names.
                 for p in recognized_people:
                     current_labels.discard("person")
                     current_labels.add(p)
 
-                spatial_objects = [(lbl, positions.get(lbl, (320.0, 240.0))) for lbl in current_labels]
+                try:
+                    fused_positions = positions_from_bboxes(bboxes)
+                except Exception:
+                    fused_positions = {}
+                spatial_objects = []
+                for lbl, _conf, (x1, y1, x2, y2) in bboxes:
+                    spatial_objects.append((lbl, ((x1 + x2) / 2.0, (y1 + y2) / 2.0)))
+                for lbl in set(face_labels + hand_labels):
+                    if lbl not in fused_positions:
+                        # positions may be {label: [(cx,cy)]} (new) or {label: (cx,cy)} (old/mock)
+                        pos = positions.get(lbl) if isinstance(positions, dict) else None
+                        if isinstance(pos, list) and pos:
+                            spatial_objects.append((lbl, pos[0]))
+                        elif isinstance(pos, tuple):
+                            spatial_objects.append((lbl, pos))
+                        else:
+                            spatial_objects.append((lbl, (320.0, 240.0)))
                 memory.consciousness.update(spatial_objects)
 
                 new_labels = current_labels - last_seen_labels
@@ -168,7 +295,18 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     if getattr(config, "LOG_VISION_TO_CONSOLE", False):
                         print(f"[vision] {label}")
                     memory.add(kind="object", text=label, dedup_seconds=config.OBJECT_DEDUP_SECONDS)
+                # One-shot VLM check on genuinely novel YOLO sightings.
+                # YOLO keeps tracking every frame; the VLM snapshot runs
+                # async and only corrects labels / describes the scene.
+                try:
+                    _vlm_verifier.maybe_verify(
+                        frame, new_labels, recognized_people, now,
+                        on_result=lambda res, jb: _store_vlm_result(memory, res, jb),
+                    )
+                except Exception as e:
+                    config.log_debug(f"[vision] vlm submit note: {e}")
                 last_seen_labels = current_labels
+                _publish_frame(frame)
 
             else:
                 time.sleep(getattr(config, "VISION_POLL_SECONDS", 0.033))
@@ -209,12 +347,19 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
             if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
                 annotated = frame.copy()
-                VisionRenderer.draw_objects(annotated, bboxes)
+                try:
+                    shown_bboxes = [
+                        (_vlm_verifier.corrections.lookup(lbl), conf, box)
+                        for lbl, conf, box in bboxes
+                    ]
+                except Exception:
+                    shown_bboxes = bboxes
+                VisionRenderer.draw_objects(annotated, shown_bboxes)
                 VisionRenderer.draw_hands(annotated, hand_pts)
                 if primary_face:
                     VisionRenderer.draw_face(annotated, primary_face)
                 annotated = VisionRenderer.draw_hud(annotated, display_fps, display_fps, is_talking=is_talking)
-                cv2.imshow(camera_window_name, annotated)
+                cv2.imshow(CAMERA_WINDOW_NAME, annotated)
 
             if not use_electron or (getattr(config, "SHOW_VISION_WINDOW", False) and has_camera):
                 key = cv2.waitKey(1) & 0xFF
@@ -237,7 +382,7 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     config.SHOW_VISION_WINDOW = not getattr(config, "SHOW_VISION_WINDOW", False)
                     if not config.SHOW_VISION_WINDOW:
                         try:
-                            cv2.destroyWindow(camera_window_name)
+                            cv2.destroyWindow(CAMERA_WINDOW_NAME)
                         except Exception:
                             pass
 

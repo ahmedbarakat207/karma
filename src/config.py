@@ -105,6 +105,16 @@ CAMERA_INDEX = int(os.environ.get("CAMERA_INDEX", "0"))
 VISION_POLL_SECONDS = 0.033
 OBJECT_DEDUP_SECONDS = 3
 
+# On-demand VLM verifier (SmolVLM2, CPU, lazy-loaded). YOLO keeps tracking
+# every frame; only genuinely novel YOLO labels trigger ONE snapshot.
+VLM_ENABLED = _env_bool("VLM_ENABLED", True)
+VLM_MODEL_ID = os.environ.get("VLM_MODEL_ID", "HuggingFaceTB/SmolVLM2-256M-Video-Instruct")
+VLM_MODEL_DIR = os.environ.get("VLM_MODEL_DIR", os.path.join(MODELS_DIR, "smolvlm2-256m"))
+VLM_COOLDOWN_SECONDS = float(os.environ.get("VLM_COOLDOWN_SECONDS", "20.0"))
+VLM_MAX_NEW_TOKENS = int(os.environ.get("VLM_MAX_NEW_TOKENS", "128"))
+VLM_SNAPSHOT_WIDTH = int(os.environ.get("VLM_SNAPSHOT_WIDTH", "384"))
+VLM_CORRECTION_TTL_SECONDS = float(os.environ.get("VLM_CORRECTION_TTL_SECONDS", "60.0"))
+
 DEBUG = _env_bool("DEBUG", False)
 SHOW_VISION_WINDOW = _env_bool("SHOW_VISION_WINDOW", False)
 LOG_VISION_TO_CONSOLE = _env_bool("LOG_VISION_TO_CONSOLE", False)
@@ -113,6 +123,19 @@ FULLSCREEN_FACE = _env_bool("FULLSCREEN_FACE", True)
 USE_ELECTRON = _env_bool("USE_ELECTRON", True)
 UI_WS_HOST = os.environ.get("UI_WS_HOST", "127.0.0.1")
 UI_WS_PORT = int(os.environ.get("UI_WS_PORT", "8765"))
+
+# LAN dashboard: served on all interfaces so phones/laptops on the same
+# wifi can reach it. Always password-gated (see server.py), the local
+# Electron websocket above stays localhost-only and ungated.
+UI_DASH_HOST = os.environ.get("UI_DASH_HOST", "0.0.0.0")
+UI_DASH_PORT = int(os.environ.get("UI_DASH_PORT", "8080"))
+KARMA_UI_PASSWORD = os.environ.get("KARMA_UI_PASSWORD", "")
+
+# Dashboard shell tab: interactive PTY on the robot, same auth as the
+# dashboard. Full shell as the service user — set 0 to disable.
+SHELL_ENABLED = _env_bool("SHELL_ENABLED", True)
+SHELL_IDLE_SECONDS = int(os.environ.get("SHELL_IDLE_SECONDS", "900"))
+SHELL_MAX_SESSIONS = int(os.environ.get("SHELL_MAX_SESSIONS", "3"))
 
 USE_GROQ = _env_bool("USE_GROQ", False)
 _raw_groq = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
@@ -164,6 +187,32 @@ FACE_RECOGNITION_ENABLED = True
 FACE_REGISTRY_PATH = os.path.join(BASE_DIR, "faces.json")
 FACE_RECOGNITION_TOLERANCE = 0.55
 FACE_RECOGNITION_INTERVAL = 0.5
+
+# Differential drive (2x 5840-31ZY worm motors + 2x BTS7960 H-bridges).
+# BCM pin numbering. All overridable via env. Mock mode when pigpiod absent.
+DRIVE_ENABLED = _env_bool("DRIVE_ENABLED", True)
+DRIVE_LEFT_RPWM = int(os.environ.get("DRIVE_LEFT_RPWM", "19"))
+DRIVE_LEFT_LPWM = int(os.environ.get("DRIVE_LEFT_LPWM", "26"))
+DRIVE_LEFT_R_EN = int(os.environ.get("DRIVE_LEFT_R_EN", "16"))
+DRIVE_LEFT_L_EN = int(os.environ.get("DRIVE_LEFT_L_EN", "20"))
+DRIVE_RIGHT_RPWM = int(os.environ.get("DRIVE_RIGHT_RPWM", "6"))
+DRIVE_RIGHT_LPWM = int(os.environ.get("DRIVE_RIGHT_LPWM", "5"))
+DRIVE_RIGHT_R_EN = int(os.environ.get("DRIVE_RIGHT_R_EN", "22"))
+DRIVE_RIGHT_L_EN = int(os.environ.get("DRIVE_RIGHT_L_EN", "27"))
+DRIVE_PWM_FREQ = int(os.environ.get("DRIVE_PWM_FREQ", "20000"))
+# Safety: duty clamp + per-command watchdog (worm gear, 60RPM, 65mm wheels
+# => ~0.2 m/s max, so even full duty is walking pace).
+DRIVE_MAX_DUTY = float(os.environ.get("DRIVE_MAX_DUTY", "0.6"))
+DRIVE_MAX_SECONDS = float(os.environ.get("DRIVE_MAX_SECONDS", "3.0"))
+DRIVE_CRUISE_DUTY = float(os.environ.get("DRIVE_CRUISE_DUTY", "0.35"))
+DRIVE_TURN_DUTY = float(os.environ.get("DRIVE_TURN_DUTY", "0.4"))
+# Explorer autonomy tunables.
+EXPLORER_ENABLED = _env_bool("EXPLORER_ENABLED", True)
+EXPLORER_TICK_SECONDS = float(os.environ.get("EXPLORER_TICK_SECONDS", "2.0"))
+# Area fraction of a centered box that counts as blocked (640x480 frame).
+OBSTACLE_AREA_RATIO = float(os.environ.get("OBSTACLE_AREA_RATIO", "0.12"))
+OBSTACLE_CENTER_MARGIN = float(os.environ.get("OBSTACLE_CENTER_MARGIN", "0.25"))
+OBSTACLE_COOLDOWN_SECONDS = float(os.environ.get("OBSTACLE_COOLDOWN_SECONDS", "3.0"))
 
 WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", os.path.join(MODELS_DIR, "whisper-tiny"))
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")

@@ -261,8 +261,10 @@ class AudioPipeline:
                                     if text:
                                         print(f"[audio] heard: '{text}'")
                                         from src.state import internal_state
+                                        from src.ui import events as _events
                                         internal_state.set_user_speech(text)
                                         self.memory.add(kind="speech", text=text, counts_as_activity=True)
+                                        _events.post("heard", text)
                                 pre_buffer = np.zeros(0, dtype=np.float32)
         except Exception as e:
             config.log_debug(f"[audio] stream error: {e}")

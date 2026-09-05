@@ -116,6 +116,14 @@ class WorkingMemory:
                 if e["kind"] == "object" and e["ts"] >= cutoff
             ]
 
+    def recent_by_kind(self, kind: str, window_seconds: float) -> List[str]:
+        cutoff = time.time() - window_seconds
+        with self._lock:
+            return [
+                e["text"] for e in self._events
+                if e["kind"] == kind and e["ts"] >= cutoff
+            ]
+
     def add_conversation(self, speech: str, reply: str) -> None:
         with self._lock:
             self._conversation.append({"speech": speech, "reply": reply})

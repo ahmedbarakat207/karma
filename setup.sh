@@ -423,6 +423,19 @@ if not os.path.exists(yolo_path):
         print(f"✓ YOLOv8n ready at {yolo_path}")
     except Exception as e:
         print(f"⚠️ Notice downloading YOLOv8n: {e}")
+
+vlm_dir = os.path.join(MODELS_DIR, "smolvlm2-256m")
+if os.path.isdir(vlm_dir) and len(os.listdir(vlm_dir)) > 0:
+    print(f"✓ Found SmolVLM2 verifier: {vlm_dir}")
+else:
+    print("⬇ Downloading SmolVLM2-256M verifier (one-shot scene checks)...")
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(repo_id="HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+                          local_dir=vlm_dir)
+        print(f"✓ SmolVLM2 verifier ready at {vlm_dir}")
+    except Exception as e:
+        print(f"⚠️ Notice downloading SmolVLM2: {e} (lazy-downloads on first novel sighting)")
 EOF
 
 log_success "AI model weights verified."
