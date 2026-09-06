@@ -14,6 +14,11 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
 
 from src import config
+with config.SilenceStderrFD():
+    try:
+        import torch
+    except ImportError:
+        pass
 from src.cognition.engine import clean_companion_reply
 from llama_cpp import Llama
 
@@ -160,7 +165,7 @@ def interactive_chat(
                     if not docs:
                         print("No documents indexed.")
                     else:
-                        print("📚 Indexed Documents:")
+                        print("Indexed Documents:")
                         for d in docs:
                             print(f"  • {d['source']}: {d['count']} chunks")
                 else:
@@ -169,8 +174,9 @@ def interactive_chat(
             elif user_input.lower().startswith("/pdf "):
                 pdf_target = user_input[5:].strip()
                 if not rag_engine:
-                    from src.memory.rag import DocumentRAG
-                    rag_engine = DocumentRAG()
+                    with config.SilenceStderrFD():
+                        from src.memory.rag import DocumentRAG
+                        rag_engine = DocumentRAG()
                 try:
                     c = rag_engine.ingest_pdf(pdf_target)
                     print(f"✓ Indexed '{pdf_target}' ({c} chunks). Ready for Q&A!")
@@ -182,18 +188,18 @@ def interactive_chat(
             if rag_engine:
                 doc_context = rag_engine.get_rag_context(user_input, k=2)
 
-            augmented_user_input = user_input
-            if doc_context:
-                augmented_user_input = (
-                    f"Reference Knowledge:\n{doc_context}\n\n"
-                    f"Question: {user_input}"
-                )
-
-            messages.append({"role": "user", "content": augmented_user_input})
+            messages.append({"role": "user", "content": user_input})
 
             prompt = ""
-            for m in messages:
-                prompt += f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n"
+            for i, m in enumerate(messages):
+                content = m["content"]
+                if i == 0 and doc_context:
+                    content = (
+                        f"{content}\n\n"
+                        f"Relevant Reference Knowledge:\n{doc_context}\n\n"
+                        f"(Important: Use the reference knowledge only if it directly answers the user's question. Answer strictly in the same language as the user's message: if the user asks in English, reply ONLY in English; if the user asks in Arabic, reply ONLY in Egyptian Arabic. Never output multiple languages or translation notes.)"
+                    )
+                prompt += f"<|im_start|>{m['role']}\n{content}<|im_end|>\n"
             prompt += "<|im_start|>assistant\n"
 
             t0 = time.time()
@@ -201,7 +207,14 @@ def interactive_chat(
             tokens = []
 
             if hasattr(llm, "stream_chat"):
-                stream = llm.stream_chat(system_prompt, augmented_user_input, max_tokens=max_tokens)
+                effective_sys = system_prompt
+                if doc_context:
+                    effective_sys = (
+                        f"{system_prompt}\n\n"
+                        f"Relevant Reference Knowledge:\n{doc_context}\n\n"
+                        f"(Important: Use the reference knowledge only if it directly answers the user's question. Answer strictly in the same language as the user's message: if the user asks in English, reply ONLY in English; if the user asks in Arabic, reply ONLY in Egyptian Arabic. Never output multiple languages or translation notes.)"
+                    )
+                stream = llm.stream_chat(effective_sys, user_input, max_tokens=max_tokens)
                 for chunk in stream:
                     if first_token_time is None:
                         first_token_time = time.time() - t0
@@ -230,7 +243,7 @@ def interactive_chat(
             ttft_ms = (first_token_time or 0) * 1000
 
             raw_reply = "".join(tokens).strip()
-            reply = clean_companion_reply(raw_reply)
+            reply = clean_companion_reply(raw_reply, user_input=user_input)
             print("\nKarma > ", end="", flush=True)
             for ch in reply:
                 print(ch, end="", flush=True)
@@ -258,18 +271,21 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=256, help="Max response tokens")
     parser.add_argument("--pdf", "-p", type=str, default=None, help="Path to PDF document to ingest into RAG before chat")
     parser.add_argument("--validate", "-v", action="store_true", help="Run automated validation test suite")
-    parser.add_argument("--system-prompt", "-s", type=str, default=getattr(config, "PERSONA_SYSTEM_PROMPT", "You are Karma, a witty human friend."), help="System persona")
+    parser.add_argument("--no-rag", action="store_true", help="Disable document RAG retrieval")
+    parser.add_argument("--system-prompt", "-s", type=str, default=getattr(config, "PERSONA_SYSTEM_PROMPT", "You are Karma, a witty human friend, when someone greets like saying 'Hi', or 'Hello' you should respond with the same greeting"), help="System persona")
 
     args = parser.parse_args()
 
     rag_engine = None
-    try:
-        from src.memory.rag import DocumentRAG
-        rag_engine = DocumentRAG()
-        if args.pdf:
-            rag_engine.ingest_pdf(args.pdf)
-    except Exception as e:
-        config.log_debug(f"[chat] RAG init note: {e}")
+    if not args.no_rag:
+        try:
+            with config.SilenceStderrFD():
+                from src.memory.rag import DocumentRAG
+                rag_engine = DocumentRAG()
+            if args.pdf:
+                rag_engine.ingest_pdf(args.pdf)
+        except Exception as e:
+            config.log_debug(f"[chat] RAG init note: {e}")
 
     if args.groq:
         from src.cognition.engine import create_engine

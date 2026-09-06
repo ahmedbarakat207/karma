@@ -13,6 +13,17 @@ except ImportError:
 from src import config
 from src.memory.store import MemoryStore
 
+_GREETING_WORDS = {
+    'hi', 'hello', 'hey', 'hiya', 'howdy', 'sup', 'yo',
+    'good morning', 'good afternoon', 'good evening', 'good night',
+    'what s up', 'whats up', 'how are you', 'how are you doing', 'how is it going', 'hows it going',
+    'what are you up to', 'what are you doing', 'what do you do',
+    'bye', 'goodbye', 'see you', 'see ya', 'later', 'cya',
+    'thanks', 'thank you', 'cool thanks', 'cool thank you', 'thanks a lot',
+    'cool', 'nice', 'awesome', 'great', 'ok', 'okay', 'sure', 'fine', 'no problem',
+    'ازيك', 'عامل ايه', 'صباح الخير', 'مساء الخير', 'صباح الفل', 'سلام', 'اهلا', 'أهلا', 'هاي', 'شكرا'
+}
+
 
 class DocumentRAG:
     def __init__(self, store: Optional[MemoryStore] = None, embedder: Optional[Any] = None,
@@ -26,9 +37,10 @@ class DocumentRAG:
     @property
     def embedder(self):
         if self._embedder is None:
-            from sentence_transformers import SentenceTransformer
-            path = getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME)
-            self._embedder = SentenceTransformer(path)
+            with config.SilenceStderrFD():
+                from sentence_transformers import SentenceTransformer
+                path = getattr(config, "EMBED_MODEL_PATH", config.EMBED_MODEL_NAME)
+                self._embedder = SentenceTransformer(path)
         return self._embedder
 
     @property
@@ -139,9 +151,18 @@ class DocumentRAG:
                         results[f] = 0
         return results
 
-    def retrieve(self, query: str, k: int = 3, threshold: float = 1.28) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 3, threshold: float = 1.15) -> List[Dict[str, Any]]:
         if not query.strip():
             return []
+
+        # Filter out greetings, chitchat, and conversational fillers
+        norm_q = re.sub(r'[\W_]+', ' ', query.strip().lower()).strip()
+        if not norm_q or norm_q in _GREETING_WORDS:
+            return []
+        words_only = norm_q.split()
+        if len(words_only) <= 2 and words_only[0] in {'hi', 'hello', 'hey', 'yo', 'sup', 'اهلا', 'أهلا', 'هاي', 'سلام'}:
+            return []
+
         # 1. Dense vector semantic search
         emb = self.embedder.encode(query).tolist()
         vector_hits = self.store.query(emb, k=k * 2, kind="document")
@@ -149,9 +170,17 @@ class DocumentRAG:
         # 2. Sparse keyword matching for cross-lingual terms & exact tokens
         stop_words = {
             'the', 'is', 'in', 'at', 'of', 'on', 'and', 'a', 'an', 'to', 'for', 'with', 'do', 'does',
-            'how', 'what', 'why', 'who', 'when', 'where', 'can', 'you', 'me', 'my', 'it', 'this', 'that',
-            'are', 'was', 'were', 'will', 'would', 'should', 'could', 'have', 'has', 'had',
-            'في', 'من', 'على', 'إلى', 'عن', 'مع', 'هو', 'هي', 'دا', 'دي', 'ده', 'أن', 'ان', 'إن', 'لو', 'هل'
+            'did', 'how', 'what', 'why', 'who', 'when', 'where', 'which', 'can', 'you', 'your', 'me', 'my',
+            'it', 'its', 'this', 'that', 'these', 'those', 'are', 'was', 'were', 'will', 'would', 'should',
+            'could', 'have', 'has', 'had', 'been', 'being', 'get', 'got', 'tell', 'about', 'like',
+            'hi', 'hello', 'hey', 'hiya', 'howdy', 'sup', 'yo', 'bye', 'goodbye', 'thanks', 'thank',
+            'welcome', 'cool', 'nice', 'good', 'great', 'fine', 'okay', 'ok', 'sure', 'yeah', 'yep', 'yes', 'no',
+            'up', 'down', 'out', 'off', 'over', 'under', 'again', 'then', 'once', 'here', 'there', 'all',
+            'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'nor', 'not', 'only',
+            'own', 'same', 'so', 'than', 'too', 'very', 'just', 'now', 'today', 'tonight', 'tomorrow',
+            'day', 'days', 'thing', 'things', 'know', 'think', 'going',
+            'في', 'من', 'على', 'إلى', 'عن', 'مع', 'هو', 'هي', 'دا', 'دي', 'ده', 'أن', 'ان', 'إن', 'لو', 'هل',
+            'ازيك', 'عامل', 'ايه', 'تمام', 'ماشي', 'كويس', 'حلو', 'اهلا', 'أهلا', 'هاي', 'سلام', 'شكرا'
         }
         words = [
             w.strip().lower() for w in re.split(r'[\s,.?!:;،؟]+', query)
@@ -176,14 +205,15 @@ class DocumentRAG:
                         if re.search(r'\b' + re.escape(w) + r'\b', text_lower) or (not w.isascii() and w in text_lower)
                     )
                     if overlap > 0:
-                        kw_dist = max(0.2, 0.95 - (0.22 * overlap))
+                        kw_dist = max(0.2, 0.95 - (0.15 * overlap))
                         keyword_hits.append({
                             "text": r[0],
                             "ts": r[1],
                             "kind": r[2],
                             "distance": kw_dist,
                             "source": r[3],
-                            "id": r[4]
+                            "id": r[4],
+                            "overlap": overlap
                         })
             except Exception:
                 pass
@@ -197,21 +227,39 @@ class DocumentRAG:
             text = kh["text"]
             if text in hit_map:
                 hit_map[text]["distance"] = min(hit_map[text]["distance"], kh["distance"]) * 0.85
-            else:
+            elif kh.get("overlap", 0) >= 2:
+                # Standalone keyword hit only when multiple query terms match
                 hit_map[text] = kh
 
         ranked = [h for h in hit_map.values() if h["distance"] <= threshold]
         ranked.sort(key=lambda x: x["distance"])
         return ranked[:k]
 
-    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.28) -> str:
+    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.15) -> str:
         hits = self.retrieve(query, k=k, threshold=threshold)
         if not hits:
             return ""
         parts = []
+        is_ar = any('\u0600' <= ch <= '\u06FF' for ch in query)
         for i, h in enumerate(hits, 1):
             relevance = 1.0 / (1.0 + h["distance"])
-            parts.append(f"--- Excerpt {i} (Relevance: {relevance:.2f}) ---\n{h['text'].strip()}")
+            raw_text = h['text'].strip()
+            lines = []
+            for line in raw_text.split('\n'):
+                if not is_ar:
+                    # User asked in English: drop Arabic translation sub-bullets and Arabic lines
+                    if re.search(r'^\s*[-*]?\s*\*?بالعامية(?: المصرية)?:\*?', line) or re.search(r'[\u0600-\u06FF]', line):
+                        continue
+                    lines.append(line)
+                else:
+                    # User asked in Arabic: promote Arabic translation lines to primary bullets
+                    if re.search(r'^\s*[-*]?\s*\*?بالعامية(?: المصرية)?:\*?\s*', line):
+                        lines.append(re.sub(r'^\s*[-*]?\s*\*?بالعامية(?: المصرية)?:\*?\s*', '- ', line))
+                    elif re.search(r'[\u0600-\u06FF]', line) or line.startswith(('#', '```', '[', '---')) or not line.strip():
+                        lines.append(line)
+            filtered_text = '\n'.join(lines).strip()
+            if filtered_text:
+                parts.append(f"--- Excerpt {i} (Relevance: {relevance:.2f}) ---\n{filtered_text}")
         return "\n\n".join(parts)
 
     def list_documents(self) -> List[Dict[str, Any]]:
@@ -221,11 +269,11 @@ class DocumentRAG:
         return self.store.delete_by_kind("document")
 
 
-def retrieve_document_context(query: str, store=None, embedder=None, k: int = 2) -> str:
+def retrieve_document_context(query: str, store=None, embedder=None, k: int = 2, threshold: float = 1.15) -> str:
     if not store or not embedder or not query.strip():
         return ""
     try:
-        return DocumentRAG(store=store, embedder=embedder).get_rag_context(query, k=k)
+        return DocumentRAG(store=store, embedder=embedder).get_rag_context(query, k=k, threshold=threshold)
     except Exception as e:
         config.log_debug(f"[rag] retrieval error: {e}")
         return ""

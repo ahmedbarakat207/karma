@@ -102,7 +102,7 @@ def extract_code_blocks(text: str) -> Tuple[str, Optional[str], Optional[str]]:
     return spoken or "Here is the code on screen.", combined_code, primary_lang
 
 
-def clean_companion_reply(text: str) -> str:
+def clean_companion_reply(text: str, user_input: Optional[str] = None) -> str:
     if not text:
         return text
     orig = text
@@ -116,6 +116,17 @@ def clean_companion_reply(text: str) -> str:
         text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
         if text == prev:
             break
+
+    # Strip bilingual / translation leakage
+    is_ar_user = any('\u0600' <= ch <= '\u06FF' for ch in user_input) if user_input else False
+    if is_ar_user:
+        m = re.search(r'\*?بالعامية(?: المصرية)?:\*?\s*(.+)$', text, flags=re.DOTALL | re.IGNORECASE)
+        if m:
+            text = m.group(1).strip()
+    else:
+        text = re.sub(r'\n+\s*\*?بالعامية(?: المصرية)?:\*?.*$', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+        text = re.sub(r'\n+\s*(?:In Egyptian Arabic|Egyptian Arabic|Arabic translation):\s*.*$', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+
     if text and text != orig:
         text = text[0].upper() + text[1:]
     return text
@@ -166,7 +177,7 @@ def _extract_plain_text(raw: str) -> str:
     return clean_companion_reply(_deduplicate_phrase_loops(s))
 
 
-def retrieve_memories(query: str, store, embedder, k: int = 3, threshold: float = 1.25) -> str:
+def retrieve_memories(query: str, store, embedder, k: int = 3, threshold: float = 1.15) -> str:
     if not store or not embedder or not query.strip():
         return ""
     try:

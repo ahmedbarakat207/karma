@@ -57,3 +57,6 @@ Modelfile
 # Node & Frontend
 node_modules/
 package-lock.json
+
+# Scratch & Temporary Experiments
+scratch/

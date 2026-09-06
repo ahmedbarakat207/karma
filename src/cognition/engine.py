@@ -65,7 +65,7 @@ def _strip_thinking_from_stream(token_iter: Generator[str, None, None]) -> Gener
         yield buf
 
 
-def clean_companion_reply(text: str) -> str:
+def clean_companion_reply(text: str, user_input: Optional[str] = None) -> str:
     if not text:
         return text
     orig = text
@@ -79,6 +79,17 @@ def clean_companion_reply(text: str) -> str:
         text = re.sub(r'^(?:however|but),?\s*', '', text, flags=re.IGNORECASE).strip()
         if text == prev:
             break
+
+    # Strip bilingual / translation leakage
+    is_ar_user = any('\u0600' <= ch <= '\u06FF' for ch in user_input) if user_input else False
+    if is_ar_user:
+        m = re.search(r'\*?بالعامية(?: المصرية)?:\*?\s*(.+)$', text, flags=re.DOTALL | re.IGNORECASE)
+        if m:
+            text = m.group(1).strip()
+    else:
+        text = re.sub(r'\n+\s*\*?بالعامية(?: المصرية)?:\*?.*$', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+        text = re.sub(r'\n+\s*(?:In Egyptian Arabic|Egyptian Arabic|Arabic translation):\s*.*$', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+
     if text and text != orig:
         text = text[0].upper() + text[1:]
     return text
