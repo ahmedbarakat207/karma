@@ -1,6 +1,7 @@
 
 import os
 import re
+import threading
 import time
 from typing import Any, Dict, Generator, List, Optional, Union
 
@@ -377,10 +378,116 @@ class GroqEngine:
 
 
 
-def create_engine(use_groq: Optional[bool] = None, model_name: Optional[str] = None) -> Union[LocalEngine, GroqEngine]:
+class SwitchableEngine:
+    """A thread-safe engine wrapper that can dynamically switch between
+    LocalEngine (local GGUF) and GroqEngine (Groq cloud API) at runtime.
+    """
+
+    def __init__(self, use_groq: Optional[bool] = None, groq_model: Optional[str] = None):
+        self._lock = threading.RLock()
+        self._local_engine: Optional[LocalEngine] = None
+        self._groq_engine: Optional[GroqEngine] = None
+        init_groq = getattr(config, "USE_GROQ", False) if use_groq is None else bool(use_groq)
+        self._active_provider = "groq" if init_groq else "local"
+        raw = groq_model or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
+        self._groq_model = f"openai/{raw}" if raw in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else raw
+
+    @property
+    def active_provider(self) -> str:
+        with self._lock:
+            return self._active_provider
+
+    @property
+    def is_groq(self) -> bool:
+        with self._lock:
+            return self._active_provider == "groq"
+
+    @property
+    def active_model_name(self) -> str:
+        with self._lock:
+            if self._active_provider == "groq":
+                return getattr(self._groq_engine, "model", getattr(config, "GROQ_MODEL", self._groq_model))
+            return os.path.basename(getattr(config, "MODEL_PATH", "model.gguf") or "model.gguf")
+
+    def _get_engine(self, provider: str) -> Union[LocalEngine, GroqEngine]:
+        if provider == "groq":
+            if self._groq_engine is None:
+                current_model = self._groq_model or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
+                self._groq_engine = GroqEngine(model_name=current_model)
+            return self._groq_engine
+        else:
+            if self._local_engine is None:
+                self._local_engine = LocalEngine()
+            return self._local_engine
+
+    def switch(self, provider: str, groq_model: Optional[str] = None) -> None:
+        with self._lock:
+            if provider not in ("groq", "local"):
+                raise ValueError(f"Invalid engine provider: {provider}")
+            if groq_model:
+                val = groq_model.strip()
+                normalized = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
+                self._groq_model = normalized
+                config.GROQ_MODEL = normalized
+            config.USE_GROQ = (provider == "groq")
+            if provider == "groq":
+                target_model = self._groq_model or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
+                if self._groq_engine is None or getattr(self._groq_engine, "model", "") != target_model:
+                    self._groq_engine = GroqEngine(model_name=target_model)
+            elif provider == "local":
+                if self._local_engine is None:
+                    self._local_engine = LocalEngine()
+            self._active_provider = provider
+
+    def sync_with_config(self) -> None:
+        with self._lock:
+            target_provider = "groq" if getattr(config, "USE_GROQ", False) else "local"
+            target_model = getattr(config, "GROQ_MODEL", self._groq_model)
+            if target_provider != self._active_provider or (target_provider == "groq" and getattr(self._groq_engine, "model", "") != target_model):
+                self.switch(target_provider, groq_model=target_model)
+
+    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
+             temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
+        with self._lock:
+            eng = self._get_engine(self._active_provider)
+        return eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                        temperature=temperature, history=history)
+
+    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
+                    temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
+        with self._lock:
+            eng = self._get_engine(self._active_provider)
+        yield from eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                   temperature=temperature, history=history)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._local_engine is not None:
+                try:
+                    self._local_engine.close()
+                except Exception:
+                    pass
+                self._local_engine = None
+            if self._groq_engine is not None:
+                try:
+                    self._groq_engine.close()
+                except Exception:
+                    pass
+                self._groq_engine = None
+
+
+def create_switchable_engine(use_groq: Optional[bool] = None, groq_model: Optional[str] = None) -> SwitchableEngine:
+    return SwitchableEngine(use_groq=use_groq, groq_model=groq_model)
+
+
+def create_engine(use_groq: Optional[bool] = None, model_name: Optional[str] = None,
+                  switchable: bool = False) -> Union[LocalEngine, GroqEngine, SwitchableEngine]:
+    if switchable:
+        return create_switchable_engine(use_groq=use_groq, groq_model=model_name)
     should_use_groq = getattr(config, "USE_GROQ", False) if use_groq is None else use_groq
     if should_use_groq:
         model = model_name or getattr(config, "GROQ_MODEL", "gpt-oss-20b")
         return GroqEngine(model_name=model)
     return LocalEngine()
+
 

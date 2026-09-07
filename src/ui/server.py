@@ -48,6 +48,12 @@ def _get_current_state_payload() -> Dict[str, Any]:
     norm_gaze_x = (internal_state.gaze_x + 1.0) / 2.0
     norm_gaze_y = (internal_state.gaze_y + 1.0) / 2.0
 
+    is_groq = bool(getattr(config, "USE_GROQ", False))
+    provider = "groq" if is_groq else "local"
+    local_path = getattr(config, "MODEL_PATH", "models/model.gguf")
+    local_file = os.path.basename(local_path) if local_path else "model.gguf"
+    active_name = getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b") if is_groq else local_file
+
     return {
         "type": "state_update",
         "mood": internal_state.mood,
@@ -63,6 +69,14 @@ def _get_current_state_payload() -> Dict[str, Any]:
         "kiosk_view": kiosk_manager.active_view,
         "telemetry": telemetry.snapshot(),
         "net": _cached_net(),
+        "model": {
+            "provider": provider,
+            "name": active_name,
+            "use_groq": is_groq,
+            "groq_model": getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b"),
+            "local_model": local_file,
+            "has_groq_key": bool(os.environ.get("GROQ_API_KEY")),
+        },
     }
 
 
@@ -353,12 +367,14 @@ _load_long_tokens()
 _dash_password = ""
 _dash_password_generated = False
 
-_runtime: Dict[str, Any] = {"store": None, "embedder": None}
+_runtime: Dict[str, Any] = {"store": None, "embedder": None, "engine": None}
 
 
-def set_runtime(store: Any = None, embedder: Any = None) -> None:
+def set_runtime(store: Any = None, embedder: Any = None, engine: Any = None) -> None:
     _runtime["store"] = store
     _runtime["embedder"] = embedder
+    if engine is not None:
+        _runtime["engine"] = engine
 
 
 def _get_store():
@@ -500,6 +516,8 @@ EDITABLE_CONFIG: Dict[str, tuple] = {
     "THINK_INTERVAL_SECONDS": (int, 2, 120),
     "ENABLE_YOLO": (bool, None, None),
     "VAD_SILENCE_TIMEOUT": (float, 0.1, 2.0),
+    "USE_GROQ": (bool, None, None),
+    "GROQ_MODEL": (str, 1, 120),
 }
 
 CONFIG_OVERRIDES_FILE = os.path.join(config.BASE_DIR, "data", "config_overrides.json")
@@ -514,6 +532,13 @@ def _coerce(key: str, value: Any) -> Any:
             v = value.strip().lower() in ("1", "true", "yes", "on")
         else:
             v = bool(value)
+        return v
+    if kind is str:
+        v = str(value).strip()
+        if lo is not None and len(v) < lo:
+            raise ValueError(f"{key} length below minimum {lo}")
+        if hi is not None and len(v) > hi:
+            raise ValueError(f"{key} length above maximum {hi}")
         return v
     v = kind(value)
     if lo is not None and v < lo:
@@ -860,8 +885,114 @@ async def _api_config_put(request: web.Request) -> web.Response:
         persist_overrides(current)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+    if "USE_GROQ" in updated or "GROQ_MODEL" in updated:
+        engine = _runtime.get("engine")
+        if engine and hasattr(engine, "sync_with_config"):
+            try:
+                engine.sync_with_config()
+            except Exception as e:
+                config.log_debug(f"[dash] engine sync note: {e}")
+        broadcast_state_threadsafe()
     events.post("system", f"settings updated: {', '.join(sorted(updated))}")
     return web.json_response({"ok": True, "updated": updated})
+
+
+AVAILABLE_GROQ_MODELS: List[str] = [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+]
+
+
+@require_auth
+async def _api_model_get(request: web.Request) -> web.Response:
+    is_groq = bool(getattr(config, "USE_GROQ", False))
+    provider = "groq" if is_groq else "local"
+    groq_model = getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
+    local_path = getattr(config, "MODEL_PATH", "models/model.gguf")
+    local_file = os.path.basename(local_path) if local_path else "model.gguf"
+    active_name = groq_model if is_groq else local_file
+
+    return web.json_response({
+        "provider": provider,
+        "use_groq": is_groq,
+        "active_model": active_name,
+        "groq_model": groq_model,
+        "local_model": local_file,
+        "has_groq_key": bool(os.environ.get("GROQ_API_KEY")),
+        "available_groq_models": AVAILABLE_GROQ_MODELS,
+    })
+
+
+@require_auth
+async def _api_model_post(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"error": "expected an object"}, status=400)
+
+    provider = body.get("provider")
+    if provider is None:
+        if "use_groq" in body:
+            provider = "groq" if body.get("use_groq") else "local"
+        else:
+            return web.json_response({"error": "provider must be 'groq' or 'local'"}, status=400)
+    provider = str(provider).strip().lower()
+    if provider not in ("groq", "local"):
+        return web.json_response({"error": "provider must be 'groq' or 'local'"}, status=400)
+
+    new_key = body.get("api_key")
+    if new_key is not None and isinstance(new_key, str) and new_key.strip():
+        os.environ["GROQ_API_KEY"] = new_key.strip()
+
+    raw_model = body.get("groq_model")
+    if raw_model and isinstance(raw_model, str) and raw_model.strip():
+        val = raw_model.strip()
+        config.GROQ_MODEL = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
+
+    config.USE_GROQ = (provider == "groq")
+
+    engine = _runtime.get("engine")
+    switch_warning = None
+    if engine and hasattr(engine, "switch"):
+        try:
+            engine.switch(provider, groq_model=config.GROQ_MODEL)
+        except Exception as e:
+            switch_warning = str(e)
+            config.log_debug(f"[dash] engine switch warning: {e}")
+
+    try:
+        current: Dict[str, Any] = {}
+        try:
+            with open(CONFIG_OVERRIDES_FILE, encoding="utf-8") as f:
+                current = json.load(f)
+        except Exception:
+            pass
+        current["USE_GROQ"] = config.USE_GROQ
+        current["GROQ_MODEL"] = config.GROQ_MODEL
+        persist_overrides(current)
+    except Exception as e:
+        config.log_debug(f"[dash] error saving config overrides: {e}")
+
+    active_label = config.GROQ_MODEL if provider == "groq" else "local llama_cpp"
+    events.post("system", f"cognition engine switched to {provider.upper()} ({active_label})")
+    broadcast_state_threadsafe()
+
+    resp = {
+        "ok": True,
+        "provider": provider,
+        "use_groq": config.USE_GROQ,
+        "groq_model": config.GROQ_MODEL,
+        "active_model": active_label,
+        "has_groq_key": bool(os.environ.get("GROQ_API_KEY")),
+    }
+    if switch_warning:
+        resp["warning"] = switch_warning
+    return web.json_response(resp)
 
 
 @require_auth
@@ -1031,6 +1162,8 @@ def _build_dash_app() -> web.Application:
     app.router.add_put("/api/prompt", _api_prompt_put)
     app.router.add_get("/api/config", _api_config_get)
     app.router.add_put("/api/config", _api_config_put)
+    app.router.add_get("/api/model", _api_model_get)
+    app.router.add_post("/api/model", _api_model_post)
     app.router.add_get("/api/live", _dash_live)
     app.router.add_get("/api/shell", _dash_shell)
     return app

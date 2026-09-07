@@ -17,7 +17,7 @@ with SilenceStderrFD():
     from sentence_transformers import SentenceTransformer
     from src import config
     from src.audio.pipeline import run_audio
-    from src.cognition.engine import create_engine
+    from src.cognition.engine import create_engine, create_switchable_engine
     from src.cognition.interaction import run_interaction_response
     from src.cognition.think import think_immediately, think_quietly
     from src.hardware.drive import drive_base
@@ -105,7 +105,7 @@ def main():
     try:
         engine_name = f"Groq ({getattr(config, 'GROQ_MODEL', 'gpt-oss-20b')})" if getattr(config, "USE_GROQ", False) else "local llama_cpp"
         config.log_debug(f"[main] loading LLM engine: {engine_name}...")
-        engine = create_engine()
+        engine = create_switchable_engine()
     except Exception as e:
         config.log_debug(f"[main] engine load note: {e}")
 
@@ -122,7 +122,7 @@ def main():
 
     try:
         from src.ui.server import set_runtime
-        set_runtime(store, embedder)
+        set_runtime(store, embedder, engine=engine)
     except Exception as e:
         config.log_debug(f"[main] dashboard runtime note: {e}")
 

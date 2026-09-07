@@ -137,12 +137,34 @@ img.cam{width:100%;display:block;background:#000}
 ::-webkit-scrollbar-thumb{background:var(--line-2)}
 ::-webkit-scrollbar-thumb:hover{background:var(--blue)}
 ::selection{background:var(--blue);color:#00101f}
+
+/* model switcher */
+.os-model-pill{border-left-color:var(--blue);margin-left:10px}
+.os-model-pill.is-groq{border-left-color:#eab308}
+.os-model-tag{font-family:var(--font-m);font-size:0.55rem;font-weight:700;letter-spacing:0.14em;padding:1px 5px;background:var(--line-2);color:var(--blue-ice)}
+.os-model-pill.is-groq .os-model-tag{background:#3d2e00;color:#fde047}
+.os-quick-switch-btn{background:transparent;border:1px solid var(--line-2);color:var(--mut);font-family:var(--font-m);font-size:0.54rem;font-weight:600;letter-spacing:0.1em;padding:2px 7px;cursor:pointer;margin-left:4px}
+.os-quick-switch-btn:hover{background:var(--blue);color:#00101f;border-color:var(--blue)}
+
+.model-choice-btns{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line-2);background:#000}
+.model-tab-btn{background:transparent;border:none;padding:12px 14px;color:var(--mut);cursor:pointer;text-align:left;font-family:var(--font-d);display:flex;flex-direction:column;gap:3px}
+.model-tab-btn + .model-tab-btn{border-left:1px solid var(--line-2)}
+.model-tab-btn:hover{background:var(--panel);color:var(--ink)}
+.model-tab-btn.on{background:var(--blue);color:#00101f}
+.model-tab-btn.on .m-tab-title{color:#00101f;font-weight:700}
+.model-tab-btn.on .m-tab-sub{color:#00101f;opacity:0.8}
+.m-tab-title{font-family:var(--font-m);font-size:0.75rem;font-weight:700;letter-spacing:0.12em}
+.m-tab-sub{font-family:var(--font-m);font-size:0.6rem;color:var(--faint);letter-spacing:0.04em}
+.model-settings-box{border:1px solid var(--line);border-top:none;background:#020406;padding:12px 14px}
+
 @media (max-width:640px){
   .telemetry-grid{grid-template-columns:1fr}
   .telem-block:nth-child(odd){border-right:none}
   .telem-block:nth-child(n+2){border-top:1px solid var(--line)}
   .cfg{grid-template-columns:1fr}
   .index-row{grid-template-columns:1fr;gap:6px}
+  .model-choice-btns{grid-template-columns:1fr}
+  .model-tab-btn + .model-tab-btn{border-left:none;border-top:1px solid var(--line-2)}
 }
 </style>
 </head>
@@ -154,6 +176,11 @@ img.cam{width:100%;display:block;background:#000}
   </div>
   <div class="hud-center">
     <div class="os-status-pill"><span class="os-pulse-dot"></span><span class="os-status-text" id="h-mood">–</span></div>
+    <div class="os-status-pill os-model-pill" id="h-model-pill" title="Current cognition model backend">
+      <span class="os-model-tag" id="h-model-tag">LOCAL</span>
+      <span class="os-status-text" id="h-model-name">llama_cpp</span>
+      <button type="button" class="os-quick-switch-btn" id="h-quick-switch" title="Quick toggle between Local and Groq">TOGGLE</button>
+    </div>
   </div>
   <div class="hud-right">
     <div class="telemetry-compact"><span class="telem-key">LINK</span><span class="telem-val is-live" id="h-url">–</span></div>
@@ -178,6 +205,59 @@ img.cam{width:100%;display:block;background:#000}
   <main>
     <div data-pane="status">
       <div class="pane-head"><div><div class="pane-eyebrow">01 / STATE — LIVE</div><h2>Status</h2></div></div>
+      <section class="card" id="model-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3>Cognition Engine / Model Switcher</h3>
+          <span class="mini-tag" id="model-active-badge">LOCAL · LLAMA_CPP</span>
+        </div>
+        <div class="model-choice-btns">
+          <button type="button" class="model-tab-btn on" id="btn-tab-local">
+            <span class="m-tab-title">LOCAL MODEL</span>
+            <span class="m-tab-sub">Offline GGUF · llama_cpp</span>
+          </button>
+          <button type="button" class="model-tab-btn" id="btn-tab-groq">
+            <span class="m-tab-title">GROQ CLOUD</span>
+            <span class="m-tab-sub">High Speed · Cloud API</span>
+          </button>
+        </div>
+
+        <div class="model-settings-box">
+          <div id="box-groq" class="hidden">
+            <div class="cfg">
+              <label>GROQ MODEL</label>
+              <select id="sel-groq-model" style="width:100%">
+                <option value="openai/gpt-oss-20b">gpt-oss-20b (Default / Recommended)</option>
+                <option value="openai/gpt-oss-120b">gpt-oss-120b (High Capacity)</option>
+                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+                <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Fastest)</option>
+                <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+                <option value="custom">Custom Model Name…</option>
+              </select>
+            </div>
+            <div class="cfg hidden" id="row-custom-groq">
+              <label>CUSTOM MODEL NAME</label>
+              <input type="text" id="inp-custom-groq" placeholder="e.g. llama-3.3-70b-specdec">
+            </div>
+            <div class="cfg">
+              <label>GROQ API KEY <span id="groq-key-status" class="mini-tag" style="margin-left:6px">CHECKING…</span></label>
+              <input type="password" id="inp-groq-key" placeholder="Enter GROQ_API_KEY (leave blank if set in env)">
+            </div>
+          </div>
+
+          <div id="box-local">
+            <div class="cfg">
+              <label>ACTIVE LOCAL GGUF</label>
+              <div style="font-family:var(--font-m);font-size:0.72rem;color:var(--blue-ice);overflow-wrap:anywhere" id="lbl-local-file">models/model.gguf</div>
+            </div>
+            <div class="hint" style="margin-top:8px">Runs entirely on device using llama_cpp. No cloud account or external connectivity needed.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:14px">
+          <button type="button" class="hw-btn" id="btn-apply-model">APPLY ENGINE SWITCH</button>
+          <span class="msg" id="model-msg" style="margin-top:0;margin-left:14px"></span>
+        </div>
+      </section>
       <div class="telemetry-grid" id="tele-grid"></div>
       <div class="hw-row"><div class="hw-label">LAST TRANSMISSION</div><div class="hw-text" id="last-speech">–</div></div>
     </div>
@@ -265,6 +345,7 @@ const DEMO = location.protocol === 'file:';
 const DEMO_STATE = {
   mood: 'playful', emotion: 'curious', speaking: false,
   speech: 'Rain on the windows, jazz on the speaker. Good evening to be inside.',
+  model: {provider: 'local', name: 'model.gguf', use_groq: false, groq_model: 'openai/gpt-oss-20b', local_model: 'model.gguf', has_groq_key: true},
   net: {hostname: 'karma', ips: ['192.168.1.42'], dash_port: 8080, dash_url: 'http://192.168.1.42:8080'},
   telemetry: {cpu_pct: 23.4, cpu_temp_c: 48.5, throttled: 'clean', mem_used_pct: 41.0,
     disk_used_pct: 62.0, load_1: 0.82, uptime_s: 3723,
@@ -285,7 +366,7 @@ const DEMO_DOCS = [
   {source: 'hardware_manual.pdf', count: 14},
 ];
 const DEMO_PROMPT = 'You are Karma, a witty, chill friend hanging out in the room. (demo text — the real prompt lives on the robot.)';
-const DEMO_CONFIG = {DEFAULT_TEMPERATURE: 0.7, DEFAULT_TOP_P: 0.9, DEFAULT_REPEAT_PENALTY: 1.05, SPEAK_THOUGHTS: false, THINK_INTERVAL_SECONDS: 5, ENABLE_YOLO: true, VAD_SILENCE_TIMEOUT: 0.35};
+const DEMO_CONFIG = {DEFAULT_TEMPERATURE: 0.7, DEFAULT_TOP_P: 0.9, DEFAULT_REPEAT_PENALTY: 1.05, SPEAK_THOUGHTS: false, THINK_INTERVAL_SECONDS: 5, ENABLE_YOLO: true, VAD_SILENCE_TIMEOUT: 0.35, USE_GROQ: false, GROQ_MODEL: 'openai/gpt-oss-20b'};
 const DEMO_CAM_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360"><rect width="480" height="360" fill="#000"/><rect x="8" y="8" width="464" height="344" fill="none" stroke="#1e3a55"/><text x="24" y="180" font-family="monospace" font-size="16" fill="#2e9bff">NO SIGNAL — DEMO</text><text x="24" y="204" font-family="monospace" font-size="11" fill="#3d5a76">LIVE OPTICS NEED A CONNECTION</text></svg>');
 function demoMsg(id, text) { const el = $(id); if (el) el.textContent = text || 'Demo mode — connect to the robot to change anything.'; }
 
@@ -302,8 +383,8 @@ function showLogin() {
 function showApp() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   buildTabs(); showPane('status');
-  if (DEMO) { $('btn-logout').style.display = 'none'; $('h-mood').textContent = 'DEMO'; return; }
-  connectLive(); refreshAll();
+  if (DEMO) { $('btn-logout').style.display = 'none'; $('h-mood').textContent = 'DEMO'; loadModel(); return; }
+  connectLive(); refreshAll(); loadModel();
 }
 $('login-go').onclick = async () => {
   const r = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -335,7 +416,7 @@ function showPane(key) {
   if (key === 'prompt') loadPrompt();
   if (key === 'settings') loadConfig();
   if (key === 'shell') openShell(); // shell survives tab switches; closed on LOCK
-  if (key === 'status') loadState();
+  if (key === 'status') { loadState(); loadModel(); }
 }
 function fmtTime(ts) {
   const d = new Date(ts * 1000);
@@ -354,10 +435,26 @@ function renderState(s) {
   const net = s.net || {};
   $('h-url').textContent = net.dash_url || location.host;
   $('last-speech').textContent = s.speech || '–';
+
+  const m = s.model || {};
+  const isGroq = m.provider === 'groq' || m.use_groq === true;
+  const pill = $('h-model-pill');
+  if (pill) {
+    pill.classList.toggle('is-groq', isGroq);
+    $('h-model-tag').textContent = isGroq ? 'GROQ' : 'LOCAL';
+    $('h-model-name').textContent = isGroq ? (m.groq_model || 'cloud') : (m.local_model || 'llama_cpp');
+  }
+  const badge = $('model-active-badge');
+  if (badge) {
+    badge.textContent = isGroq ? `GROQ · ${m.groq_model || 'cloud'}` : `LOCAL · ${m.local_model || 'llama_cpp'}`;
+    badge.style.color = isGroq ? '#fde047' : 'var(--blue-ice)';
+  }
+
   const t = s.telemetry || {};
   const llm = t.llm || {};
   const cells = [
     ['Mood', esc(s.emotion || s.mood || '–')],
+    ['Engine', esc(isGroq ? 'GROQ (' + (m.groq_model || 'cloud') + ')' : 'LOCAL (GGUF)')],
     ['CPU', t.cpu_pct == null ? '–' : t.cpu_pct + '%'],
     ['Temp', t.cpu_temp_c == null ? '–' : t.cpu_temp_c + '°C'],
     ['Throttled', esc(t.throttled || '–')],
@@ -545,8 +642,115 @@ $('cfg-save').onclick = async () => {
     const r = await api('/api/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     const d = await r.json();
     $('cfg-msg').textContent = r.ok ? ('Saved: ' + Object.keys(d.updated).join(', ')) : ('Error: ' + d.error);
-    if (r.ok) loadConfig();
+    if (r.ok) { loadConfig(); loadModel(); }
   } catch (e) {}
+};
+
+// ---- model switcher ----
+let currentProvider = 'local';
+function selectProviderTab(provider) {
+  currentProvider = provider;
+  const isGroq = provider === 'groq';
+  $('btn-tab-local').classList.toggle('on', !isGroq);
+  $('btn-tab-groq').classList.toggle('on', isGroq);
+  $('box-local').classList.toggle('hidden', isGroq);
+  $('box-groq').classList.toggle('hidden', !isGroq);
+}
+
+$('btn-tab-local').onclick = () => selectProviderTab('local');
+$('btn-tab-groq').onclick = () => selectProviderTab('groq');
+
+$('sel-groq-model').onchange = () => {
+  const isCustom = $('sel-groq-model').value === 'custom';
+  $('row-custom-groq').classList.toggle('hidden', !isCustom);
+};
+
+async function loadModel() {
+  if (DEMO) {
+    const m = DEMO_STATE.model || {};
+    selectProviderTab(m.provider || 'local');
+    $('lbl-local-file').textContent = m.local_model || 'model.gguf';
+    $('groq-key-status').textContent = m.has_groq_key ? 'KEY CONFIGURED' : 'NO KEY';
+    $('groq-key-status').style.color = m.has_groq_key ? '#4ade80' : 'var(--danger)';
+    return;
+  }
+  try {
+    const d = await (await api('/api/model')).json();
+    currentProvider = d.provider || 'local';
+    selectProviderTab(currentProvider);
+    $('lbl-local-file').textContent = d.local_model || 'model.gguf';
+    const sel = $('sel-groq-model');
+    const matched = Array.from(sel.options).some(o => o.value === d.groq_model);
+    if (matched) {
+      sel.value = d.groq_model;
+      $('row-custom-groq').classList.add('hidden');
+    } else {
+      sel.value = 'custom';
+      $('inp-custom-groq').value = d.groq_model || '';
+      $('row-custom-groq').classList.remove('hidden');
+    }
+    const keyBadge = $('groq-key-status');
+    if (d.has_groq_key) {
+      keyBadge.textContent = 'KEY CONFIGURED';
+      keyBadge.style.color = '#4ade80';
+    } else {
+      keyBadge.textContent = 'NO KEY DETECTED';
+      keyBadge.style.color = 'var(--danger)';
+    }
+  } catch (e) {}
+}
+
+async function applyModelSwitch(providerOverride) {
+  const targetProvider = providerOverride || currentProvider;
+  let groqModel = $('sel-groq-model').value;
+  if (groqModel === 'custom') {
+    groqModel = ($('inp-custom-groq').value || '').trim() || 'openai/gpt-oss-20b';
+  }
+  const apiKey = ($('inp-groq-key').value || '').trim();
+
+  if (DEMO) {
+    DEMO_STATE.model.provider = targetProvider;
+    DEMO_STATE.model.use_groq = (targetProvider === 'groq');
+    if (targetProvider === 'groq') DEMO_STATE.model.groq_model = groqModel;
+    renderState(DEMO_STATE);
+    selectProviderTab(targetProvider);
+    demoMsg('model-msg', `Demo mode — switched to ${targetProvider.toUpperCase()}`);
+    return;
+  }
+
+  $('model-msg').textContent = 'Switching engine…';
+  try {
+    const body = {provider: targetProvider};
+    if (targetProvider === 'groq') {
+      body.groq_model = groqModel;
+      if (apiKey) body.api_key = apiKey;
+    }
+    const r = await api('/api/model', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (r.ok) {
+      $('inp-groq-key').value = '';
+      $('model-msg').textContent = `Switched to ${d.provider.toUpperCase()} (${d.active_model})` + (d.warning ? ` [Note: ${d.warning}]` : '');
+      loadModel();
+      loadState();
+    } else {
+      $('model-msg').textContent = 'Error: ' + (d.error || r.status);
+    }
+  } catch (e) {
+    $('model-msg').textContent = 'Switch request failed';
+  }
+}
+
+$('btn-apply-model').onclick = () => applyModelSwitch();
+
+$('h-quick-switch').onclick = () => {
+  const isGroq = lastState && lastState.model && lastState.model.provider === 'groq';
+  const next = isGroq ? 'local' : 'groq';
+  selectProviderTab(next);
+  applyModelSwitch(next);
 };
 
 // ---- shell ----
@@ -838,7 +1042,7 @@ function termScroll(d) {
   el.scrollTop = (SH.viewTop == null) ? el.scrollHeight : 0;
 }
 
-async function refreshAll() { loadState(); }
+async function refreshAll() { loadState(); loadModel(); }
 // boot: a local file goes straight to the demo (no login — there is
 // nothing real here to protect, and no request ever leaves the page).
 // Over http(s) an existing session skips the login, otherwise it shows.
