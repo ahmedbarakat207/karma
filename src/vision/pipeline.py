@@ -122,6 +122,8 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 cap = test_cap
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # Pi 4: drop stale frames immediately
+                cap.set(cv2.CAP_PROP_FPS, 15)          # Pi 4: cap camera FPS to ease USB bus
             else:
                 test_cap.release()
     except Exception as e:
@@ -180,6 +182,13 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
     frame_count = 0
     display_fps = 30.0
     last_seen_labels: Set[str] = set()
+    # Pi 4 frame-skip counters: run heavy detectors only on every Nth frame.
+    _frame_idx = 0
+    _YOLO_EVERY_N = 3   # YOLO on 1-in-3 frames  (~10 Hz effective detection at 30 fps)
+    _FACE_EVERY_N = 2   # face tracker on 1-in-2  (~15 Hz)
+    # Cache last detector outputs so the rest of the pipeline works on skipped frames.
+    _last_bboxes: list = []
+    _last_face_result = ([], set(), None, [])
 
     try:
         while not stop_event.is_set():
@@ -201,31 +210,43 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     frame_count = 0
                     fps_time = now
 
+                _frame_idx += 1
                 obj_labels, positions, bboxes = ([], {}, [])
-                if object_detector is not None:
-                    obj_labels, positions, bboxes = object_detector.process(frame, memory)
+                if object_detector is not None and _frame_idx % _YOLO_EVERY_N == 0:
+                    _last_bboxes = list(object_detector.process(frame, memory)[2])
+                    obj_labels = [lbl for lbl, _, _ in _last_bboxes]
+                    bboxes = _last_bboxes
+                else:
+                    bboxes = _last_bboxes
 
                 face_labels, recognized_people, primary_face, all_faces = ([], set(), None, [])
-                if face_tracker is not None:
+                if face_tracker is not None and _frame_idx % _FACE_EVERY_N == 0:
                     face_result = face_tracker.process(frame, memory)
-                    # Backward compat with 3-tuple callers/tests.
+                    # Normalise to 4-tuple and cache for skipped frames.
                     if len(face_result) == 4:
-                        face_labels, recognized_people, primary_face, all_faces = face_result
+                        _last_face_result = face_result
                     else:
-                        face_labels, recognized_people, primary_face = face_result
-                        all_faces = [primary_face] if primary_face else []
-                    recognized_people = set(recognized_people or [])
-                    if recognized_people:
-                        _last_presence_names = set(recognized_people)
-                        _last_presence_time = now
-                        memory.set_recognized_people(recognized_people)
-                    elif primary_face is None and all_faces == []:
-                        # No face at all: clear after grace period, else keep last.
-                        if now - _last_presence_time >= PRESENCE_CLEAR_SECONDS:
-                            if _last_presence_names:
-                                _last_presence_names = set()
-                            memory.set_recognized_people(set())
-                    # else: face visible but throttled frame -> keep previous presence
+                        _last_face_result = (face_result[0], face_result[1], face_result[2],
+                                             [face_result[2]] if face_result[2] else [])
+                # Unpack cached (or freshly computed) result — same path for both cases.
+                face_result = _last_face_result
+                if len(face_result) == 4:
+                    face_labels, recognized_people, primary_face, all_faces = face_result
+                else:
+                    face_labels, recognized_people, primary_face = face_result
+                    all_faces = [primary_face] if primary_face else []
+                recognized_people = set(recognized_people or [])
+                if recognized_people:
+                    _last_presence_names = set(recognized_people)
+                    _last_presence_time = now
+                    memory.set_recognized_people(recognized_people)
+                elif primary_face is None and all_faces == []:
+                    # No face at all: clear after grace period, else keep last.
+                    if now - _last_presence_time >= PRESENCE_CLEAR_SECONDS:
+                        if _last_presence_names:
+                            _last_presence_names = set()
+                        memory.set_recognized_people(set())
+                # else: face visible but throttled frame -> keep previous presence
 
                 # YOLO `person` + face names -> `Sara` boxes. The HUD, memory,
                 # and prompt context then see names instead of `person`.

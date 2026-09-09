@@ -16,6 +16,13 @@ class MemoryStore:
     def __init__(self, db_path: str = config.MEMORY_DB_PATH, dim: int = config.EMBED_DIM):
         self.dim = dim
         self.db = sqlite3.connect(db_path, check_same_thread=False)
+        # Pi 4 / SD-card optimisation: WAL mode avoids full fsync per write,
+        # NORMAL sync is safe on power-loss because WAL already protects integrity,
+        # and an 8 MB page cache keeps hot rows off the SD card entirely.
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA synchronous=NORMAL")
+        self.db.execute("PRAGMA cache_size=-8000")   # 8 MB in-process page cache
+        self.db.execute("PRAGMA temp_store=MEMORY")
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)

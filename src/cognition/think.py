@@ -45,13 +45,13 @@ def think_immediately(memory, engine, tts, store, embedder, urgency: str = "HIGH
         if should_speak and hasattr(engine, "stream_chat"):
             collected = []
             def collecting_stream():
-                for tok in engine.stream_chat(_THINK_PROMPT, prompt, max_tokens=150):
+                for tok in engine.stream_chat(_THINK_PROMPT, prompt, max_tokens=90):
                     collected.append(tok)
                     yield tok
             prosody_stream(collecting_stream(), tts)
             raw = "".join(collected).strip()
         else:
-            raw = engine.chat(_THINK_PROMPT, prompt, max_tokens=150)
+            raw = engine.chat(_THINK_PROMPT, prompt, max_tokens=90)
 
         thought = _extract_plain_text(raw.strip())
         if not thought or thought.lower() == "[silence]" or ("silence" in thought.lower() and len(thought) < 12):
@@ -91,7 +91,7 @@ def think_quietly(memory, engine, store, embedder) -> None:
     )
 
     try:
-        raw = engine.chat(_THINK_PROMPT, prompt, max_tokens=150)
+        raw = engine.chat(_THINK_PROMPT, prompt, max_tokens=90)  # Pi 4: single JSON line never needs 150 tok
         thought = _extract_plain_text(raw.strip())
         if not thought or thought.lower() == "[silence]" or ("silence" in thought.lower() and len(thought) < 12):
             _events.post("thought", "[silence]", {"urgency": "idle"})

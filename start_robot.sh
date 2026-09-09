@@ -11,10 +11,16 @@ unclutter -idle 0.1 -root &
 openbox &
 
 while true; do
+    # Pi 4 optimisation: slight priority boost + explicit CPU affinity so the
+    # OS never migrates the LLM thread mid-inference. Falls back if taskset absent.
+    RUNNER=""
+    command -v taskset &>/dev/null && RUNNER="taskset -c 0-3 "
+    RUNNER="nice -n -5 ${RUNNER}"
+
     if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then
-        "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+        ${RUNNER}"$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
     else
-        python3 "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+        ${RUNNER}python3 "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
     fi
     sleep 3
 done

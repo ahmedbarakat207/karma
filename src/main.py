@@ -40,8 +40,8 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
             elif memory.is_user_speaking() or memory.unhandled_speech(0):
                 run_interaction_response(memory, engine, tts, store=store, embedder=embedder)
             else:
-                time.sleep(0.5)
-                if random.random() < 0.05:
+                time.sleep(2.0)            # Pi 4: 2 s poll saves ~75 % idle CPU wakeups
+                if random.random() < 0.017:  # ≈ 1 quiet thought/min (1/60 s ÷ 2 s poll)
                     think_quietly(memory, engine, store, embedder)
         except Exception as e:
             config.log_debug(f"[main] cognition loop error: {e}")
