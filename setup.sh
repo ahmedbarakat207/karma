@@ -459,28 +459,52 @@ EOF
 chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config"
 
 START_SCRIPT="$SCRIPT_DIR/start_robot.sh"
-cat << 'EOF' > "$START_SCRIPT"
+cat << 'STARTEOF' > "$START_SCRIPT"
 #!/usr/bin/env bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-xset s off 2>/dev/null || true
-xset -dpms 2>/dev/null || true
+# ── Display: make sure X is actually ready before we connect ─────────────────
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+
+# Wait up to 15 s for the X server to accept connections
+_x_wait=0
+until xset q &>/dev/null || [ $_x_wait -ge 15 ]; do
+    sleep 1; _x_wait=$((_x_wait + 1))
+done
+
+xset s off    2>/dev/null || true
+xset -dpms    2>/dev/null || true
 xset s noblank 2>/dev/null || true
 
 unclutter -idle 0.1 -root &
 
 openbox &
 
+# ── Runner: nice -n -5 needs CAP_SYS_NICE; test first ───────────────────────
+PYTHON_BIN=""
+if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then
+    PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python3"
+else
+    PYTHON_BIN="$(command -v python3)"
+fi
+
+_nice_ok=0
+nice -n -5 true 2>/dev/null && _nice_ok=1
+
 while true; do
-    if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then
-        "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+    if [ $_nice_ok -eq 1 ] && command -v taskset &>/dev/null; then
+        nice -n -5 taskset -c 0-3 "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+    elif [ $_nice_ok -eq 1 ]; then
+        nice -n -5 "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
     else
-        python3 "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
+        "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
     fi
+    echo "[start_robot] process exited, restarting in 3s…" >> "$SCRIPT_DIR/karma.log"
     sleep 3
 done
-EOF
+STARTEOF
 chmod +x "$START_SCRIPT"
 chown "$TARGET_USER:$TARGET_USER" "$START_SCRIPT"
 
@@ -499,14 +523,11 @@ Conflicts=getty@tty1.service
 Type=simple
 User=$TARGET_USER
 WorkingDirectory=$SCRIPT_DIR
+EnvironmentFile=-$SCRIPT_DIR/.env
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$TARGET_HOME/.Xauthority
 Environment=PYTHONUNBUFFERED=1
-Environment=CTX_SIZE=4096
-Environment=N_THREADS=2
-Environment=N_BATCH=256
-Environment=DEFAULT_REPEAT_PENALTY=1.05
-Environment=DEFAULT_TOP_P=0.9
+Environment=HOME=$TARGET_HOME
 
 ExecStart=/usr/bin/xinit $SCRIPT_DIR/start_robot.sh -- :0 vt1 -keeptty
 Restart=always
