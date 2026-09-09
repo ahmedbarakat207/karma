@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KARMA · REMOTE</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 /* KARMA OS instrument language: flat black/blue, 1px rules,
    square corners, mono labels. Matches the on-device console. */
@@ -41,13 +42,15 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-d);font-size:1
 .rule-blue{height:2px;background:var(--blue)}
 
 /* tab rail */
-.console-nav-rail{display:flex;background:#020406;border-bottom:1px solid var(--line);position:relative;z-index:4}
-.console-tabs{display:flex;align-items:stretch;flex-wrap:wrap;width:100%}
-.nav-tab-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;cursor:pointer;background:transparent;border:none;border-right:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--mut);font-family:var(--font-m);font-size:0.65rem;font-weight:600;letter-spacing:0.12em;white-space:nowrap;flex:1 1 auto}
+.console-nav-rail{display:flex;background:#020406;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.console-tabs{display:flex;align-items:stretch;min-width:max-content;width:100%}
+.nav-tab-btn{display:flex;align-items:center;gap:9px;padding:12px 18px;cursor:pointer;background:transparent;border:none;border-right:1px solid var(--line);border-bottom:2px solid transparent;color:var(--mut);font-family:var(--font-m);font-size:0.66rem;font-weight:600;letter-spacing:0.12em;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
 .nav-tab-btn:hover{color:var(--ink);background:var(--panel)}
-.nav-tab-btn.on{background:var(--blue);color:#00101f}
-.nav-tab-btn.on .tab-num{color:#00101f;opacity:0.8}
-.tab-num{font-size:0.58rem;opacity:0.65}
+.nav-tab-btn.on{background:#041220;color:var(--blue-ice);border-bottom:2px solid var(--blue)}
+.nav-tab-btn .tab-num{font-size:0.56rem;color:var(--faint);font-weight:400}
+.nav-tab-btn.on .tab-num{color:var(--blue);font-weight:600}
+.nav-tab-btn i.tab-icon{font-size:0.75rem;opacity:0.8}
+.nav-tab-btn.on i.tab-icon{color:var(--blue);opacity:1}
 
 /* panes */
 main{display:block;max-width:1000px;margin:0 auto;padding:16px 20px 40px}
@@ -201,26 +204,22 @@ img.cam{width:100%;display:block;background:#000}
 </div>
 
 <div id="app" class="hidden">
-  <div class="console-nav-rail"><div class="console-tabs" id="tabs"></div></div>
+  <div class="console-nav-rail">
+    <div class="console-tabs" id="tabs">
+      <button class="nav-tab-btn on" data-tab="status"><span class="tab-num">01</span><i class="fa-solid fa-gauge-high tab-icon"></i><span class="tab-label">STATUS</span></button>
+      <button class="nav-tab-btn" data-tab="logs"><span class="tab-num">02</span><i class="fa-solid fa-list-ul tab-icon"></i><span class="tab-label">LOGS</span></button>
+      <button class="nav-tab-btn" data-tab="camera"><span class="tab-num">03</span><i class="fa-solid fa-camera tab-icon"></i><span class="tab-label">CAMERA (YOLO)</span></button>
+      <button class="nav-tab-btn" data-tab="thoughts"><span class="tab-num">04</span><i class="fa-solid fa-brain tab-icon"></i><span class="tab-label">THOUGHTS</span></button>
+      <button class="nav-tab-btn" data-tab="rag"><span class="tab-num">05</span><i class="fa-solid fa-book-open tab-icon"></i><span class="tab-label">KNOWLEDGE</span></button>
+      <button class="nav-tab-btn" data-tab="prompt"><span class="tab-num">06</span><i class="fa-solid fa-sliders tab-icon"></i><span class="tab-label">PROMPT</span></button>
+      <button class="nav-tab-btn" data-tab="settings"><span class="tab-num">07</span><i class="fa-solid fa-gear tab-icon"></i><span class="tab-label">SETTINGS</span></button>
+      <button class="nav-tab-btn" data-tab="shell"><span class="tab-num">08</span><i class="fa-solid fa-terminal tab-icon"></i><span class="tab-label">SHELL</span></button>
+      <button class="nav-tab-btn" data-tab="inject"><span class="tab-num">09</span><i class="fa-solid fa-paper-plane tab-icon"></i><span class="tab-label">INJECT PROMPT</span></button>
+    </div>
+  </div>
   <main>
     <div data-pane="status">
       <div class="pane-head"><div><div class="pane-eyebrow">01 / STATE — LIVE</div><h2>Status</h2></div></div>
-      <section class="card" style="margin-bottom:14px;background:#03070c;border:1px solid var(--line-2)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3>Quick Navigation</h3>
-          <span class="hint">Jump directly to any dashboard tool</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px">
-          <button type="button" class="hw-btn" onclick="showPane('camera')" style="padding:10px 8px;text-align:center;font-size:0.68rem;background:var(--panel);border-color:var(--blue)">📷 CAMERA (YOLO)</button>
-          <button type="button" class="hw-btn" onclick="showPane('inject')" style="padding:10px 8px;text-align:center;font-size:0.68rem;background:var(--panel);border-color:var(--blue);color:var(--blue-ice)">💬 INJECT PROMPT</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('logs')" style="padding:10px 8px;text-align:center;font-size:0.68rem">📜 EVENT LOGS</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('thoughts')" style="padding:10px 8px;text-align:center;font-size:0.68rem">🧠 THOUGHTS</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('rag')" style="padding:10px 8px;text-align:center;font-size:0.68rem">📚 KNOWLEDGE (RAG)</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('prompt')" style="padding:10px 8px;text-align:center;font-size:0.68rem">🎭 SYSTEM PROMPT</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('settings')" style="padding:10px 8px;text-align:center;font-size:0.68rem">⚙️ TUNING</button>
-          <button type="button" class="hw-btn ghost" onclick="showPane('shell')" style="padding:10px 8px;text-align:center;font-size:0.68rem">💻 SHELL TERMINAL</button>
-        </div>
-      </section>
       <section class="card" id="model-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <h3>Cognition Engine / Model Switcher</h3>
@@ -371,7 +370,17 @@ img.cam{width:100%;display:block;background:#000}
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const PANES = [['status','Status'],['logs','Logs'],['camera','Camera (YOLO)'],['thoughts','Thoughts'],['rag','Knowledge'],['prompt','Prompt'],['settings','Settings'],['shell','Shell'],['inject','Inject Prompt']];
+const PANES = [
+  ['status','Status','fa-gauge-high'],
+  ['logs','Logs','fa-list-ul'],
+  ['camera','Camera (YOLO)','fa-camera'],
+  ['thoughts','Thoughts','fa-brain'],
+  ['rag','Knowledge','fa-book-open'],
+  ['prompt','Prompt','fa-sliders'],
+  ['settings','Settings','fa-gear'],
+  ['shell','Shell','fa-terminal'],
+  ['inject','Inject Prompt','fa-paper-plane']
+];
 let ws = null, lastState = null;
 
 // Demo mode: the page was opened as a local file, so there is no robot
@@ -434,18 +443,18 @@ $('btn-logout').onclick = async () => { await fetch('/api/logout', {method:'POST
 
 function buildTabs() {
   const nav = $('tabs'); nav.innerHTML = '';
-  PANES.forEach(([key, label], i) => {
+  PANES.forEach(([key, label, icon], i) => {
     const b = document.createElement('button');
-    b.className = 'nav-tab-btn';
-    b.innerHTML = `<span class="tab-num">${String(i + 1).padStart(2, '0')}</span>${esc(label.toUpperCase())}`;
-    if (i === 0) b.classList.add('on');
+    b.className = 'nav-tab-btn' + (key === 'status' ? ' on' : '');
+    b.dataset.tab = key;
+    b.innerHTML = `<span class="tab-num">${String(i + 1).padStart(2, '0')}</span><i class="fa-solid ${icon} tab-icon"></i><span class="tab-label">${esc(label.toUpperCase())}</span>`;
     b.onclick = () => showPane(key);
-    b.dataset.pane = key; nav.appendChild(b);
+    nav.appendChild(b);
   });
 }
 function showPane(key) {
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.pane === key));
-  document.querySelectorAll('[data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== key));
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === key));
+  document.querySelectorAll('main > [data-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== key));
   if (key === 'camera') startCam(); else stopCam();
   if (key === 'logs') loadLogs();
   if (key === 'thoughts') loadThoughts();
