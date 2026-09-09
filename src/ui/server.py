@@ -849,6 +849,58 @@ async def _api_prompt_put(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "active": active})
 
 
+# -- direct text injection (dashboard Inject tab) ----------------------------
+
+_inject_memory: Any = None
+_inject_memory_lock = threading.Lock()
+
+
+def set_inject_memory(memory: Any) -> None:
+    """Called from main.py to give the inject endpoint access to the running memory object."""
+    global _inject_memory
+    with _inject_memory_lock:
+        _inject_memory = memory
+
+
+@require_auth
+async def _api_inject(request: web.Request) -> web.Response:
+    """Inject a text prompt directly into Karma's cognition pipeline.
+
+    POST /api/inject  {"text": "hello karma"}
+    Behaves identically to the user speaking — the text lands in internal_state
+    and memory as a 'speech' event so the cognition loop picks it up and replies.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request"}, status=400)
+    text = str(body.get("text", "")).strip()
+    if not text:
+        return web.json_response({"error": "text is required"}, status=400)
+    if len(text) > 2000:
+        return web.json_response({"error": "text too long (2000 chars max)"}, status=400)
+
+    try:
+        from src.state import internal_state as _istate
+        from src.ui import events as _ev
+
+        # Mirror what audio/pipeline.py does when it transcribes real speech.
+        _istate.set_user_speech(text)
+        with _inject_memory_lock:
+            mem = _inject_memory
+        if mem is not None:
+            mem.add(kind="speech", text=text, counts_as_activity=True)
+        _ev.post("heard", text, {"source": "inject"})
+
+        ip = _client_ip(request)
+        config.log_debug(f"[dash/inject] '{text}' from {ip}")
+        return web.json_response({"ok": True, "text": text})
+    except Exception as e:
+        config.log_debug(f"[dash/inject] error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+
 @require_auth
 async def _api_config_get(request: web.Request) -> web.Response:
     return web.json_response({
@@ -1166,6 +1218,7 @@ def _build_dash_app() -> web.Application:
     app.router.add_post("/api/model", _api_model_post)
     app.router.add_get("/api/live", _dash_live)
     app.router.add_get("/api/shell", _dash_shell)
+    app.router.add_post("/api/inject", _api_inject)
     return app
 
 

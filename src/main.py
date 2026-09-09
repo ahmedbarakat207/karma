@@ -121,8 +121,9 @@ def main():
     memory = WorkingMemory()
 
     try:
-        from src.ui.server import set_runtime
+        from src.ui.server import set_runtime, set_inject_memory
         set_runtime(store, embedder, engine=engine)
+        set_inject_memory(memory)
     except Exception as e:
         config.log_debug(f"[main] dashboard runtime note: {e}")
 
