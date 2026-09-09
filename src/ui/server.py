@@ -922,8 +922,17 @@ async def _api_inject(request: web.Request) -> web.Response:
             _runtime["engine"] = engine
 
         tts = _runtime.get("tts")
+        if tts is None:
+            try:
+                from src.speech.tts import TTSEngine
+                tts = TTSEngine()
+                _runtime["tts"] = tts
+            except Exception as te:
+                print(f"[dash/inject] TTS init error: {te}", file=sys.stderr)
+
         store = _runtime.get("store")
         embedder = _runtime.get("embedder")
+
 
         loop = asyncio.get_event_loop()
         reply = await loop.run_in_executor(

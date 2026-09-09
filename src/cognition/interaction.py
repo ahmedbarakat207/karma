@@ -270,7 +270,56 @@ def _check_kiosk_intent(text: str) -> Optional[Tuple[str, Optional[int]]]:
     return None
 
 
+def speak_and_animate(text: str, tts=None) -> None:
+    """Speak text through TTS and animate the robot screen's mouth and subtitles."""
+    def _worker():
+        if not text:
+            return
+        from src.speech.tts import clean_for_speech
+        spoken = clean_for_speech(text)
+        if not spoken:
+            return
+
+        internal_state.set_karma_speech(spoken)
+        internal_state.set_playing_audio(True)
+
+        engine_tts = tts
+        if engine_tts is None:
+            try:
+                from src.ui.server import _runtime
+                engine_tts = _runtime.get("tts")
+            except Exception:
+                pass
+        if engine_tts is None:
+            try:
+                from src.speech.tts import TTSEngine
+                engine_tts = TTSEngine()
+            except Exception as te:
+                print(f"[interaction] fallback TTS init error: {te}", file=sys.stderr)
+
+        audio_played = False
+        if engine_tts is not None:
+            try:
+                engine_tts.speak(spoken)
+                audio_played = True
+            except Exception as e:
+                print(f"[interaction] TTS speak error: {e}", file=sys.stderr)
+
+        if not audio_played:
+            # Fallback: animate mouth on the screen for the estimated speech duration
+            est_duration = max(1.5, min(8.0, len(spoken.split()) * 0.35))
+            t0 = time.time()
+            while time.time() - t0 < est_duration:
+                time.sleep(0.05)
+
+        internal_state.set_playing_audio(False)
+
+    threading.Thread(target=_worker, daemon=True, name="karma_speak_animate").start()
+
+
+
 def run_interaction_response(memory, engine, tts=None, store=None, embedder=None) -> Optional[str]:
+
     with INTERACTION_LOCK:
         new_speech = memory.unhandled_speech(0)
         if not new_speech:
@@ -440,28 +489,9 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
 
         clean_spoken: Optional[str] = None
         try:
-            reply_text = ""
-            if tts and hasattr(engine, "stream_chat"):
-                collected: List[str] = []
-
-                def collecting_stream():
-                    for tok in engine.stream_chat(sys_prompt, user_prompt, max_tokens=180, history=history):
-                        collected.append(tok)
-                        yield tok
-
-                try:
-                    prosody_stream(collecting_stream(), tts)
-                    reply_text = _extract_plain_text("".join(collected).strip())
-                except Exception as pe:
-                    print(f"[interaction] prosody/tts error: {pe}", file=sys.stderr)
-                    reply_text = _extract_plain_text("".join(collected).strip())
-
-                if not reply_text:
-                    raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
-                    reply_text = _extract_plain_text(raw)
-            else:
-                raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
-                reply_text = _extract_plain_text(raw)
+            # Fast generation: 75 max_tokens is optimal for 1-2 punchy conversational sentences
+            raw = engine.chat(sys_prompt, user_prompt, max_tokens=75, history=history)
+            reply_text = _extract_plain_text(raw)
 
             if reply_text and len(reply_text) > 1:
                 spoken, code, lang = extract_code_blocks(reply_text)
@@ -474,15 +504,13 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
                 memory.add(kind="reply", text=clean_spoken, counts_as_activity=True)
                 memory.add_conversation(speech_text, clean_spoken)
 
-                if tts and spoken and not hasattr(engine, "stream_chat"):
-                    try:
-                        tts.speak(clean_companion_reply(spoken))
-                    except Exception as te:
-                        config.log_debug(f"[interaction] tts error: {te}")
+                # Speak audio out loud AND animate mouth on the robot's physical display
+                speak_and_animate(clean_spoken, tts)
 
             if not clean_spoken:
                 print("[interaction warning] LLM returned empty response", file=sys.stderr)
                 _events.post("error", "LLM returned empty response")
+
 
         except Exception as e:
             print(f"[interaction error] {e}", file=sys.stderr)

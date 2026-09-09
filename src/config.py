@@ -137,8 +137,10 @@ SHELL_ENABLED = _env_bool("SHELL_ENABLED", True)
 SHELL_IDLE_SECONDS = int(os.environ.get("SHELL_IDLE_SECONDS", "900"))
 SHELL_MAX_SESSIONS = int(os.environ.get("SHELL_MAX_SESSIONS", "3"))
 
-USE_GROQ = _env_bool("USE_GROQ", False)
+_has_groq_key = bool(os.environ.get("GROQ_API_KEY", "").strip())
+USE_GROQ = _env_bool("USE_GROQ", _has_groq_key)
 _raw_groq = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+
 GROQ_MODEL = f"openai/{_raw_groq}" if _raw_groq in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else _raw_groq
 
 

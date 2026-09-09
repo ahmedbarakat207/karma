@@ -245,12 +245,34 @@ class TTSEngine:
         try:
             audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
             internal_state.set_playing_audio(True)
-            sd.play(audio_arr, config.TTS_SAMPLE_RATE)
-            sd.wait()
+            try:
+                sd.play(audio_arr, config.TTS_SAMPLE_RATE)
+                sd.wait()
+            except Exception as e:
+                # ALSA sample rate fallback: try 44100 Hz if 24000 Hz is rejected by hardware
+                played = False
+                try:
+                    import scipy.signal
+                    resampled = scipy.signal.resample_poly(audio_arr, 441, 240)
+                    sd.play(resampled, 44100)
+                    sd.wait()
+                    played = True
+                except Exception as e2:
+                    print(f"[speech] playback note: {e} (resample retry: {e2})", file=sys.stderr)
+
+                if not played:
+                    # Visual fallback: keep mouth animation running for the duration of the speech
+                    duration = max(1.5, len(audio_arr) / config.TTS_SAMPLE_RATE)
+                    t0 = time.time()
+                    while time.time() - t0 < duration:
+                        if self.interrupt_event and self.interrupt_event.is_set():
+                            break
+                        time.sleep(0.05)
         except Exception as e:
             config.log_debug(f"[speech] playback error: {e}")
         finally:
             internal_state.set_playing_audio(False)
+
 
     def speak(self, text: str, speed: float = 1.0) -> None:
         spoken_text = clean_for_speech(text)
