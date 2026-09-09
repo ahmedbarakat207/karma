@@ -273,10 +273,10 @@ img.cam{width:100%;display:block;background:#000}
       </section>
     </div>
     <div data-pane="camera" class="hidden">
-      <div class="pane-head"><div><div class="pane-eyebrow">03 / OPTICS</div><h2>Camera</h2></div></div>
+      <div class="pane-head"><div><div class="pane-eyebrow">03 / OPTICS</div><h2>Camera &amp; YOLO Vision</h2></div></div>
       <section class="card">
         <div class="cad-canvas-frame"><img class="cam" id="cam-img" alt="camera offline"></div>
-        <div class="row"><button class="hw-btn ghost" id="cam-reload">RECONNECT</button><span class="hint" id="cam-note"></span></div>
+        <div class="row"><button class="hw-btn ghost" id="cam-reload">RECONNECT</button><span class="hint" id="cam-note">Real-time YOLO detections, faces, and camera stream</span></div>
       </section>
     </div>
     <div data-pane="thoughts" class="hidden">
@@ -330,7 +330,7 @@ img.cam{width:100%;display:block;background:#000}
     </div>
 
     <div data-pane="inject" class="hidden">
-      <div class="pane-head"><div><div class="pane-eyebrow">09 / DIRECT INPUT</div><h2>Inject Prompt</h2></div></div>
+      <div class="pane-head"><div><div class="pane-eyebrow">09 / DIRECT INPUT</div><h2>Inject Prompt (No Mic)</h2></div></div>
       <section class="card" style="padding:0;overflow:hidden">
         <div id="inject-history" style="
           height:420px;overflow-y:auto;padding:14px 16px;
@@ -355,7 +355,7 @@ img.cam{width:100%;display:block;background:#000}
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const PANES = [['status','Status'],['logs','Logs'],['camera','Camera'],['thoughts','Thoughts'],['rag','Knowledge'],['prompt','Prompt'],['settings','Settings'],['shell','Shell'],['inject','Inject']];
+const PANES = [['status','Status'],['logs','Logs'],['camera','Camera (YOLO)'],['thoughts','Thoughts'],['rag','Knowledge'],['prompt','Prompt'],['settings','Settings'],['shell','Shell'],['inject','Inject Prompt']];
 let ws = null, lastState = null;
 
 // Demo mode: the page was opened as a local file, so there is no robot

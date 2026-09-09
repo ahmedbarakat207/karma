@@ -64,15 +64,35 @@ def _store_vlm_result(memory, result, job) -> None:
         config.log_debug(f"[vlm] store note: {e}")
 
 
-def _publish_frame(frame) -> None:
-    """Downscaled JPEG for the dashboard MJPEG stream (throttled)."""
+def _publish_frame(frame, bboxes=None, primary_face=None, hand_pts=None, display_fps: float = 0.0, is_talking: bool = False) -> None:
+    """Downscaled JPEG with YOLO annotations for the dashboard MJPEG stream (throttled)."""
     global _last_published
     now = time.time()
     if now - _last_published < 0.2:
         return
     _last_published = now
     try:
-        small = cv2.resize(frame, (480, 360))
+        if bboxes is not None or primary_face is not None:
+            annotated = frame.copy()
+            if bboxes:
+                try:
+                    shown_bboxes = [
+                        (_vlm_verifier.corrections.lookup(lbl), conf, box)
+                        for lbl, conf, box in bboxes
+                    ]
+                except Exception:
+                    shown_bboxes = bboxes
+                VisionRenderer.draw_objects(annotated, shown_bboxes)
+            if hand_pts:
+                VisionRenderer.draw_hands(annotated, hand_pts)
+            if primary_face:
+                VisionRenderer.draw_face(annotated, primary_face)
+            annotated = VisionRenderer.draw_hud(annotated, display_fps, display_fps, is_talking=is_talking)
+            target_frame = annotated
+        else:
+            target_frame = frame
+
+        small = cv2.resize(target_frame, (480, 360))
         ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 70])
         if ok:
             internal_state.set_camera_frame(bytes(buf))
@@ -327,7 +347,6 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                 except Exception as e:
                     config.log_debug(f"[vision] vlm submit note: {e}")
                 last_seen_labels = current_labels
-                _publish_frame(frame)
 
             else:
                 time.sleep(getattr(config, "VISION_POLL_SECONDS", 0.033))
@@ -366,6 +385,7 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
 
                 cv2.imshow(face_window_name, display_frame)
 
+            annotated = None
             if getattr(config, "SHOW_VISION_WINDOW", False) and frame is not None:
                 annotated = frame.copy()
                 try:
@@ -381,6 +401,12 @@ def run_vision(memory, stop_event, speaking_event=None) -> None:
                     VisionRenderer.draw_face(annotated, primary_face)
                 annotated = VisionRenderer.draw_hud(annotated, display_fps, display_fps, is_talking=is_talking)
                 cv2.imshow(CAMERA_WINDOW_NAME, annotated)
+
+            if frame is not None:
+                if annotated is not None:
+                    _publish_frame(annotated)
+                else:
+                    _publish_frame(frame, bboxes=bboxes, primary_face=primary_face, hand_pts=hand_pts, display_fps=display_fps, is_talking=is_talking)
 
             if not use_electron or (getattr(config, "SHOW_VISION_WINDOW", False) and has_camera):
                 key = cv2.waitKey(1) & 0xFF
