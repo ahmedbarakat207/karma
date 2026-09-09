@@ -30,7 +30,7 @@ unclutter -idle 0.1 -root &
 
 openbox &
 
-# ── Runner: nice -n -5 needs CAP_SYS_NICE; test first ────────────────────────
+# ── Python binary ────────────────────────────────────────────────────────────
 PYTHON_BIN=""
 if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then
     PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python3"
@@ -42,22 +42,11 @@ if [ -z "$PYTHON_BIN" ]; then
     _slog "ERROR: python3 not found — cannot start"
     exit 1
 fi
-_slog "Python: $PYTHON_BIN  ($(${PYTHON_BIN} --version 2>&1))"
-
-_nice_ok=0
-nice -n -5 true 2>/dev/null && _nice_ok=1
-_slog "nice -n -5: $( [ $_nice_ok -eq 1 ] && echo OK || echo EPERM-fallback )"
-_slog "taskset:    $(command -v taskset 2>/dev/null || echo 'not found')"
+_slog "Python: $PYTHON_BIN  ($("$PYTHON_BIN" --version 2>&1))"
 
 while true; do
     _slog "launching main.py…"
-    if [ $_nice_ok -eq 1 ] && command -v taskset &>/dev/null; then
-        nice -n -5 taskset -c 0-3 "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
-    elif [ $_nice_ok -eq 1 ]; then
-        nice -n -5 "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
-    else
-        "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
-    fi
+    "$PYTHON_BIN" "$SCRIPT_DIR/main.py" >> "$SCRIPT_DIR/karma.log" 2>&1
     _slog "main.py exited (code $?), restarting in 3 s…"
     echo "[start_robot] process exited, restarting in 3s…" >> "$SCRIPT_DIR/karma.log"
     sleep 3

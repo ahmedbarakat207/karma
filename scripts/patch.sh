@@ -46,6 +46,7 @@ if $DO_PULL; then
     else
         ok "Already up to date"
     fi
+    chmod +x "$REPO_DIR/start_robot.sh" "$REPO_DIR/scripts/"*.sh 2>/dev/null || true
 fi
 
 # ── 2. Patch karma.service ────────────────────────────────────────────────────
