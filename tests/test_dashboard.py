@@ -315,3 +315,35 @@ async def test_shell_echo_and_exit(authed):
             except Exception:
                 pass
         assert closed, "shell did not report exit"
+
+
+@pytest.mark.anyio
+async def test_inject_prompt_and_history(authed, monkeypatch):
+    session, base = authed
+
+    class MockEngine:
+        def chat(self, sys_prompt, user_prompt, max_tokens=180, history=None):
+            return "Hello friend, I am Karma!"
+
+    monkeypatch.setitem(dash._runtime, "engine", MockEngine())
+
+    # Empty prompt fails
+    async with session.post(base + "/api/inject", json={"text": ""}) as r:
+        assert r.status == 400
+
+    # Successful inject returns reply
+    async with session.post(base + "/api/inject", json={"text": "hello test"}) as r:
+        assert r.status == 200
+        body = await r.json()
+        assert body["ok"] is True
+        assert "reply" in body
+        assert "Karma" in body["reply"]
+        assert body["text"] == "hello test"
+
+    # History contains the turn
+    async with session.get(base + "/api/inject/history") as r:
+        assert r.status == 200
+        body = await r.json()
+        assert body["ok"] is True
+        assert any(t.get("content") == "hello test" for t in body["turns"])
+

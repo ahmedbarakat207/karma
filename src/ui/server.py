@@ -367,14 +367,18 @@ _load_long_tokens()
 _dash_password = ""
 _dash_password_generated = False
 
-_runtime: Dict[str, Any] = {"store": None, "embedder": None, "engine": None}
+_runtime: Dict[str, Any] = {"store": None, "embedder": None, "engine": None, "tts": None}
 
 
-def set_runtime(store: Any = None, embedder: Any = None, engine: Any = None) -> None:
-    _runtime["store"] = store
-    _runtime["embedder"] = embedder
+def set_runtime(store: Any = None, embedder: Any = None, engine: Any = None, tts: Any = None) -> None:
+    if store is not None:
+        _runtime["store"] = store
+    if embedder is not None:
+        _runtime["embedder"] = embedder
     if engine is not None:
         _runtime["engine"] = engine
+    if tts is not None:
+        _runtime["tts"] = tts
 
 
 def _get_store():
@@ -863,12 +867,23 @@ def set_inject_memory(memory: Any) -> None:
 
 
 @require_auth
+async def _api_inject_history(request: web.Request) -> web.Response:
+    """Retrieve recent conversation turns for the Inject Prompt tab."""
+    with _inject_memory_lock:
+        mem = _inject_memory
+    turns = []
+    if mem is not None:
+        turns = mem.get_conversation_turns(n=20)
+    return web.json_response({"ok": True, "turns": turns})
+
+
+@require_auth
 async def _api_inject(request: web.Request) -> web.Response:
     """Inject a text prompt directly into Karma's cognition pipeline.
 
     POST /api/inject  {"text": "hello karma"}
-    Behaves identically to the user speaking — the text lands in internal_state
-    and memory as a 'speech' event so the cognition loop picks it up and replies.
+    Behaves identically to the user speaking, executing the cognition turn
+    synchronously via an executor so the dashboard receives the reply immediately.
     """
     try:
         body = await request.json()
@@ -883,21 +898,60 @@ async def _api_inject(request: web.Request) -> web.Response:
     try:
         from src.state import internal_state as _istate
         from src.ui import events as _ev
+        from src.cognition.interaction import run_interaction_response
 
         # Mirror what audio/pipeline.py does when it transcribes real speech.
         _istate.set_user_speech(text)
         with _inject_memory_lock:
             mem = _inject_memory
-        if mem is not None:
-            mem.add(kind="speech", text=text, counts_as_activity=True)
+        if mem is None:
+            from src.memory.working import WorkingMemory
+            mem = WorkingMemory()
+            set_inject_memory(mem)
+
+        mem.add(kind="speech", text=text, counts_as_activity=True)
         _ev.post("heard", text, {"source": "inject"})
 
         ip = _client_ip(request)
-        config.log_debug(f"[dash/inject] '{text}' from {ip}")
-        return web.json_response({"ok": True, "text": text})
+        print(f"[dash/inject] '{text}' from {ip}")
+
+        engine = _runtime.get("engine")
+        if engine is None:
+            from src.cognition.engine import create_switchable_engine
+            engine = create_switchable_engine()
+            _runtime["engine"] = engine
+
+        tts = _runtime.get("tts")
+        store = _runtime.get("store")
+        embedder = _runtime.get("embedder")
+
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(
+            None,
+            run_interaction_response,
+            mem, engine, tts, store, embedder
+        )
+
+        if reply:
+            return web.json_response({
+                "ok": True,
+                "text": text,
+                "reply": reply,
+                "mood": _istate.mood,
+                "ts": time.time()
+            })
+        else:
+            return web.json_response({
+                "ok": False,
+                "error": "LLM failed to generate a response (check model/engine logs)",
+                "text": text
+            }, status=500)
     except Exception as e:
-        config.log_debug(f"[dash/inject] error: {e}")
+        print(f"[dash/inject] error: {e}", file=sys.stderr)
+        from src.ui import events as _ev
+        _ev.post("error", f"Inject error: {e}")
         return web.json_response({"error": str(e)}, status=500)
+
 
 
 
@@ -1219,7 +1273,9 @@ def _build_dash_app() -> web.Application:
     app.router.add_get("/api/live", _dash_live)
     app.router.add_get("/api/shell", _dash_shell)
     app.router.add_post("/api/inject", _api_inject)
+    app.router.add_get("/api/inject/history", _api_inject_history)
     return app
+
 
 
 def _run_dash(host: str, port: int) -> None:

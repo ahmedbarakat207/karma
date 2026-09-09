@@ -1,5 +1,7 @@
 import json
 import re
+import sys
+import threading
 import time
 from typing import Optional, List, Tuple
 
@@ -12,6 +14,9 @@ from src.speech.arabic_g2p import is_arabic
 from src.state import internal_state
 from src.memory.face_registry import FACE_REC_LOCK
 from src.ui import events as _events
+
+INTERACTION_LOCK = threading.Lock()
+
 
 _NAME_PATTERNS = [
     re.compile(r"\b(?:my name is|my name's|call me|they call me|everyone calls me)\s+([A-Z][a-z]+)", re.IGNORECASE),
@@ -265,213 +270,226 @@ def _check_kiosk_intent(text: str) -> Optional[Tuple[str, Optional[int]]]:
     return None
 
 
-def run_interaction_response(memory, engine, tts, store=None, embedder=None) -> bool:
-    new_speech = memory.unhandled_speech(0)
-    if not new_speech:
-        return False
+def run_interaction_response(memory, engine, tts=None, store=None, embedder=None) -> Optional[str]:
+    with INTERACTION_LOCK:
+        new_speech = memory.unhandled_speech(0)
+        if not new_speech:
+            return None
 
-    latest_ts = max(e["ts"] for e in new_speech)
-    speech_text = " ".join(e["text"] for e in new_speech).strip()
-    if not speech_text:
-        memory.mark_handled(latest_ts)
-        return False
+        latest_ts = max(e["ts"] for e in new_speech)
+        speech_text = " ".join(e["text"] for e in new_speech).strip()
+        if not speech_text:
+            memory.mark_handled(latest_ts)
+            return None
 
-    config.log_debug(f"[interaction] got speech: '{speech_text}'")
+        config.log_debug(f"[interaction] got speech: '{speech_text}'")
 
-    kiosk_notice = ""
-    kiosk_action = _check_kiosk_intent(speech_text)
-    if kiosk_action:
-        view_name, floor_idx = kiosk_action
+        if engine is None:
+            print("[interaction error] No LLM engine available", file=sys.stderr)
+            _events.post("error", "No LLM engine available")
+            memory.mark_handled(latest_ts)
+            return None
+
+        kiosk_notice = ""
+        kiosk_action = _check_kiosk_intent(speech_text)
+        if kiosk_action:
+            view_name, floor_idx = kiosk_action
+            try:
+                from src.ui.kiosk import kiosk_manager
+                if view_name == "face":
+                    kiosk_manager.close()
+                    kiosk_notice = "You just closed the touchscreen kiosk and returned to your digital face."
+                else:
+                    kiosk_manager.open_view(view_name, floor_idx=floor_idx)
+                    kiosk_notice = f"You tilted your head up to 135 degrees and opened the {view_name.upper()} screen on your 7-inch LCD touchscreen for the user."
+                config.log_debug(f"[interaction] voice kiosk: {view_name}")
+                _events.post("kiosk", f"{speech_text} -> {view_name}")
+            except Exception as e:
+                config.log_debug(f"[interaction] kiosk error: {e}")
+
+        movement_notice = ""
         try:
-            from src.ui.kiosk import kiosk_manager
-            if view_name == "face":
-                kiosk_manager.close()
-                kiosk_notice = "You just closed the touchscreen kiosk and returned to your digital face."
+            from src.cognition.movement_intents import check_move_intent
+            move_action = check_move_intent(speech_text)
+        except Exception as e:
+            config.log_debug(f"[interaction] move intent error: {e}")
+            move_action = None
+        if move_action:
+            action, param = move_action
+            try:
+                from src.hardware.drive import drive_base
+                from src.navigation.explorer import explorer
+                if action == "stop":
+                    explorer.stop()
+                    movement_notice = "You stopped moving and are staying put."
+                elif action == "stop_explore":
+                    explorer.stop()
+                    movement_notice = "You stopped exploring and are hanging out where you are."
+                elif action == "unfollow":
+                    explorer.stop()
+                    movement_notice = "You stopped following and are staying here."
+                elif action == "explore":
+                    explorer.start_explore()
+                    movement_notice = "You started wandering slowly to explore the room."
+                elif action == "follow":
+                    explorer.start_follow()
+                    movement_notice = "You started following the person, rolling slowly toward them."
+                elif action == "goto":
+                    if explorer.goto(param):
+                        movement_notice = f"You are rolling toward the {param}."
+                    else:
+                        movement_notice = ""
+                elif action in ("forward", "backward", "left", "right"):
+                    explorer.stop()  # leave auto modes before a manual nudge
+                    ok = {
+                        "forward": lambda: drive_base.forward(duration=1.0),
+                        "backward": lambda: drive_base.backward(duration=1.0),
+                        "left": lambda: drive_base.turn_left(duration=0.8),
+                        "right": lambda: drive_base.turn_right(duration=0.8),
+                    }[action]()
+                    if ok:
+                        movement_notice = {
+                            "forward": "You rolled forward a little.",
+                            "backward": "You backed up a little.",
+                            "left": "You turned left a little.",
+                            "right": "You turned right a little.",
+                        }[action]
+                        memory.add(kind="movement", text=f"Manual move: {action}",
+                                   counts_as_activity=True, salience=0.3)
+                    else:
+                        movement_notice = "You wanted to move but the drive is stopped."
+                config.log_debug(f"[interaction] voice move: {action} {param}")
+                if movement_notice:
+                    _events.post("movement", f"{speech_text} -> {action} {param}".strip())
+            except Exception as e:
+                config.log_debug(f"[interaction] movement error: {e}")
+
+        if getattr(config, "FACE_RECOGNITION_ENABLED", True):
+            name = _extract_name_introduction(speech_text)
+            if name:
+                config.log_debug(f"[interaction] name introduced: '{name}'")
+                if _try_register_face(name, memory):
+                    config.log_debug(f"[interaction] registered face for '{name}'")
+
+        internal_state.update(memory.all_events())
+
+        recognized = memory.get_recognized_people()
+        people_ctx = f"People in the room right now: {', '.join(sorted(recognized))}\n" if recognized else ""
+
+        mood_instruction = {
+            "playful":   "YOUR CURRENT FEELING: You're feeling playful, witty, and mischievous. React with playful humor!",
+            "curious":   "YOUR CURRENT FEELING: You're intensely curious about what they are doing. Ask questions to learn more!",
+            "tired":     "YOUR CURRENT FEELING: You're feeling sleepy and cozy. Keep replies warm, laid-back, and short.",
+            "attentive": "YOUR CURRENT FEELING: You are fully locked in. Give deep, empathetic, thoughtful, and engaged replies."
+        }.get(internal_state.mood, "YOUR CURRENT FEELING: Be warm, human, and natural.")
+
+        sys_prompt = f"{active_base_prompt()}\n{mood_instruction}"
+
+        visible = memory.recent_objects(config.VISION_CONTEXT_WINDOW_SECONDS)
+        try:
+            # VLM corrections apply at read time: while a correction is active,
+            # the prompt sees what was verified ("microwave"), not the raw YOLO
+            # label ("tv"). Tracking itself always stays on raw YOLO boxes.
+            from src.vision.vlm import verifier as _vlm_verifier
+            visible = _vlm_verifier.corrections.apply(list(visible or []))
+        except Exception:
+            pass
+        vision_ctx = f"Current Environment: {', '.join(sorted(set(visible)))}\n" if visible else ""
+
+        vlm_ctx = ""
+        try:
+            scenes = memory.recent_by_kind("vlm_scene", 120)
+            if scenes:
+                vlm_ctx = f"Verified sighting: {scenes[-1]}\n"
+        except Exception:
+            pass
+
+        history = memory.get_conversation_turns(n=4)
+
+        mem_ctx = retrieve_memories(speech_text, store, embedder, k=2)
+        mem_section = f"Relevant past memories:\n{mem_ctx}\n" if mem_ctx else ""
+
+        doc_ctx = ""
+        try:
+            from src.memory.rag import retrieve_document_context
+            doc_ctx = retrieve_document_context(speech_text, store, embedder, k=2)
+        except Exception:
+            pass
+        doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
+
+        sys_parts = [f"{active_base_prompt()}\n{mood_instruction}"]
+        if is_arabic(speech_text):
+            sys_parts.append("\nLANGUAGE NOTE: The user is speaking in Arabic. Respond naturally in friendly, witty Egyptian Arabic (عامية مصرية), keeping your answer brief (1-2 sentences).")
+        if people_ctx:    sys_parts.append(f"\nPeople present: {people_ctx.strip()}")
+        if vision_ctx:    sys_parts.append(f"\nVisual observations: {vision_ctx.strip()}")
+        if vlm_ctx:       sys_parts.append(f"\n{vlm_ctx.strip()}")
+        try:
+            from src.hardware.drive import drive_base as _drive_base
+            from src.navigation.explorer import explorer as _explorer
+            _loc = memory.consciousness.self_model.get("location", "desk")
+            sys_parts.append(f"\nMovement: you are on wheels near the {_loc}. {_explorer.describe()}; base={_drive_base.describe()}. Narrate moves briefly, never lecture.")
+        except Exception:
+            pass
+        if mem_section:   sys_parts.append(f"\nRelevant memories:\n{mem_section.strip()}")
+        if doc_section:   sys_parts.append(f"\nReference knowledge:\n{doc_section.strip()}")
+        if kiosk_notice:  sys_parts.append(f"\nSystem note: {kiosk_notice}")
+        if movement_notice: sys_parts.append(f"\nSystem note: {movement_notice}")
+
+        sys_prompt = "\n".join(sys_parts)
+        user_prompt = speech_text
+
+        clean_spoken: Optional[str] = None
+        try:
+            reply_text = ""
+            if tts and hasattr(engine, "stream_chat"):
+                collected: List[str] = []
+
+                def collecting_stream():
+                    for tok in engine.stream_chat(sys_prompt, user_prompt, max_tokens=180, history=history):
+                        collected.append(tok)
+                        yield tok
+
+                try:
+                    prosody_stream(collecting_stream(), tts)
+                    reply_text = _extract_plain_text("".join(collected).strip())
+                except Exception as pe:
+                    print(f"[interaction] prosody/tts error: {pe}", file=sys.stderr)
+                    reply_text = _extract_plain_text("".join(collected).strip())
+
+                if not reply_text:
+                    raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
+                    reply_text = _extract_plain_text(raw)
             else:
-                kiosk_manager.open_view(view_name, floor_idx=floor_idx)
-                kiosk_notice = f"You tilted your head up to 135 degrees and opened the {view_name.upper()} screen on your 7-inch LCD touchscreen for the user."
-            config.log_debug(f"[interaction] voice kiosk: {view_name}")
-            _events.post("kiosk", f"{speech_text} -> {view_name}")
-        except Exception as e:
-            config.log_debug(f"[interaction] kiosk error: {e}")
-
-    movement_notice = ""
-    try:
-        from src.cognition.movement_intents import check_move_intent
-        move_action = check_move_intent(speech_text)
-    except Exception as e:
-        config.log_debug(f"[interaction] move intent error: {e}")
-        move_action = None
-    if move_action:
-        action, param = move_action
-        try:
-            from src.hardware.drive import drive_base
-            from src.navigation.explorer import explorer
-            if action == "stop":
-                explorer.stop()
-                movement_notice = "You stopped moving and are staying put."
-            elif action == "stop_explore":
-                explorer.stop()
-                movement_notice = "You stopped exploring and are hanging out where you are."
-            elif action == "unfollow":
-                explorer.stop()
-                movement_notice = "You stopped following and are staying here."
-            elif action == "explore":
-                explorer.start_explore()
-                movement_notice = "You started wandering slowly to explore the room."
-            elif action == "follow":
-                explorer.start_follow()
-                movement_notice = "You started following the person, rolling slowly toward them."
-            elif action == "goto":
-                if explorer.goto(param):
-                    movement_notice = f"You are rolling toward the {param}."
-                else:
-                    movement_notice = ""
-            elif action in ("forward", "backward", "left", "right"):
-                explorer.stop()  # leave auto modes before a manual nudge
-                ok = {
-                    "forward": lambda: drive_base.forward(duration=1.0),
-                    "backward": lambda: drive_base.backward(duration=1.0),
-                    "left": lambda: drive_base.turn_left(duration=0.8),
-                    "right": lambda: drive_base.turn_right(duration=0.8),
-                }[action]()
-                if ok:
-                    movement_notice = {
-                        "forward": "You rolled forward a little.",
-                        "backward": "You backed up a little.",
-                        "left": "You turned left a little.",
-                        "right": "You turned right a little.",
-                    }[action]
-                    memory.add(kind="movement", text=f"Manual move: {action}",
-                               counts_as_activity=True, salience=0.3)
-                else:
-                    movement_notice = "You wanted to move but the drive is stopped."
-            config.log_debug(f"[interaction] voice move: {action} {param}")
-            if movement_notice:
-                _events.post("movement", f"{speech_text} -> {action} {param}".strip())
-        except Exception as e:
-            config.log_debug(f"[interaction] movement error: {e}")
-
-    if getattr(config, "FACE_RECOGNITION_ENABLED", True):
-        name = _extract_name_introduction(speech_text)
-        if name:
-            config.log_debug(f"[interaction] name introduced: '{name}'")
-            if _try_register_face(name, memory):
-                config.log_debug(f"[interaction] registered face for '{name}'")
-
-    internal_state.update(memory.all_events())
-
-    recognized = memory.get_recognized_people()
-    people_ctx = f"People in the room right now: {', '.join(sorted(recognized))}\n" if recognized else ""
-
-    mood_instruction = {
-        "playful":   "YOUR CURRENT FEELING: You're feeling playful, witty, and mischievous. React with playful humor!",
-        "curious":   "YOUR CURRENT FEELING: You're intensely curious about what they are doing. Ask questions to learn more!",
-        "tired":     "YOUR CURRENT FEELING: You're feeling sleepy and cozy. Keep replies warm, laid-back, and short.",
-        "attentive": "YOUR CURRENT FEELING: You are fully locked in. Give deep, empathetic, thoughtful, and engaged replies."
-    }.get(internal_state.mood, "YOUR CURRENT FEELING: Be warm, human, and natural.")
-
-    sys_prompt = f"{active_base_prompt()}\n{mood_instruction}"
-
-    visible = memory.recent_objects(config.VISION_CONTEXT_WINDOW_SECONDS)
-    try:
-        # VLM corrections apply at read time: while a correction is active,
-        # the prompt sees what was verified ("microwave"), not the raw YOLO
-        # label ("tv"). Tracking itself always stays on raw YOLO boxes.
-        from src.vision.vlm import verifier as _vlm_verifier
-        visible = _vlm_verifier.corrections.apply(list(visible or []))
-    except Exception:
-        pass
-    vision_ctx = f"Current Environment: {', '.join(sorted(set(visible)))}\n" if visible else ""
-
-    vlm_ctx = ""
-    try:
-        scenes = memory.recent_by_kind("vlm_scene", 120)
-        if scenes:
-            vlm_ctx = f"Verified sighting: {scenes[-1]}\n"
-    except Exception:
-        pass
-
-    history = memory.get_conversation_turns(n=4)
-
-    mem_ctx = retrieve_memories(speech_text, store, embedder, k=2)
-    mem_section = f"Relevant past memories:\n{mem_ctx}\n" if mem_ctx else ""
-
-    doc_ctx = ""
-    try:
-        from src.memory.rag import retrieve_document_context
-        doc_ctx = retrieve_document_context(speech_text, store, embedder, k=2)
-    except Exception:
-        pass
-    doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
-
-    sys_parts = [f"{active_base_prompt()}\n{mood_instruction}"]
-    if is_arabic(speech_text):
-        sys_parts.append("\nLANGUAGE NOTE: The user is speaking in Arabic. Respond naturally in friendly, witty Egyptian Arabic (عامية مصرية), keeping your answer brief (1-2 sentences).")
-    if people_ctx:    sys_parts.append(f"\nPeople present: {people_ctx.strip()}")
-    if vision_ctx:    sys_parts.append(f"\nVisual observations: {vision_ctx.strip()}")
-    if vlm_ctx:       sys_parts.append(f"\n{vlm_ctx.strip()}")
-    try:
-        from src.hardware.drive import drive_base as _drive_base
-        from src.navigation.explorer import explorer as _explorer
-        _loc = memory.consciousness.self_model.get("location", "desk")
-        sys_parts.append(f"\nMovement: you are on wheels near the {_loc}. {_explorer.describe()}; base={_drive_base.describe()}. Narrate moves briefly, never lecture.")
-    except Exception:
-        pass
-    if mem_section:   sys_parts.append(f"\nRelevant memories:\n{mem_section.strip()}")
-    if doc_section:   sys_parts.append(f"\nReference knowledge:\n{doc_section.strip()}")
-    if kiosk_notice:  sys_parts.append(f"\nSystem note: {kiosk_notice}")
-    if movement_notice: sys_parts.append(f"\nSystem note: {movement_notice}")
-
-    sys_prompt = "\n".join(sys_parts)
-    user_prompt = speech_text
-
-    try:
-        reply_text = ""
-        if tts and hasattr(engine, "stream_chat"):
-            collected: List[str] = []
-
-            def collecting_stream():
-                for tok in engine.stream_chat(sys_prompt, user_prompt, max_tokens=180, history=history):
-                    collected.append(tok)
-                    yield tok
-
-            prosody_stream(collecting_stream(), tts)
-            reply_text = _extract_plain_text("".join(collected).strip())
-
-            if not reply_text:
                 raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
                 reply_text = _extract_plain_text(raw)
-                if tts and reply_text and len(reply_text) > 1:
-                    spoken, code, lang = extract_code_blocks(reply_text)
-                    if code:
-                        internal_state.set_active_code(code, lang=lang)
-                    if spoken:
-                        tts.speak(clean_companion_reply(spoken))
-        else:
-            raw = engine.chat(sys_prompt, user_prompt, max_tokens=180, history=history)
-            reply_text = _extract_plain_text(raw)
-            if tts and reply_text and len(reply_text) > 1:
+
+            if reply_text and len(reply_text) > 1:
                 spoken, code, lang = extract_code_blocks(reply_text)
+                clean_spoken = clean_companion_reply(spoken)
                 if code:
                     internal_state.set_active_code(code, lang=lang)
-                if spoken:
-                    tts.speak(clean_companion_reply(spoken))
+                print(f"[reply] ({internal_state.mood}) {clean_spoken}")
+                internal_state.set_karma_speech(clean_spoken)
+                _events.post("reply", clean_spoken, {"mood": internal_state.mood})
+                memory.add(kind="reply", text=clean_spoken, counts_as_activity=True)
+                memory.add_conversation(speech_text, clean_spoken)
 
-        if reply_text and len(reply_text) > 1:
-            spoken, code, lang = extract_code_blocks(reply_text)
-            clean_spoken = clean_companion_reply(spoken)
-            if code:
-                internal_state.set_active_code(code, lang=lang)
-            print(f"[reply] ({internal_state.mood}) {clean_spoken}")
-            internal_state.set_karma_speech(clean_spoken)
-            _events.post("reply", clean_spoken, {"mood": internal_state.mood})
-            memory.add(kind="reply", text=clean_spoken, counts_as_activity=True)
-            memory.add_conversation(speech_text, clean_spoken)
+                if tts and spoken and not hasattr(engine, "stream_chat"):
+                    try:
+                        tts.speak(clean_companion_reply(spoken))
+                    except Exception as te:
+                        config.log_debug(f"[interaction] tts error: {te}")
 
-    except Exception as e:
-        config.log_debug(f"[interaction] generation error: {e}")
-    finally:
-        memory.mark_handled(latest_ts)
+            if not clean_spoken:
+                print("[interaction warning] LLM returned empty response", file=sys.stderr)
+                _events.post("error", "LLM returned empty response")
 
-    return True
+        except Exception as e:
+            print(f"[interaction error] {e}", file=sys.stderr)
+            _events.post("error", f"LLM error: {e}")
+            config.log_debug(f"[interaction] generation error: {e}")
+        finally:
+            memory.mark_handled(latest_ts)
+
+        return clean_spoken
+

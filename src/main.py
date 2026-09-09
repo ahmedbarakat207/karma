@@ -154,8 +154,14 @@ def main():
     try:
         config.log_debug("[main] loading TTS engine...")
         tts = TTSEngine(speaking_event=speaking_event, interrupt_event=interrupt_event)
+        try:
+            from src.ui.server import set_runtime
+            set_runtime(tts=tts)
+        except Exception:
+            pass
     except Exception as e:
         config.log_debug(f"[main] TTS load note: {e}")
+
 
     def do_sleep():
         if consolidation_lock.acquire(blocking=False):

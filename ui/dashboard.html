@@ -541,7 +541,7 @@ function connectLive() {
 
 // ---- inject ---------------------------------------------------------------
 let _injectInit = false;
-let _injectLastEventTs = 0;
+const _displayedReplies = new Set();
 
 function _injectBubble(text, side) {
   const wrap = document.createElement('div');
@@ -549,11 +549,15 @@ function _injectBubble(text, side) {
     `max-width:82%;${side === 'you' ? 'align-self:flex-end' : 'align-self:flex-start'}`;
   const lbl = document.createElement('div');
   lbl.style.cssText = 'font-family:var(--font-m);font-size:0.54rem;letter-spacing:0.14em;color:var(--faint);margin-bottom:4px;padding:0 4px';
-  lbl.textContent = side === 'you' ? 'YOU' : 'KARMA';
+  lbl.textContent = side === 'you' ? 'YOU' : (side === 'error' ? 'ERROR' : 'KARMA');
   const bub = document.createElement('div');
-  bub.style.cssText = side === 'you'
-    ? 'background:var(--blue);color:#00101f;padding:10px 14px;font-size:0.82rem;line-height:1.5;word-break:break-word'
-    : 'background:#05090d;border:1px solid var(--line-2);color:var(--ink);padding:10px 14px;font-size:0.82rem;line-height:1.5;word-break:break-word';
+  let bgStyle = 'background:#05090d;border:1px solid var(--line-2);color:var(--ink);';
+  if (side === 'you') {
+    bgStyle = 'background:var(--blue);color:#00101f;';
+  } else if (side === 'error') {
+    bgStyle = 'background:#1a0808;border:1px solid #d32f2f;color:#ff8888;';
+  }
+  bub.style.cssText = `${bgStyle}padding:10px 14px;font-size:0.82rem;line-height:1.5;word-break:break-word`;
   bub.textContent = text;
   wrap.appendChild(lbl); wrap.appendChild(bub);
   return wrap;
@@ -563,11 +567,19 @@ function _injectScroll() { const h = $('inject-history'); if (h) h.scrollTop = h
 // Forward live events into inject history panel
 function injectOnEvent(e) {
   const hist = $('inject-history');
-  if (!hist || !_injectInit) return;
-  if (e.ts <= _injectLastEventTs) return;
+  if (!hist) return;
   if (e.kind === 'reply' && e.text) {
-    _injectLastEventTs = e.ts;
+    const key = e.text.trim();
+    if (_displayedReplies.has(key)) return;
+    _displayedReplies.add(key);
+    const th = $('inject-thinking');
+    if (th) th.remove();
     hist.appendChild(_injectBubble(e.text, 'karma'));
+    _injectScroll();
+  } else if (e.kind === 'error' && e.text) {
+    const th = $('inject-thinking');
+    if (th) th.remove();
+    hist.appendChild(_injectBubble(e.text, 'error'));
     _injectScroll();
   }
 }
@@ -575,30 +587,95 @@ function injectOnEvent(e) {
 async function _injectSend() {
   const inp = $('inject-input');
   const msg = $('inject-msg');
+  const sendBtn = $('inject-send');
   const text = (inp.value || '').trim();
   if (!text) return;
   if (DEMO) { msg.style.color='var(--mut)'; msg.textContent='demo mode — send needs a live robot'; return; }
   inp.value = ''; msg.textContent = '';
-  $('inject-history').appendChild(_injectBubble(text, 'you'));
+  const hist = $('inject-history');
+  hist.appendChild(_injectBubble(text, 'you'));
+
+  // Add animated Thinking bubble
+  const th = document.createElement('div');
+  th.id = 'inject-thinking';
+  th.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;max-width:82%;align-self:flex-start';
+  th.innerHTML = `
+    <div style="font-family:var(--font-m);font-size:0.54rem;letter-spacing:0.14em;color:var(--faint);margin-bottom:4px;padding:0 4px">KARMA</div>
+    <div style="background:#05090d;border:1px solid var(--line-2);color:var(--mut);padding:10px 14px;font-size:0.82rem;line-height:1.5;display:flex;align-items:center;gap:8px">
+      <i class="fa-solid fa-circle-notch fa-spin" style="color:var(--blue)"></i>
+      <span>Thinking…</span>
+    </div>
+  `;
+  hist.appendChild(th);
   _injectScroll();
+
+  if (sendBtn) sendBtn.disabled = true;
+
   try {
-    const r = await api('/api/inject', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      msg.style.color = 'var(--danger)'; msg.textContent = d.error || 'send failed';
+    const r = await api('/api/inject', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text})
+    });
+    const d = await r.json().catch(() => ({}));
+    const curTh = $('inject-thinking');
+    if (curTh) curTh.remove();
+
+    if (r.ok && d.reply) {
+      _displayedReplies.add(d.reply.trim());
+      hist.appendChild(_injectBubble(d.reply, 'karma'));
+      _injectScroll();
+    } else {
+      const errText = d.error || `Server returned error (${r.status})`;
+      hist.appendChild(_injectBubble(errText, 'error'));
+      _injectScroll();
+      msg.style.color = 'var(--danger)';
+      msg.textContent = errText;
     }
-  } catch(e) { msg.style.color='var(--danger)'; msg.textContent='network error'; }
+  } catch(e) {
+    const curTh = $('inject-thinking');
+    if (curTh) curTh.remove();
+    hist.appendChild(_injectBubble('Network error: could not contact robot', 'error'));
+    _injectScroll();
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'network error';
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+    inp.focus();
+  }
+}
+
+async function loadInjectHistory() {
+  const hist = $('inject-history');
+  if (!hist || hist.children.length > 0) return;
+  try {
+    const r = await api('/api/inject/history');
+    if (r.ok) {
+      const d = await r.json();
+      if (d.turns && d.turns.length) {
+        d.turns.forEach(t => {
+          if (t.role === 'user' && t.content) {
+            hist.appendChild(_injectBubble(t.content, 'you'));
+          } else if (t.role === 'assistant' && t.content) {
+            _displayedReplies.add(t.content.trim());
+            hist.appendChild(_injectBubble(t.content, 'karma'));
+          }
+        });
+        _injectScroll();
+      }
+    }
+  } catch (e) {}
 }
 
 function initInject() {
   if (_injectInit) { $('inject-input').focus(); return; }
   _injectInit = true;
-  _injectLastEventTs = Date.now() / 1000;
   $('inject-send').onclick = _injectSend;
   $('inject-input').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _injectSend(); } };
   $('inject-input').focus();
+  loadInjectHistory();
 }
+
 
 // ---- logs ----
 function logLine(e) {
