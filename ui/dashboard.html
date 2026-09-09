@@ -41,13 +41,13 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-d);font-size:1
 .rule-blue{height:2px;background:var(--blue)}
 
 /* tab rail */
-.console-nav-rail{display:flex;background:#020406;border-bottom:1px solid var(--line);position:sticky;top:54px;z-index:4}
-.console-tabs{display:flex;align-items:stretch;overflow-x:auto}
-.nav-tab-btn{display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;background:transparent;border:none;border-right:1px solid var(--line);color:var(--mut);font-family:var(--font-m);font-size:0.62rem;font-weight:600;letter-spacing:0.12em;white-space:nowrap}
+.console-nav-rail{display:flex;background:#020406;border-bottom:1px solid var(--line);position:relative;z-index:4}
+.console-tabs{display:flex;align-items:stretch;flex-wrap:wrap;width:100%}
+.nav-tab-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;cursor:pointer;background:transparent;border:none;border-right:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--mut);font-family:var(--font-m);font-size:0.65rem;font-weight:600;letter-spacing:0.12em;white-space:nowrap;flex:1 1 auto}
 .nav-tab-btn:hover{color:var(--ink);background:var(--panel)}
 .nav-tab-btn.on{background:var(--blue);color:#00101f}
-.nav-tab-btn.on .tab-num{color:#00101f;opacity:0.7}
-.tab-num{font-size:0.56rem;opacity:0.55}
+.nav-tab-btn.on .tab-num{color:#00101f;opacity:0.8}
+.tab-num{font-size:0.58rem;opacity:0.65}
 
 /* panes */
 main{display:block;max-width:1000px;margin:0 auto;padding:16px 20px 40px}
@@ -205,6 +205,22 @@ img.cam{width:100%;display:block;background:#000}
   <main>
     <div data-pane="status">
       <div class="pane-head"><div><div class="pane-eyebrow">01 / STATE — LIVE</div><h2>Status</h2></div></div>
+      <section class="card" style="margin-bottom:14px;background:#03070c;border:1px solid var(--line-2)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3>Quick Navigation</h3>
+          <span class="hint">Jump directly to any dashboard tool</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px">
+          <button type="button" class="hw-btn" onclick="showPane('camera')" style="padding:10px 8px;text-align:center;font-size:0.68rem;background:var(--panel);border-color:var(--blue)">📷 CAMERA (YOLO)</button>
+          <button type="button" class="hw-btn" onclick="showPane('inject')" style="padding:10px 8px;text-align:center;font-size:0.68rem;background:var(--panel);border-color:var(--blue);color:var(--blue-ice)">💬 INJECT PROMPT</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('logs')" style="padding:10px 8px;text-align:center;font-size:0.68rem">📜 EVENT LOGS</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('thoughts')" style="padding:10px 8px;text-align:center;font-size:0.68rem">🧠 THOUGHTS</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('rag')" style="padding:10px 8px;text-align:center;font-size:0.68rem">📚 KNOWLEDGE (RAG)</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('prompt')" style="padding:10px 8px;text-align:center;font-size:0.68rem">🎭 SYSTEM PROMPT</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('settings')" style="padding:10px 8px;text-align:center;font-size:0.68rem">⚙️ TUNING</button>
+          <button type="button" class="hw-btn ghost" onclick="showPane('shell')" style="padding:10px 8px;text-align:center;font-size:0.68rem">💻 SHELL TERMINAL</button>
+        </div>
+      </section>
       <section class="card" id="model-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <h3>Cognition Engine / Model Switcher</h3>
