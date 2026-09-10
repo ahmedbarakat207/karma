@@ -130,12 +130,18 @@ if $DO_PATCH; then
     fi
 
     # Auto-unmute and maximize audio playback volume to 100%
-    for _ctrl in "Master" "Headphone" "PCM" "Speaker" "Playback"; do
+    for _ctrl in "Master" "Headphone" "Headphones" "PCM" "Speaker" "Playback"; do
         amixer sset "$_ctrl" 100% unmute 2>/dev/null || true
-        for _c in 0 1 2 3 Headphones; do
+        for _c in 0 1 2 3 Headphones Device; do
             amixer -c "$_c" sset "$_ctrl" 100% unmute 2>/dev/null || true
         done
     done
+    amixer cset numid=3 1 2>/dev/null || true
+    amixer -c Headphones cset numid=3 1 2>/dev/null || true
+    pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null || true
+    pactl set-sink-volume @DEFAULT_SINK@ 100% 2>/dev/null || true
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
+    wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
     sudo alsactl store 2>/dev/null || true
 fi
 

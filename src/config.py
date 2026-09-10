@@ -14,12 +14,24 @@ warnings.filterwarnings("ignore")
 
 
 class SilenceStderrFD:
+    """Silences file descriptors (stderr, and optionally stdout) at the OS level."""
+    def __init__(self, stdout: bool = True):
+        self.silence_stdout = stdout
+        self.null_fd = None
+        self.saved_stderr_fd = None
+        self.saved_stdout_fd = None
+
     def __enter__(self):
         try:
             sys.stderr.flush()
+            if self.silence_stdout:
+                sys.stdout.flush()
             self.null_fd = os.open(os.devnull, os.O_WRONLY)
             self.saved_stderr_fd = os.dup(2)
             os.dup2(self.null_fd, 2)
+            if self.silence_stdout:
+                self.saved_stdout_fd = os.dup(1)
+                os.dup2(self.null_fd, 1)
         except Exception:
             self.null_fd = None
         return self
@@ -30,9 +42,17 @@ class SilenceStderrFD:
                 sys.stderr.flush()
                 os.dup2(self.saved_stderr_fd, 2)
                 os.close(self.saved_stderr_fd)
+                if self.saved_stdout_fd is not None:
+                    sys.stdout.flush()
+                    os.dup2(self.saved_stdout_fd, 1)
+                    os.close(self.saved_stdout_fd)
                 os.close(self.null_fd)
             except Exception:
                 pass
+
+
+SilenceOutputFD = SilenceStderrFD
+
 
 
 def _env_bool(key: str, default: bool = False) -> bool:

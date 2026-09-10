@@ -125,26 +125,49 @@ def clean_for_speech(text: str) -> str:
 
 
 def set_system_volume_max() -> None:
-    """Automatically unmute and set ALSA volume to 100% across all cards and controls."""
+    """Automatically unmute and set ALSA, PulseAudio, and PipeWire volume to 100% across all cards and controls."""
     if not sys.platform.startswith("linux"):
         return
     import shutil
-    if not shutil.which("amixer"):
-        return
-
     import subprocess
-    controls = ["Headphone", "Master", "PCM", "Speaker", "Playback"]
-    cards = ["Headphones", "0", "1", "2", "3"]
-    for ctrl in controls:
-        try:
-            subprocess.run(["amixer", "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
-        except Exception:
-            pass
-        for card in cards:
+
+    # 1. ALSA mixer controls
+    if shutil.which("amixer"):
+        controls = ["Headphone", "Headphones", "Master", "PCM", "Speaker", "Playback"]
+        cards = ["Headphones", "0", "1", "2", "3", "Device"]
+        for ctrl in controls:
             try:
-                subprocess.run(["amixer", "-c", card, "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
+                subprocess.run(["amixer", "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
             except Exception:
                 pass
+            for card in cards:
+                try:
+                    subprocess.run(["amixer", "-c", str(card), "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
+                except Exception:
+                    pass
+        # Force Raspberry Pi bcm2835 audio routing to 3.5mm analog jack (numid=3 1)
+        try:
+            subprocess.run(["amixer", "cset", "numid=3", "1"], capture_output=True, timeout=1)
+            subprocess.run(["amixer", "-c", "Headphones", "cset", "numid=3", "1"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+
+    # 2. PulseAudio controls (if PulseAudio daemon is running)
+    if shutil.which("pactl"):
+        try:
+            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], capture_output=True, timeout=1)
+            subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+
+    # 3. PipeWire controls (if PipeWire is running)
+    if shutil.which("wpctl"):
+        try:
+            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"], capture_output=True, timeout=1)
+            subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "1.0"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+
 
 
 def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
@@ -403,33 +426,39 @@ class TTSEngine:
                     cards.append((card_id, card_name, card_desc))
 
             candidates = []
-            # Priority 1: USB audio devices (headphones, dongles, speakers)
+
+            # Priority 1: USB audio devices (headphones, dongles, speakers, DACs)
             for cid, cname, cdesc in cards:
                 text = (cname + " " + cdesc).lower()
                 if any(k in text for k in ("usb", "uac", "dac", "speaker", "codec")):
-                    dev = f"plughw:CARD={cname},DEV=0"
-                    if dev not in candidates:
-                        candidates.append(dev)
+                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
+                        if dev not in candidates:
+                            candidates.append(dev)
 
             # Priority 2: 3.5mm analog headphone jack (bcm2835 Headphones)
             for cid, cname, cdesc in cards:
                 text = (cname + " " + cdesc).lower()
-                if any(k in text for k in ("headphone", "analog")) and "hdmi" not in text:
-                    dev = f"plughw:CARD={cname},DEV=0"
-                    if dev not in candidates:
-                        candidates.append(dev)
+                if any(k in text for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in text:
+                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
+                        if dev not in candidates:
+                            candidates.append(dev)
 
             # Priority 3: Any non-HDMI card
             for cid, cname, cdesc in cards:
                 text = (cname + " " + cdesc).lower()
                 if "hdmi" not in text:
-                    dev = f"plughw:CARD={cname},DEV=0"
-                    if dev not in candidates:
-                        candidates.append(dev)
+                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
+                        if dev not in candidates:
+                            candidates.append(dev)
+
+            # Priority 4: PulseAudio ALSA plugin if available
+            if shutil.which("pulseaudio") or shutil.which("pipewire") or shutil.which("pactl"):
+                if "pulse" not in candidates:
+                    candidates.append("pulse")
 
             return candidates
         except Exception as e:
-            config.log_debug(f"[speech] device discovery error: {e}")
+            print(f"[speech] device discovery error: {e}", file=sys.stderr)
             return []
 
     def _play_audio(self, audio: Optional[np.ndarray]) -> bool:
@@ -439,6 +468,9 @@ class TTSEngine:
             return False
 
         played = False
+        backend_used = None
+        errors: List[str] = []
+
         try:
             audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
             internal_state.set_playing_audio(True)
@@ -452,68 +484,123 @@ class TTSEngine:
                 self._volume_maxed = True
                 set_system_volume_max()
 
-            # On Linux / Raspberry Pi, prefer `aplay` to avoid PortAudio ALSA contention
-            # and prevent HDMI clock re-sync which blanks the 7-inch display.
-            if sys.platform.startswith("linux"):
-                import shutil
-                if shutil.which("aplay"):
-                    import tempfile
-                    import subprocess
-                    import wave
-                    tmp_wav = None
+            # Resample to 44.1kHz stereo 16-bit PCM for universal ALSA & sound card hardware compatibility
+            int16_mono = np.clip(audio_arr * 32767.0, -32768, 32767).astype(np.int16)
+            try:
+                import scipy.signal
+                resampled = scipy.signal.resample_poly(audio_arr, 147, 80).astype(np.float32)
+                int16_resampled = np.clip(resampled * 32767.0, -32768, 32767).astype(np.int16)
+                int16_stereo = np.column_stack((int16_resampled, int16_resampled)).flatten()
+                stereo_rate = 44100
+            except Exception:
+                int16_resampled = int16_mono
+                int16_stereo = np.column_stack((int16_mono, int16_mono)).flatten()
+                stereo_rate = config.TTS_SAMPLE_RATE
+
+            import tempfile
+            import wave
+            import shutil
+            import subprocess
+
+            tmp_wav = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                    tmp_wav = tf.name
+
+                with wave.open(tmp_wav, "wb") as wf:
+                    wf.setnchannels(2)
+                    wf.setsampwidth(2)
+                    wf.setframerate(stereo_rate)
+                    wf.writeframes(int16_stereo.tobytes())
+
+                # Method 1: PulseAudio native paplay (handles USB DAC and 3.5mm without ALSA hardware locks)
+                if not played and shutil.which("paplay"):
                     try:
-                        int16_arr = np.clip(audio_arr * 32767.0, -32768, 32767).astype(np.int16)
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                            tmp_wav = tf.name
+                        p_res = subprocess.run(["paplay", tmp_wav], capture_output=True, text=True, timeout=30)
+                        if p_res.returncode == 0:
+                            played = True
+                            backend_used = "paplay (PulseAudio/PipeWire)"
+                        else:
+                            errors.append(f"paplay: {p_res.stderr.strip()[:80]}")
+                    except Exception as pe:
+                        errors.append(f"paplay: {pe}")
 
-                        with wave.open(tmp_wav, "wb") as wf:
-                            wf.setnchannels(1)
-                            wf.setsampwidth(2)
-                            wf.setframerate(config.TTS_SAMPLE_RATE)
-                            wf.writeframes(int16_arr.tobytes())
+                # Method 2: ALSA aplay on prioritized non-HDMI hardware devices
+                if not played and shutil.which("aplay"):
+                    devices_to_try = self._find_best_alsa_devices()
+                    if not devices_to_try and getattr(config, "ALLOW_HDMI_AUDIO", False):
+                        devices_to_try = ["default"]
 
-                        devices_to_try = self._find_best_alsa_devices()
-                        if not devices_to_try:
-                            if getattr(config, "ALLOW_HDMI_AUDIO", False):
-                                devices_to_try = ["default"]
-                            else:
-                                config.log_debug("[speech] no non-HDMI audio device found; skipping HDMI to prevent screen blanking")
-
-                        for dev in devices_to_try:
-                            cmd = ["aplay", "-q", "-D", dev, tmp_wav] if dev != "default" else ["aplay", "-q", tmp_wav]
-                            proc = subprocess.run(cmd, capture_output=True, timeout=30)
+                    for dev in devices_to_try:
+                        try:
+                            cmd = ["aplay", "-D", dev, tmp_wav] if dev != "default" else ["aplay", tmp_wav]
+                            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                             if proc.returncode == 0:
                                 played = True
-                                config.log_debug(f"[speech] played audio via {dev}")
+                                backend_used = f"aplay ({dev})"
                                 break
                             else:
-                                config.log_debug(f"[speech] aplay on {dev} returned {proc.returncode}: {proc.stderr.decode('utf-8', errors='ignore')}")
-                    except Exception as ap_err:
-                        config.log_debug(f"[speech] aplay error: {ap_err}")
-                    finally:
-                        if tmp_wav and os.path.exists(tmp_wav):
+                                err_text = proc.stderr.strip().replace("\n", " ")
+                                errors.append(f"aplay {dev}: {err_text[:80]}")
+                        except Exception as e:
+                            errors.append(f"aplay {dev}: {e}")
+
+                # Method 3: sounddevice with explicit non-HDMI output selection
+                if not played:
+                    try:
+                        import sounddevice as sd
+                        sd_dev = None
+                        all_devs = sd.query_devices()
+                        # Prefer USB DAC
+                        for idx, d in enumerate(all_devs):
+                            if d.get("max_output_channels", 0) > 0:
+                                n = d.get("name", "").lower()
+                                if any(k in n for k in ("usb", "uac", "dac", "speaker", "codec")):
+                                    sd_dev = idx
+                                    break
+                        # Then prefer Headphones / bcm2835 (non-HDMI)
+                        if sd_dev is None:
+                            for idx, d in enumerate(all_devs):
+                                if d.get("max_output_channels", 0) > 0:
+                                    n = d.get("name", "").lower()
+                                    if any(k in n for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in n:
+                                        sd_dev = idx
+                                        break
+                        if sd_dev is not None or not sys.platform.startswith("linux"):
+                            play_data = resampled if 'resampled' in locals() else audio_arr
+                            rate = 44100 if 'resampled' in locals() else config.TTS_SAMPLE_RATE
+                            sd.play(play_data, rate, device=sd_dev)
+                            sd.wait()
+                            played = True
+                            backend_used = f"sounddevice (device #{sd_dev})"
+                    except Exception as sde:
+                        errors.append(f"sounddevice: {sde}")
+
+                # Method 4: ffplay / mpv fallback
+                if not played:
+                    for player, player_cmd in [("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", tmp_wav]),
+                                               ("mpv", ["mpv", "--no-video", tmp_wav])]:
+                        if shutil.which(player):
                             try:
-                                os.remove(tmp_wav)
+                                proc = subprocess.run(player_cmd, capture_output=True, timeout=30)
+                                if proc.returncode == 0:
+                                    played = True
+                                    backend_used = player
+                                    break
                             except Exception:
                                 pass
 
-            # Non-Linux fallback (e.g. macOS development)
-            if not played and not sys.platform.startswith("linux"):
-                try:
-                    sd.play(audio_arr, config.TTS_SAMPLE_RATE)
-                    sd.wait()
-                    played = True
-                except Exception as e:
+            finally:
+                if tmp_wav and os.path.exists(tmp_wav):
                     try:
-                        import scipy.signal
-                        resampled = scipy.signal.resample_poly(audio_arr, 441, 240)
-                        sd.play(resampled, 44100)
-                        sd.wait()
-                        played = True
-                    except Exception as e2:
-                        print(f"[speech] playback note: {e} (resample retry: {e2})", file=sys.stderr)
+                        os.remove(tmp_wav)
+                    except Exception:
+                        pass
 
-            if not played:
+            if played:
+                print(f"[speech] 🔊 audio played via {backend_used}")
+            else:
+                print(f"[speech] ⚠️ all audio playback attempts failed. Errors: {'; '.join(errors)}", file=sys.stderr)
                 # Visual fallback: keep mouth animation running for the duration of the speech
                 duration = max(1.5, len(audio_arr) / config.TTS_SAMPLE_RATE)
                 t0 = time.time()
@@ -522,7 +609,7 @@ class TTSEngine:
                         break
                     time.sleep(0.05)
         except Exception as e:
-            config.log_debug(f"[speech] playback error: {e}")
+            print(f"[speech] playback exception: {e}", file=sys.stderr)
         finally:
             internal_state.set_playing_audio(False)
             try:
@@ -531,7 +618,6 @@ class TTSEngine:
             except Exception:
                 pass
         return played
-
 
     def speak(self, text: str, speed: float = 1.0) -> bool:
         spoken_text = clean_for_speech(text)
@@ -546,11 +632,16 @@ class TTSEngine:
         played = False
         try:
             audio = self._synthesize(spoken_text, speed=speed)
-            if audio is not None and not (self.interrupt_event and self.interrupt_event.is_set()):
+            if audio is None:
+                print(f"[speech] ⚠️ TTS synthesis returned no audio for: '{spoken_text[:40]}...'", file=sys.stderr)
+                return False
+            print(f"[speech] synthesized {len(audio)} samples ({len(audio)/config.TTS_SAMPLE_RATE:.1f}s), playing...")
+            if not (self.interrupt_event and self.interrupt_event.is_set()):
                 played = self._play_audio(audio)
         except Exception as e:
-            print(f"[speech] TTS speak error: {e}")
+            print(f"[speech] TTS speak error: {e}", file=sys.stderr)
         finally:
             if self.speaking_event:
                 self.speaking_event.clear()
         return played
+

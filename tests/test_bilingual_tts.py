@@ -146,9 +146,11 @@ card 3: UACDemo [USB Audio Device], device 0: USB Audio [USB Audio]
 
         # USB audio is highest priority
         devs = tts._find_best_alsa_devices()
-        assert len(devs) >= 2
+        assert len(devs) >= 4
         assert devs[0] == "plughw:CARD=UACDemo,DEV=0"
-        assert devs[1] == "plughw:CARD=Headphones,DEV=0"
+        assert "plughw:3,0" in devs
+        assert "plughw:CARD=Headphones,DEV=0" in devs
+        assert "plughw:2,0" in devs
         # Must never include HDMI
         assert not any("hdmi" in d.lower() for d in devs)
 
