@@ -407,59 +407,6 @@ class TTSEngine:
                 config.log_debug(f"[speech] synthesis error: {e}")
                 return None
 
-    def _find_best_alsa_devices(self) -> List[str]:
-        """Find non-HDMI ALSA playback devices on Linux/Raspberry Pi.
-
-        Routing audio to HDMI (vc4-hdmi) on Raspberry Pi causes the HDMI clock
-        to re-synchronize, which blanks the 7-inch LCD display (turns off and on again)
-        and sends audio to a display that has no speakers.
-        """
-        configured = (getattr(config, "AUDIO_OUTPUT_DEVICE", "") or os.environ.get("AUDIO_OUTPUT_DEVICE", "")).strip()
-        if configured:
-            return [configured]
-
-        if not sys.platform.startswith("linux"):
-            return []
-
-        import shutil
-        if not shutil.which("aplay"):
-            return []
-
-        try:
-            import subprocess
-            proc = subprocess.run(["aplay", "-l"], capture_output=True, text=True, timeout=2)
-            if proc.returncode != 0 or not proc.stdout:
-                return []
-
-            cards = []
-            for line in proc.stdout.splitlines():
-                m = re.match(r"^card\s+(\d+):\s+([\w\-]+)\s+\[([^\]]+)\]", line)
-                if m:
-                    card_id, card_name, card_desc = m.group(1), m.group(2), m.group(3)
-                    cards.append((card_id, card_name, card_desc))
-
-            candidates = []
-
-            # Priority 1: USB audio devices (headphones, dongles, speakers, DACs)
-            for cid, cname, cdesc in cards:
-                text = (cname + " " + cdesc).lower()
-                if any(k in text for k in ("usb", "uac", "dac", "speaker", "codec")):
-                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
-                        if dev not in candidates:
-                            candidates.append(dev)
-
-            # Priority 2: 3.5mm analog headphone jack (bcm2835 Headphones)
-            for cid, cname, cdesc in cards:
-                text = (cname + " " + cdesc).lower()
-                if any(k in text for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in text:
-                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
-                        if dev not in candidates:
-                            candidates.append(dev)
-
-            # Priority 3: Any non-HDMI card
-            for cid, cname, cdesc in cards:
-                text = (cname + " " + cdesc).lower()
-                if "hdmi" not in text:
     def _find_best_pulse_sink(self) -> Optional[str]:
         """Find non-HDMI PulseAudio/PipeWire sink."""
         if not sys.platform.startswith("linux"):
