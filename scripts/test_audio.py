@@ -103,14 +103,20 @@ import io as _io
 
 print(f"    en_pipeline present: {getattr(tts, 'en_pipeline', None) is not None}")
 print(f"    interrupt_event set: {bool(getattr(tts, 'interrupt_event', None) and tts.interrupt_event.is_set())}")
-try:
-    print(f"    ALSA candidates: {tts._find_best_alsa_devices()}")
-except Exception as _e:
-    print(f"    ALSA candidates query failed: {_e}")
-try:
-    print(f"    Pulse sink: {tts._find_best_pulse_sink()}")
-except Exception as _e:
-    print(f"    Pulse sink query failed: {_e}")
+if hasattr(tts, "_find_best_alsa_devices"):
+    try:
+        print(f"    ALSA candidates: {tts._find_best_alsa_devices()}")
+    except Exception as _e:
+        print(f"    ALSA candidates query failed: {_e}")
+else:
+    print("    ALSA candidates: (not available in this TTSEngine version — run 'aplay -l' output from [1] above)")
+if hasattr(tts, "_find_best_pulse_sink"):
+    try:
+        print(f"    Pulse sink: {tts._find_best_pulse_sink()}")
+    except Exception as _e:
+        print(f"    Pulse sink query failed: {_e}")
+else:
+    print("    Pulse sink: (not available in this TTSEngine version — see 'pactl list sinks short')")
 
 t0 = time.time()
 _stderr_buf = _io.StringIO()
