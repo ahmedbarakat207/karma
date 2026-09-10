@@ -82,6 +82,7 @@ def run_validation(llm):
         {"prompt": "What is 2 + 2? Answer in one number.", "expected": "4"},
         {"prompt": "What is the capital of France?", "expected": "Paris"},
         {"prompt": "Say hello in one word.", "expected": "Hello"},
+        {"prompt": "Explain in two sentences why the sky is blue.", "expected": "blue"},
     ]
 
     passed = 0
@@ -93,6 +94,7 @@ def run_validation(llm):
         )
         print(f"[Test {i}/{len(test_cases)}] Prompt: '{tc['prompt']}'")
         t0 = time.time()
+        first_dt = None
 
         with config.SilenceStderrFD():
             stream = llm(
@@ -106,15 +108,22 @@ def run_validation(llm):
             tokens = []
             print("   Output: ", end="", flush=True)
             for chunk in stream:
+                if first_dt is None:
+                    first_dt = time.time() - t0
                 txt = chunk["choices"][0]["text"]
                 print(txt, end="", flush=True)
                 tokens.append(txt)
 
-        elapsed = time.time() - t0
-        n_tok = len(tokens)
-        tok_per_sec = n_tok / max(0.001, elapsed)
+        total = time.time() - t0
+        first_dt = first_dt if first_dt is not None else total
+        decode_dt = max(total - first_dt, 0.001)
         reply = "".join(tokens).strip()
-        print(f"\n   ⚡ Speed: {tok_per_sec:.1f} tok/s ({n_tok} tokens in {elapsed:.2f}s)")
+        try:
+            n_tok = len(llm.tokenize(reply.encode("utf-8")))
+        except Exception:
+            n_tok = len(tokens)
+        decode_tps = n_tok / decode_dt
+        print(f"\n   TTFT: {first_dt*1000:.0f}ms | decode: {decode_tps:.1f} tok/s ({n_tok} tokens in {decode_dt:.2f}s, {total:.2f}s total)")
 
         if reply and len(reply) > 0:
             print("   ✓ Status: PASS\n")
@@ -238,9 +247,15 @@ def interactive_chat(
                         tokens.append(chunk["choices"][0]["text"])
 
             elapsed = time.time() - t0
+            ttft = first_token_time or elapsed
+            decode_dt = max(elapsed - ttft, 0.001)
             n_tokens = len(tokens)
-            tok_per_sec = n_tokens / max(0.001, elapsed)
-            ttft_ms = (first_token_time or 0) * 1000
+            try:
+                n_tok_true = len(llm.tokenize("".join(tokens).encode("utf-8")))
+            except Exception:
+                n_tok_true = n_tokens
+            decode_tps = n_tok_true / decode_dt
+            ttft_ms = ttft * 1000
 
             raw_reply = "".join(tokens).strip()
             reply = clean_companion_reply(raw_reply, user_input=user_input)
@@ -251,7 +266,7 @@ def interactive_chat(
 
             messages.append({"role": "assistant", "content": reply})
 
-            print(f"\n\033[90m[{tok_per_sec:.1f} tok/s | TTFT: {ttft_ms:.0f}ms | {n_tokens} tokens | {elapsed:.2f}s]\033[0m\n")
+            print(f"\n\033[90m[{decode_tps:.1f} tok/s decode | TTFT: {ttft_ms:.0f}ms | {n_tok_true} tokens | {elapsed:.2f}s total]\033[0m\n")
 
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
