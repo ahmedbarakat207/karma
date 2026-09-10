@@ -10,9 +10,9 @@ sentence-transformers
 sqlite-vec
 sqlean.py
 kokoro
+num2words
 face_recognition
 mediapipe
 huggingface_hub
 groq
 markitdown[pdf]
-

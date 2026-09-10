@@ -86,6 +86,17 @@ if $DO_PATCH; then
         fi
     fi
 
+    # ── 2d. Ensure num2words is installed in venv ──────────────────────────────
+    if [ -f "$REPO_DIR/.venv/bin/pip" ]; then
+        if ! "$REPO_DIR/.venv/bin/python3" -c "import num2words" 2>/dev/null; then
+            info "Installing num2words in .venv…"
+            "$REPO_DIR/.venv/bin/pip" install --prefer-binary num2words 2>/dev/null || true
+            ok "num2words installed"
+        else
+            ok "num2words already installed in .venv"
+        fi
+    fi
+
     # ── 3. Write Pi4 .env settings ───────────────────────────────────────────
     info "Checking .env for Pi4 optimisation settings…"
     touch "$ENV_FILE"

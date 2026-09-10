@@ -299,6 +299,11 @@ def speak_and_animate(text: str, tts=None) -> None:
             try:
                 from src.speech.tts import TTSEngine
                 engine_tts = TTSEngine()
+                try:
+                    from src.ui.server import set_runtime
+                    set_runtime(tts=engine_tts)
+                except Exception:
+                    pass
             except Exception as te:
                 print(f"[interaction] fallback TTS init error: {te}", file=sys.stderr)
 

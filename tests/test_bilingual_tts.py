@@ -102,3 +102,22 @@ def test_arabic_kiosk_intent():
     # Face/Close in Arabic
     intent, floor = _check_kiosk_intent("اقفل القائمة وارجع للوش")
     assert intent == "face"
+
+
+def test_num2words_fallback():
+    from src.speech.tts import _ensure_num2words
+    import sys
+    _ensure_num2words()
+    assert "num2words" in sys.modules
+    mod = sys.modules["num2words"]
+    fn = getattr(mod, "num2words", None)
+    assert callable(fn)
+    assert fn(0) == "zero"
+    assert fn(42) == "forty-two"
+    assert "one hundred" in fn(105) and "five" in fn(105)
+    assert "twenty" in fn(2026, to="year")
+    assert fn(1, to="ordinal") == "first"
+    assert fn(2, to="ordinal") == "second"
+    assert fn(3, to="ordinal") == "third"
+    assert fn(21, to="ordinal") in ("twenty-first", "twenty first")
+    assert "three point" in fn(3.14)

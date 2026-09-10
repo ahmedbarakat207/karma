@@ -2,6 +2,7 @@
 import io
 import os
 import re
+import sys
 import threading
 import time
 import zipfile
@@ -12,6 +13,102 @@ import sounddevice as sd
 from src import config
 from src.state import internal_state
 from src.speech.arabic_g2p import is_arabic, ArabicG2P, EXTRA_SYMBOLS, clean_phonemes
+
+
+def _ensure_num2words() -> None:
+    """Ensure num2words is available in sys.modules so Kokoro/Misaki never crash on import.
+
+    Kokoro and Misaki depend on num2words for English G2P normalization.
+    If num2words is not installed in the python environment, provide a built-in
+    fallback implementation so TTS never crashes with ModuleNotFoundError.
+    """
+    try:
+        import num2words  # noqa: F401
+    except ImportError:
+        import types
+        import importlib.machinery
+
+        def _fallback_num2words(n, to="cardinal", **kwargs):
+            try:
+                num = float(n) if "." in str(n) else int(n)
+            except Exception:
+                return str(n)
+
+            ONES = [
+                "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+                "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+                "seventeen", "eighteen", "nineteen"
+            ]
+            TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+            ORDINALS = {
+                0: "zeroth", 1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+                6: "sixth", 7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth",
+                11: "eleventh", 12: "twelfth", 13: "thirteenth", 14: "fourteenth",
+                15: "fifteenth", 16: "sixteenth", 17: "seventeenth", 18: "eighteenth",
+                19: "nineteenth", 20: "twentieth", 30: "thirtieth", 40: "fortieth",
+                50: "fiftieth", 60: "sixtieth", 70: "seventieth", 80: "eightieth", 90: "ninetieth"
+            }
+
+            def _int_to_cardinal(val: int) -> str:
+                if val < 0:
+                    return "minus " + _int_to_cardinal(-val)
+                if val < 20:
+                    return ONES[val]
+                if val < 100:
+                    rem = val % 10
+                    return TENS[val // 10] + (("-" + ONES[rem]) if rem else "")
+                if val < 1000:
+                    rem = val % 100
+                    return ONES[val // 100] + " hundred" + ((" " + _int_to_cardinal(rem)) if rem else "")
+                if val < 1000000:
+                    thousands = val // 1000
+                    rem = val % 1000
+                    return _int_to_cardinal(thousands) + " thousand" + ((" " + _int_to_cardinal(rem)) if rem else "")
+                if val < 1000000000:
+                    millions = val // 1000000
+                    rem = val % 1000000
+                    return _int_to_cardinal(millions) + " million" + ((" " + _int_to_cardinal(rem)) if rem else "")
+                return str(val)
+
+            if isinstance(num, float):
+                int_part = int(num)
+                dec_part = str(num).split(".")[1]
+                dec_words = " ".join(ONES[int(d)] for d in dec_part if d.isdigit())
+                return f"{_int_to_cardinal(int_part)} point {dec_words}"
+
+            val = int(num)
+            if to == "year" and 1000 <= val <= 2999:
+                century = val // 100
+                rest = val % 100
+                if rest == 0:
+                    return f"{_int_to_cardinal(century)} hundred"
+                elif rest < 10:
+                    return f"{_int_to_cardinal(century)} oh {ONES[rest]}"
+                else:
+                    return f"{_int_to_cardinal(century)} {_int_to_cardinal(rest)}"
+
+            cardinal = _int_to_cardinal(val)
+            if to == "ordinal":
+                if val in ORDINALS:
+                    return ORDINALS[val]
+                if val % 100 in ORDINALS:
+                    base = _int_to_cardinal(val - (val % 100))
+                    return f"{base} {ORDINALS[val % 100]}"
+                if val % 10 in ORDINALS and val % 10 != 0:
+                    base = _int_to_cardinal(val - (val % 10))
+                    return f"{base}-{ORDINALS[val % 10]}"
+                return cardinal + "th"
+
+            return cardinal
+
+        mod = types.ModuleType("num2words")
+        mod.num2words = _fallback_num2words
+        mod.__spec__ = importlib.machinery.ModuleSpec("num2words", None)
+        mod.__file__ = "<fallback_num2words>"
+        sys.modules["num2words"] = mod
+
+
+_ensure_num2words()
 
 
 def clean_for_speech(text: str) -> str:
@@ -64,8 +161,13 @@ class TTSEngine:
         self._voices_cache: Dict[str, np.ndarray] = {}
 
         # English pipeline (Kokoro-82M)
-        from kokoro import KPipeline
-        self.en_pipeline = KPipeline(lang_code=lang_code)
+        _ensure_num2words()
+        try:
+            from kokoro import KPipeline
+            self.en_pipeline = KPipeline(lang_code=lang_code)
+        except Exception as e:
+            config.log_debug(f"[speech] Kokoro English pipeline init error: {e}")
+            self.en_pipeline = None
         self.pipeline = self.en_pipeline  # for backward compatibility
 
         # Arabic pipeline (Nabra-82M) - initialized lazily on first Arabic request
@@ -185,6 +287,9 @@ class TTSEngine:
 
     def _synthesize_english(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
         """Synthesize English text using Kokoro-82M (ONNX or PyTorch)."""
+        if self.en_pipeline is None:
+            config.log_debug("[speech] English pipeline not available.")
+            return None
         try:
             if self.onnx_session is not None:
                 voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
@@ -226,15 +331,19 @@ class TTSEngine:
             return None
 
         with self._synth_lock:
-            use_arabic = is_arabic(spoken) and getattr(config, "NABRA_ENABLED", True)
-            if use_arabic:
-                audio = self._synthesize_arabic(spoken, speed=speed)
-                if audio is not None:
-                    return audio
-                # Fallback to English pipeline if Arabic synthesis failed
-                return self._synthesize_english(spoken, speed=speed)
-            else:
-                return self._synthesize_english(spoken, speed=speed)
+            try:
+                use_arabic = is_arabic(spoken) and getattr(config, "NABRA_ENABLED", True)
+                if use_arabic:
+                    audio = self._synthesize_arabic(spoken, speed=speed)
+                    if audio is not None:
+                        return audio
+                    # Fallback to English pipeline if Arabic synthesis failed
+                    return self._synthesize_english(spoken, speed=speed)
+                else:
+                    return self._synthesize_english(spoken, speed=speed)
+            except Exception as e:
+                config.log_debug(f"[speech] synthesis error: {e}")
+                return None
 
     def _play_audio(self, audio: Optional[np.ndarray]) -> None:
         if audio is None or len(audio) == 0:
