@@ -30,6 +30,14 @@ unclutter -idle 0.1 -root &
 
 openbox &
 
+# ── Audio: auto-unmute and maximize playback volume to 100% ──────────────────
+for _ctrl in "Master" "Headphone" "PCM" "Speaker" "Playback"; do
+    amixer sset "$_ctrl" 100% unmute 2>/dev/null || true
+    for _c in 0 1 2 3 Headphones; do
+        amixer -c "$_c" sset "$_ctrl" 100% unmute 2>/dev/null || true
+    done
+done
+
 # ── Python binary ────────────────────────────────────────────────────────────
 PYTHON_BIN=""
 if [ -f "$SCRIPT_DIR/.venv/bin/python3" ]; then

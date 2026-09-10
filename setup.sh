@@ -273,13 +273,15 @@ if systemctl list-unit-files pigpiod.service 2>/dev/null | grep -q "pigpiod.serv
     sudo systemctl restart pigpiod 2>/dev/null || true
 fi
 
-amixer -c 0 sset 'Master' 100% unmute 2>/dev/null || true
-amixer -c 0 sset 'PCM' 100% unmute 2>/dev/null || true
-amixer -c 1 sset 'Master' 100% unmute 2>/dev/null || true
-amixer -c 1 sset 'PCM' 100% unmute 2>/dev/null || true
+for _ctrl in "Master" "Headphone" "PCM" "Speaker" "Playback"; do
+    amixer sset "$_ctrl" 100% unmute 2>/dev/null || true
+    for _c in 0 1 2 3 Headphones; do
+        amixer -c "$_c" sset "$_ctrl" 100% unmute 2>/dev/null || true
+    done
+done
 sudo alsactl store 2>/dev/null || true
 
-log_success "Audio initialized."
+log_success "Audio initialized and set to 100% volume."
 
 log_info "Setting up Python virtual environment..."
 

@@ -124,15 +124,36 @@ def clean_for_speech(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def set_system_volume_max() -> None:
+    """Automatically unmute and set ALSA volume to 100% across all cards and controls."""
+    if not sys.platform.startswith("linux"):
+        return
+    import shutil
+    if not shutil.which("amixer"):
+        return
+
+    import subprocess
+    controls = ["Headphone", "Master", "PCM", "Speaker", "Playback"]
+    cards = ["Headphones", "0", "1", "2", "3"]
+    for ctrl in controls:
+        try:
+            subprocess.run(["amixer", "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+        for card in cards:
+            try:
+                subprocess.run(["amixer", "-c", card, "sset", ctrl, "100%", "unmute"], capture_output=True, timeout=1)
+            except Exception:
+                pass
+
+
 def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
     if audio is None or len(audio) == 0:
         return audio
 
     max_val = float(np.max(np.abs(audio)))
-    if max_val > 0.95:
-        audio = (audio / max_val) * 0.88
-    elif 0.05 < max_val < 0.60:
-        audio = (audio / max_val) * 0.85
+    if max_val > 0.01:
+        audio = (audio / max_val) * 0.98
 
     fade_len = min(60, len(audio) // 4)
     if fade_len > 4:
@@ -191,6 +212,11 @@ class TTSEngine:
             except Exception as e:
                 config.log_debug(f"[speech] ONNX init note: {e}")
                 self.onnx_session = None
+
+        try:
+            threading.Thread(target=set_system_volume_max, daemon=True, name="auto_max_volume").start()
+        except Exception:
+            pass
 
         try:
             self._synthesize("warmup", speed=1.0)
@@ -421,6 +447,10 @@ class TTSEngine:
                 broadcast_state_threadsafe()
             except Exception:
                 pass
+
+            if not getattr(self, "_volume_maxed", False):
+                self._volume_maxed = True
+                set_system_volume_max()
 
             # On Linux / Raspberry Pi, prefer `aplay` to avoid PortAudio ALSA contention
             # and prevent HDMI clock re-sync which blanks the 7-inch display.

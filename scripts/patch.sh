@@ -117,12 +117,26 @@ if $DO_PATCH; then
 
     _env_set CTX_SIZE                   2048
     _env_set N_BATCH                    256
-    _env_set SPECULATIVE_DECODING       prompt_lookup
-    _env_set SPECULATIVE_NGRAM_SIZE     3
-    _env_set SPECULATIVE_NUM_PRED_TOKENS 10
+    _env_set SPECULATIVE_DECODING       none
+    _env_set SPECULATIVE_NGRAM_SIZE     2
+    _env_set SPECULATIVE_NUM_PRED_TOKENS 8
     _env_set USE_KOKORO_ONNX            true
     _env_set VLM_ENABLED                0
     _env_set FACE_RECOGNITION_INTERVAL  2.0
+
+    # Ensure pigpiod daemon is enabled
+    if systemctl list-unit-files pigpiod.service 2>/dev/null | grep -q "pigpiod.service"; then
+        sudo systemctl enable --now pigpiod 2>/dev/null || true
+    fi
+
+    # Auto-unmute and maximize audio playback volume to 100%
+    for _ctrl in "Master" "Headphone" "PCM" "Speaker" "Playback"; do
+        amixer sset "$_ctrl" 100% unmute 2>/dev/null || true
+        for _c in 0 1 2 3 Headphones; do
+            amixer -c "$_c" sset "$_ctrl" 100% unmute 2>/dev/null || true
+        done
+    done
+    sudo alsactl store 2>/dev/null || true
 fi
 
 # ── 4. Reload + restart ───────────────────────────────────────────────────────

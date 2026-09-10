@@ -156,3 +156,35 @@ card 3: UACDemo [USB Audio Device], device 0: USB Audio [USB Audio]
         monkeypatch.setattr("src.config.AUDIO_OUTPUT_DEVICE", "plughw:custom,0")
         assert tts._find_best_alsa_devices() == ["plughw:custom,0"]
 
+
+def test_set_system_volume_max():
+    from src.speech.tts import set_system_volume_max
+    calls = []
+
+    def mock_run(cmd, *args, **kwargs):
+        calls.append(cmd)
+        m = MagicMock()
+        m.returncode = 0
+        return m
+
+    with patch("sys.platform", "linux"), \
+         patch("shutil.which", return_value="/usr/bin/amixer"), \
+         patch("subprocess.run", side_effect=mock_run):
+        set_system_volume_max()
+        assert len(calls) > 0
+        # Check that 100% and unmute were called
+        assert any("100%" in cmd and "unmute" in cmd for cmd in calls)
+        assert any("-c" in cmd and "Headphones" in cmd for cmd in calls)
+
+
+def test_audio_normalization_peak():
+    import numpy as np
+    from src.speech.tts import _normalize_audio
+
+    # Test normalization boosts quiet audio close to 0.98 peak
+    raw = np.array([0.0, 0.1, -0.2, 0.15], dtype=np.float32)
+    normalized = _normalize_audio(raw)
+    assert normalized is not None
+    assert np.isclose(np.max(np.abs(normalized)), 0.98, atol=0.01)
+
+
