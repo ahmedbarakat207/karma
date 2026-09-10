@@ -207,3 +207,31 @@ async def test_api_config_with_groq_settings(authed):
         assert res["updated"]["GROQ_MODEL"] == "openai/gpt-oss-120b"
         assert config.USE_GROQ is True
         assert config.GROQ_MODEL == "openai/gpt-oss-120b"
+
+
+def test_switchable_engine_groq_fallback():
+    engine = create_switchable_engine(use_groq=True)
+
+    # Mock GroqEngine that raises or returns empty
+    mock_groq = MagicMock()
+    mock_groq.chat.side_effect = RuntimeError("Connection timeout to api.groq.com")
+    mock_groq.stream_chat.side_effect = RuntimeError("Groq stream error")
+
+    # Mock LocalEngine that succeeds
+    mock_local = MagicMock()
+    mock_local.chat.return_value = "Local fallback response"
+    mock_local.stream_chat.return_value = iter(["Local", " stream"])
+
+    engine._groq_engine = mock_groq
+    engine._local_engine = mock_local
+
+    # Chat should fall back to local engine
+    res = engine.chat("sys", "user")
+    assert res == "Local fallback response"
+    mock_local.chat.assert_called_once()
+
+    # Stream should also fall back to local engine
+    tokens = list(engine.stream_chat("sys", "user"))
+    assert tokens == ["Local", " stream"]
+    mock_local.stream_chat.assert_called_once()
+

@@ -617,16 +617,21 @@ async function _injectSend() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text})
     });
-    const d = await r.json().catch(() => ({}));
+    let d = {};
+    try {
+      d = await r.json();
+    } catch (_) {
+      d = {};
+    }
     const curTh = $('inject-thinking');
     if (curTh) curTh.remove();
 
-    if (r.ok && d.reply) {
+    if (r.ok && d.ok !== false && d.reply) {
       _displayedReplies.add(d.reply.trim());
       hist.appendChild(_injectBubble(d.reply, 'karma'));
       _injectScroll();
     } else {
-      const errText = d.error || `Server returned error (${r.status})`;
+      const errText = d.error || (r.ok ? 'Empty response from robot' : `Server returned error (${r.status})`);
       hist.appendChild(_injectBubble(errText, 'error'));
       _injectScroll();
       msg.style.color = 'var(--danger)';
@@ -635,10 +640,11 @@ async function _injectSend() {
   } catch(e) {
     const curTh = $('inject-thinking');
     if (curTh) curTh.remove();
-    hist.appendChild(_injectBubble('Network error: could not contact robot', 'error'));
+    const netErr = e && e.message ? `Network error: ${e.message}` : 'Network error: could not contact robot';
+    hist.appendChild(_injectBubble(netErr, 'error'));
     _injectScroll();
     msg.style.color = 'var(--danger)';
-    msg.textContent = 'network error';
+    msg.textContent = netErr;
   } finally {
     if (sendBtn) sendBtn.disabled = false;
     inp.focus();

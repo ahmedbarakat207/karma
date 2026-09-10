@@ -282,6 +282,11 @@ def speak_and_animate(text: str, tts=None) -> None:
 
         internal_state.set_karma_speech(spoken)
         internal_state.set_playing_audio(True)
+        try:
+            from src.ui.server import broadcast_state_threadsafe
+            broadcast_state_threadsafe()
+        except Exception:
+            pass
 
         engine_tts = tts
         if engine_tts is None:
@@ -313,23 +318,36 @@ def speak_and_animate(text: str, tts=None) -> None:
                 time.sleep(0.05)
 
         internal_state.set_playing_audio(False)
+        try:
+            from src.ui.server import broadcast_state_threadsafe
+            broadcast_state_threadsafe()
+        except Exception:
+            pass
 
     threading.Thread(target=_worker, daemon=True, name="karma_speak_animate").start()
 
 
 
-def run_interaction_response(memory, engine, tts=None, store=None, embedder=None) -> Optional[str]:
+def run_interaction_response(memory, engine, tts=None, store=None, embedder=None, direct_text: Optional[str] = None) -> Optional[str]:
 
     with INTERACTION_LOCK:
-        new_speech = memory.unhandled_speech(0)
-        if not new_speech:
-            return None
-
-        latest_ts = max(e["ts"] for e in new_speech)
-        speech_text = " ".join(e["text"] for e in new_speech).strip()
-        if not speech_text:
+        if direct_text is not None:
+            speech_text = str(direct_text).strip()
+            if not speech_text:
+                return None
+            memory.add(kind="speech", text=speech_text, counts_as_activity=True)
+            latest_ts = time.time() + 0.05
             memory.mark_handled(latest_ts)
-            return None
+        else:
+            new_speech = memory.unhandled_speech(0)
+            if not new_speech:
+                return None
+
+            latest_ts = max(e["ts"] for e in new_speech)
+            speech_text = " ".join(e["text"] for e in new_speech).strip()
+            if not speech_text:
+                memory.mark_handled(latest_ts)
+                return None
 
         config.log_debug(f"[interaction] got speech: '{speech_text}'")
 

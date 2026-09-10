@@ -322,10 +322,13 @@ async def test_inject_prompt_and_history(authed, monkeypatch):
     session, base = authed
 
     class MockEngine:
+        def __init__(self, reply="Hello friend, I am Karma!"):
+            self._reply = reply
         def chat(self, sys_prompt, user_prompt, max_tokens=180, history=None):
-            return "Hello friend, I am Karma!"
+            return self._reply
 
-    monkeypatch.setitem(dash._runtime, "engine", MockEngine())
+    engine = MockEngine()
+    monkeypatch.setitem(dash._runtime, "engine", engine)
 
     # Empty prompt fails
     async with session.post(base + "/api/inject", json={"text": ""}) as r:
@@ -346,4 +349,37 @@ async def test_inject_prompt_and_history(authed, monkeypatch):
         body = await r.json()
         assert body["ok"] is True
         assert any(t.get("content") == "hello test" for t in body["turns"])
+
+    # Engine returning empty yields 500 with ok: False and error message
+    monkeypatch.setitem(dash._runtime, "engine", MockEngine(reply=""))
+    async with session.post(base + "/api/inject", json={"text": "fail test"}) as r:
+        assert r.status == 500
+        body = await r.json()
+        assert body["ok"] is False
+        assert "error" in body
+
+
+def test_direct_text_leaves_no_unhandled_speech():
+    from src.memory.working import WorkingMemory
+    from src.cognition.interaction import run_interaction_response
+
+    class MockEngine:
+        def chat(self, sys_prompt, user_prompt, max_tokens=75, history=None):
+            return "Hey there, ready to hang out!"
+
+    mem = WorkingMemory()
+    engine = MockEngine()
+
+    reply = run_interaction_response(mem, engine, direct_text="what's up karma")
+    assert reply == "Hey there, ready to hang out!"
+
+    # Crucial: direct_text must NOT leave unhandled_speech for cognition_loop to process
+    unhandled = mem.unhandled_speech(0)
+    assert len(unhandled) == 0, "direct_text must not leave unhandled speech"
+
+    # History must contain conversation
+    turns = mem.get_conversation_turns(5)
+    assert len(turns) >= 2
+    assert any("what's up karma" in t.get("content", "") for t in turns)
+
 

@@ -1,6 +1,7 @@
 
 import os
 import re
+import sys
 import threading
 import time
 from typing import Any, Dict, Generator, List, Optional, Union
@@ -449,16 +450,55 @@ class SwitchableEngine:
     def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
              temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
         with self._lock:
-            eng = self._get_engine(self._active_provider)
-        return eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
-                        temperature=temperature, history=history)
+            provider = self._active_provider
+            eng = self._get_engine(provider)
+
+        res = ""
+        try:
+            res = eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                           temperature=temperature, history=history)
+        except Exception as e:
+            config.log_debug(f"[SwitchableEngine] {provider} chat exception: {e}")
+
+        # Auto-fallback: if Groq is active and returned nothing or failed, try local
+        if (not res or not res.strip()) and provider == "groq":
+            print("[SwitchableEngine] Groq returned empty or failed; attempting fallback to local llama_cpp engine...", file=sys.stderr)
+            try:
+                with self._lock:
+                    local_eng = self._get_engine("local")
+                res = local_eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                     temperature=temperature, history=history)
+            except Exception as e2:
+                print(f"[SwitchableEngine] local fallback also failed: {e2}", file=sys.stderr)
+
+        return res
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
                     temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
         with self._lock:
-            eng = self._get_engine(self._active_provider)
-        yield from eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
-                                   temperature=temperature, history=history)
+            provider = self._active_provider
+            eng = self._get_engine(provider)
+
+        yielded_any = False
+        try:
+            for token in eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                         temperature=temperature, history=history):
+                yielded_any = True
+                yield token
+        except Exception as e:
+            config.log_debug(f"[SwitchableEngine] {provider} stream exception: {e}")
+
+        # Auto-fallback: if Groq stream yielded nothing, try local
+        if not yielded_any and provider == "groq":
+            print("[SwitchableEngine] Groq stream yielded nothing; attempting fallback to local llama_cpp engine...", file=sys.stderr)
+            try:
+                with self._lock:
+                    local_eng = self._get_engine("local")
+                for token in local_eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                                   temperature=temperature, history=history):
+                    yield token
+            except Exception as e2:
+                print(f"[SwitchableEngine] local stream fallback failed: {e2}", file=sys.stderr)
 
     def close(self) -> None:
         with self._lock:

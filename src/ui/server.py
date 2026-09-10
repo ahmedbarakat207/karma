@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import re
+import sys
 import threading
 import time
 from typing import Set, Dict, Any, Optional, List
@@ -909,7 +910,9 @@ async def _api_inject(request: web.Request) -> web.Response:
             mem = WorkingMemory()
             set_inject_memory(mem)
 
-        mem.add(kind="speech", text=text, counts_as_activity=True)
+        # Note: we do NOT call mem.add(kind="speech") here.
+        # run_interaction_response with direct_text adds it and marks it handled atomically inside INTERACTION_LOCK,
+        # completely preventing background cognition_loop from stealing or conflicting with this prompt.
         _ev.post("heard", text, {"source": "inject"})
 
         ip = _client_ip(request)
@@ -933,12 +936,11 @@ async def _api_inject(request: web.Request) -> web.Response:
         store = _runtime.get("store")
         embedder = _runtime.get("embedder")
 
-
         loop = asyncio.get_event_loop()
         reply = await loop.run_in_executor(
             None,
             run_interaction_response,
-            mem, engine, tts, store, embedder
+            mem, engine, tts, store, embedder, text
         )
 
         if reply:
@@ -950,16 +952,20 @@ async def _api_inject(request: web.Request) -> web.Response:
                 "ts": time.time()
             })
         else:
+            err_msg = "LLM failed to generate a response (empty reply from engine)"
+            print(f"[dash/inject] {err_msg}", file=sys.stderr)
+            _ev.post("error", err_msg)
             return web.json_response({
                 "ok": False,
-                "error": "LLM failed to generate a response (check model/engine logs)",
+                "error": err_msg,
                 "text": text
             }, status=500)
     except Exception as e:
-        print(f"[dash/inject] error: {e}", file=sys.stderr)
+        err_msg = f"Inject error: {e}"
+        print(f"[dash/inject] {err_msg}", file=sys.stderr)
         from src.ui import events as _ev
-        _ev.post("error", f"Inject error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        _ev.post("error", err_msg)
+        return web.json_response({"ok": False, "error": err_msg}, status=500)
 
 
 
