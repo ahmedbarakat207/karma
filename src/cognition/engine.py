@@ -120,7 +120,11 @@ class LocalEngine:
 
         threads = getattr(config, "N_THREADS", 4)
         draft_model = None
-        if getattr(config, "SPECULATIVE_DECODING", "prompt_lookup") == "prompt_lookup":
+        spec_mode = str(getattr(config, "SPECULATIVE_DECODING", "none")).lower()
+        is_arm_linux = sys.platform.startswith("linux") and (
+            hasattr(os, "uname") and any(a in os.uname().machine.lower() for a in ("arm", "aarch"))
+        )
+        if spec_mode == "prompt_lookup" and not is_arm_linux:
             try:
                 from llama_cpp.llama_speculative import LlamaPromptLookupDecoding
                 ngram_size = getattr(config, "SPECULATIVE_NGRAM_SIZE", 2)

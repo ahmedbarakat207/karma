@@ -345,60 +345,110 @@ class TTSEngine:
                 config.log_debug(f"[speech] synthesis error: {e}")
                 return None
 
-    def _play_audio(self, audio: Optional[np.ndarray]) -> None:
+    def _play_audio(self, audio: Optional[np.ndarray]) -> bool:
         if audio is None or len(audio) == 0:
-            return
+            return False
         if self.interrupt_event and self.interrupt_event.is_set():
-            return
+            return False
 
+        played = False
         try:
             audio_arr = np.ascontiguousarray(audio, dtype=np.float32)
             internal_state.set_playing_audio(True)
             try:
-                sd.play(audio_arr, config.TTS_SAMPLE_RATE)
-                sd.wait()
-            except Exception as e:
-                # ALSA sample rate fallback: try 44100 Hz if 24000 Hz is rejected by hardware
-                played = False
+                from src.ui.server import broadcast_state_threadsafe
+                broadcast_state_threadsafe()
+            except Exception:
+                pass
+
+            # On Linux / Raspberry Pi, prefer `aplay` to avoid PortAudio ALSA contention
+            # with the active microphone InputStream in run_audio.
+            if sys.platform.startswith("linux"):
+                import shutil
+                if shutil.which("aplay"):
+                    import tempfile
+                    import subprocess
+                    import wave
+                    tmp_wav = None
+                    try:
+                        int16_arr = np.clip(audio_arr * 32767.0, -32768, 32767).astype(np.int16)
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                            tmp_wav = tf.name
+
+                        with wave.open(tmp_wav, "wb") as wf:
+                            wf.setnchannels(1)
+                            wf.setsampwidth(2)
+                            wf.setframerate(config.TTS_SAMPLE_RATE)
+                            wf.writeframes(int16_arr.tobytes())
+
+                        proc = subprocess.run(["aplay", "-q", tmp_wav], capture_output=True, timeout=30)
+                        if proc.returncode == 0:
+                            played = True
+                        else:
+                            config.log_debug(f"[speech] aplay returned {proc.returncode}: {proc.stderr.decode('utf-8', errors='ignore')}")
+                    except Exception as ap_err:
+                        config.log_debug(f"[speech] aplay error: {ap_err}")
+                    finally:
+                        if tmp_wav and os.path.exists(tmp_wav):
+                            try:
+                                os.remove(tmp_wav)
+                            except Exception:
+                                pass
+
+            if not played:
                 try:
-                    import scipy.signal
-                    resampled = scipy.signal.resample_poly(audio_arr, 441, 240)
-                    sd.play(resampled, 44100)
+                    sd.play(audio_arr, config.TTS_SAMPLE_RATE)
                     sd.wait()
                     played = True
-                except Exception as e2:
-                    print(f"[speech] playback note: {e} (resample retry: {e2})", file=sys.stderr)
+                except Exception as e:
+                    # ALSA sample rate fallback: try 44100 Hz if 24000 Hz is rejected by hardware
+                    try:
+                        import scipy.signal
+                        resampled = scipy.signal.resample_poly(audio_arr, 441, 240)
+                        sd.play(resampled, 44100)
+                        sd.wait()
+                        played = True
+                    except Exception as e2:
+                        print(f"[speech] playback note: {e} (resample retry: {e2})", file=sys.stderr)
 
-                if not played:
-                    # Visual fallback: keep mouth animation running for the duration of the speech
-                    duration = max(1.5, len(audio_arr) / config.TTS_SAMPLE_RATE)
-                    t0 = time.time()
-                    while time.time() - t0 < duration:
-                        if self.interrupt_event and self.interrupt_event.is_set():
-                            break
-                        time.sleep(0.05)
+            if not played:
+                # Visual fallback: keep mouth animation running for the duration of the speech
+                duration = max(1.5, len(audio_arr) / config.TTS_SAMPLE_RATE)
+                t0 = time.time()
+                while time.time() - t0 < duration:
+                    if self.interrupt_event and self.interrupt_event.is_set():
+                        break
+                    time.sleep(0.05)
         except Exception as e:
             config.log_debug(f"[speech] playback error: {e}")
         finally:
             internal_state.set_playing_audio(False)
+            try:
+                from src.ui.server import broadcast_state_threadsafe
+                broadcast_state_threadsafe()
+            except Exception:
+                pass
+        return played
 
 
-    def speak(self, text: str, speed: float = 1.0) -> None:
+    def speak(self, text: str, speed: float = 1.0) -> bool:
         spoken_text = clean_for_speech(text)
         if not spoken_text:
-            return
+            return False
 
         if self.interrupt_event:
             self.interrupt_event.clear()
         if self.speaking_event:
             self.speaking_event.set()
 
+        played = False
         try:
             audio = self._synthesize(spoken_text, speed=speed)
             if audio is not None and not (self.interrupt_event and self.interrupt_event.is_set()):
-                self._play_audio(audio)
+                played = self._play_audio(audio)
         except Exception as e:
             print(f"[speech] TTS speak error: {e}")
         finally:
             if self.speaking_event:
                 self.speaking_event.clear()
+        return played

@@ -310,8 +310,7 @@ def speak_and_animate(text: str, tts=None) -> None:
         audio_played = False
         if engine_tts is not None:
             try:
-                engine_tts.speak(spoken)
-                audio_played = True
+                audio_played = bool(engine_tts.speak(spoken))
             except Exception as e:
                 print(f"[interaction] TTS speak error: {e}", file=sys.stderr)
 
