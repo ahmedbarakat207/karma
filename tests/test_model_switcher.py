@@ -235,3 +235,55 @@ def test_switchable_engine_groq_fallback():
     assert tokens == ["Local", " stream"]
     mock_local.stream_chat.assert_called_once()
 
+
+def test_switchable_engine_local_fallback(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_key")
+    engine = create_switchable_engine(use_groq=False)
+    assert engine.active_provider == "local"
+
+    # Mock LocalEngine that fails (e.g. missing GGUF model on Pi)
+    mock_local = MagicMock()
+    mock_local.chat.side_effect = FileNotFoundError("model.gguf not found")
+    mock_local.stream_chat.side_effect = FileNotFoundError("model.gguf not found")
+
+    # Mock GroqEngine that succeeds
+    mock_groq = MagicMock()
+    mock_groq.chat.return_value = "Groq fallback response"
+    mock_groq.stream_chat.return_value = iter(["Groq", " stream"])
+
+    engine._local_engine = mock_local
+    engine._groq_engine = mock_groq
+
+    # Chat should fall back to Groq
+    res = engine.chat("sys", "user")
+    assert res == "Groq fallback response"
+    mock_groq.chat.assert_called_once()
+
+    # Stream should fall back to Groq
+    tokens = list(engine.stream_chat("sys", "user"))
+    assert tokens == ["Groq", " stream"]
+    mock_groq.stream_chat.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_api_model_post_failure_does_not_persist(authed):
+    session, base = authed
+    config.USE_GROQ = True
+
+    mock_engine = MagicMock(spec=SwitchableEngine)
+    mock_engine.active_provider = "groq"
+    mock_engine.is_groq = True
+    mock_engine.switch.side_effect = RuntimeError("model.gguf not found")
+    dash.set_runtime(engine=mock_engine)
+
+    # Attempting to switch to local when local fails must return 400
+    async with session.post(base + "/api/model", json={"provider": "local"}) as r:
+        assert r.status == 400
+        data = await r.json()
+        assert data["ok"] is False
+        assert "Failed to switch" in data["error"]
+
+    # Crucial: config.USE_GROQ must NOT have been corrupted to False
+    assert config.USE_GROQ is True
+
+

@@ -104,8 +104,8 @@ class LocalEngine:
         self.model_path = model_path or getattr(config, "MODEL_PATH", "")
 
         if not os.path.exists(self.model_path):
-            repo = getattr(config, "HF_REPO", "Qwen/Qwen2.5-1.5B-Instruct-GGUF")
-            filename = getattr(config, "HF_FILENAME", "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+            repo = getattr(config, "HF_REPO", "Qwen/Qwen2.5-0.5B-Instruct-GGUF")
+            filename = getattr(config, "HF_FILENAME", "qwen2.5-0.5b-instruct-q4_k_m.gguf")
             print(f"[llm] model file not found at {self.model_path} -- downloading {filename} from {repo}...")
             try:
                 from huggingface_hub import hf_hub_download
@@ -116,7 +116,7 @@ class LocalEngine:
                 self.model_path = downloaded
                 print(f"[llm] download complete: {self.model_path}")
             except Exception as e:
-                raise FileNotFoundError(f"Could not load or download model: {e}")
+                raise FileNotFoundError(f"Could not load or download model at {self.model_path}: {e}")
 
         threads = getattr(config, "N_THREADS", 4)
         draft_model = None
@@ -130,24 +130,40 @@ class LocalEngine:
             except Exception as e:
                 config.log_debug(f"[llm] speculative decoding init note: {e}")
 
-
         import llama_cpp
         type_k = llama_cpp.GGML_TYPE_Q8_0 if getattr(config, "KV_CACHE_TYPE", "q8_0") == "q8_0" else llama_cpp.GGML_TYPE_F16
         type_v = llama_cpp.GGML_TYPE_Q8_0 if getattr(config, "KV_CACHE_TYPE", "q8_0") == "q8_0" else llama_cpp.GGML_TYPE_F16
-        flash_attn = getattr(config, "FLASH_ATTN", True)
 
-        with config.SilenceStderrFD():
+        # Flash attention is only supported on CUDA or Apple Silicon MPS; never on ARM CPU
+        gpu_device = getattr(config, "_DEFAULT_YOLO_DEVICE", "cpu")
+        flash_attn = getattr(config, "FLASH_ATTN", False) if gpu_device in ("mps", "cuda") else False
+        n_gpu_layers = getattr(config, "N_GPU_LAYERS", 0) if gpu_device in ("mps", "cuda") else 0
+
+        try:
             self.llm = Llama(
                 model_path=self.model_path,
                 n_ctx=getattr(config, "CTX_SIZE", 2048),
                 n_batch=getattr(config, "N_BATCH", 512),
                 n_threads=threads,
                 n_threads_batch=threads,
-                n_gpu_layers=getattr(config, "N_GPU_LAYERS", -1),
+                n_gpu_layers=n_gpu_layers,
                 type_k=type_k,
                 type_v=type_v,
                 flash_attn=flash_attn,
                 draft_model=draft_model,
+                verbose=False,
+            )
+        except Exception as e_init:
+            config.log_debug(f"[llm] Llama initial load note ({e_init}), retrying with safe CPU defaults...")
+            self.llm = Llama(
+                model_path=self.model_path,
+                n_ctx=min(getattr(config, "CTX_SIZE", 2048), 2048),
+                n_batch=min(getattr(config, "N_BATCH", 512), 256),
+                n_threads=threads,
+                n_threads_batch=threads,
+                n_gpu_layers=0,
+                flash_attn=False,
+                draft_model=None,
                 verbose=False,
             )
         self.stop_tokens = ["<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<start_of_turn>"]
@@ -430,7 +446,6 @@ class SwitchableEngine:
                 normalized = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
                 self._groq_model = normalized
                 config.GROQ_MODEL = normalized
-            config.USE_GROQ = (provider == "groq")
             if provider == "groq":
                 target_model = self._groq_model or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
                 if self._groq_engine is None or getattr(self._groq_engine, "model", "") != target_model:
@@ -438,6 +453,7 @@ class SwitchableEngine:
             elif provider == "local":
                 if self._local_engine is None:
                     self._local_engine = LocalEngine()
+            config.USE_GROQ = (provider == "groq")
             self._active_provider = provider
 
     def sync_with_config(self) -> None:
@@ -451,16 +467,21 @@ class SwitchableEngine:
              temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
         with self._lock:
             provider = self._active_provider
-            eng = self._get_engine(provider)
+            try:
+                eng = self._get_engine(provider)
+            except Exception as eg_err:
+                eng = None
+                config.log_debug(f"[SwitchableEngine] {provider} init failed: {eg_err}")
 
         res = ""
-        try:
-            res = eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
-                           temperature=temperature, history=history)
-        except Exception as e:
-            config.log_debug(f"[SwitchableEngine] {provider} chat exception: {e}")
+        if eng is not None:
+            try:
+                res = eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                               temperature=temperature, history=history)
+            except Exception as e:
+                config.log_debug(f"[SwitchableEngine] {provider} chat exception: {e}")
 
-        # Auto-fallback: if Groq is active and returned nothing or failed, try local
+        # Fallback 1: if Groq is active and returned nothing or failed, try local
         if (not res or not res.strip()) and provider == "groq":
             print("[SwitchableEngine] Groq returned empty or failed; attempting fallback to local llama_cpp engine...", file=sys.stderr)
             try:
@@ -471,24 +492,40 @@ class SwitchableEngine:
             except Exception as e2:
                 print(f"[SwitchableEngine] local fallback also failed: {e2}", file=sys.stderr)
 
+        # Fallback 2: if Local is active and returned nothing or failed, try Groq
+        if (not res or not res.strip()) and provider == "local" and bool(os.environ.get("GROQ_API_KEY", "").strip()):
+            print("[SwitchableEngine] Local engine failed or returned empty; attempting fallback to Groq...", file=sys.stderr)
+            try:
+                with self._lock:
+                    groq_eng = self._get_engine("groq")
+                res = groq_eng.chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                    temperature=temperature, history=history)
+            except Exception as e3:
+                print(f"[SwitchableEngine] Groq fallback also failed: {e3}", file=sys.stderr)
+
         return res
 
     def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
                     temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
         with self._lock:
             provider = self._active_provider
-            eng = self._get_engine(provider)
+            try:
+                eng = self._get_engine(provider)
+            except Exception as eg_err:
+                eng = None
+                config.log_debug(f"[SwitchableEngine] {provider} stream init failed: {eg_err}")
 
         yielded_any = False
-        try:
-            for token in eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
-                                         temperature=temperature, history=history):
-                yielded_any = True
-                yield token
-        except Exception as e:
-            config.log_debug(f"[SwitchableEngine] {provider} stream exception: {e}")
+        if eng is not None:
+            try:
+                for token in eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                             temperature=temperature, history=history):
+                    yielded_any = True
+                    yield token
+            except Exception as e:
+                config.log_debug(f"[SwitchableEngine] {provider} stream exception: {e}")
 
-        # Auto-fallback: if Groq stream yielded nothing, try local
+        # Fallback 1: if Groq stream yielded nothing, try local
         if not yielded_any and provider == "groq":
             print("[SwitchableEngine] Groq stream yielded nothing; attempting fallback to local llama_cpp engine...", file=sys.stderr)
             try:
@@ -499,6 +536,18 @@ class SwitchableEngine:
                     yield token
             except Exception as e2:
                 print(f"[SwitchableEngine] local stream fallback failed: {e2}", file=sys.stderr)
+
+        # Fallback 2: if Local stream yielded nothing, try Groq
+        if not yielded_any and provider == "local" and bool(os.environ.get("GROQ_API_KEY", "").strip()):
+            print("[SwitchableEngine] Local stream yielded nothing; attempting fallback to Groq...", file=sys.stderr)
+            try:
+                with self._lock:
+                    groq_eng = self._get_engine("groq")
+                for token in groq_eng.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                                  temperature=temperature, history=history):
+                    yield token
+            except Exception as e3:
+                print(f"[SwitchableEngine] Groq stream fallback failed: {e3}", file=sys.stderr)
 
     def close(self) -> None:
         with self._lock:

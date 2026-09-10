@@ -923,17 +923,18 @@ async function applyModelSwitch(providerOverride) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
     });
-    const d = await r.json();
-    if (r.ok) {
+    let d = {};
+    try { d = await r.json(); } catch(_) { d = {}; }
+    if (r.ok && d.ok !== false) {
       $('inp-groq-key').value = '';
       $('model-msg').textContent = `Switched to ${d.provider.toUpperCase()} (${d.active_model})` + (d.warning ? ` [Note: ${d.warning}]` : '');
       loadModel();
       loadState();
     } else {
-      $('model-msg').textContent = 'Error: ' + (d.error || r.status);
+      $('model-msg').textContent = 'Error: ' + (d.error || d.warning || `HTTP ${r.status}`);
     }
   } catch (e) {
-    $('model-msg').textContent = 'Switch request failed';
+    $('model-msg').textContent = 'Switch failed: ' + (e && e.message ? e.message : 'could not contact robot');
   }
 }
 

@@ -1070,21 +1070,34 @@ async def _api_model_post(request: web.Request) -> web.Response:
     if new_key is not None and isinstance(new_key, str) and new_key.strip():
         os.environ["GROQ_API_KEY"] = new_key.strip()
 
+    target_groq_model = config.GROQ_MODEL
     raw_model = body.get("groq_model")
     if raw_model and isinstance(raw_model, str) and raw_model.strip():
         val = raw_model.strip()
-        config.GROQ_MODEL = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
-
-    config.USE_GROQ = (provider == "groq")
+        target_groq_model = f"openai/{val}" if val in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else val
 
     engine = _runtime.get("engine")
     switch_warning = None
     if engine and hasattr(engine, "switch"):
         try:
-            engine.switch(provider, groq_model=config.GROQ_MODEL)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, functools.partial(engine.switch, provider, groq_model=target_groq_model))
         except Exception as e:
             switch_warning = str(e)
             config.log_debug(f"[dash] engine switch warning: {e}")
+
+    if switch_warning:
+        # Switch failed: do NOT persist broken config! Return error cleanly.
+        current_provider = getattr(engine, "active_provider", "groq" if config.USE_GROQ else "local")
+        return web.json_response({
+            "ok": False,
+            "error": f"Failed to switch to {provider}: {switch_warning}",
+            "warning": switch_warning,
+            "provider": current_provider
+        }, status=400)
+
+    config.GROQ_MODEL = target_groq_model
+    config.USE_GROQ = (provider == "groq")
 
     try:
         current: Dict[str, Any] = {}
@@ -1103,17 +1116,14 @@ async def _api_model_post(request: web.Request) -> web.Response:
     events.post("system", f"cognition engine switched to {provider.upper()} ({active_label})")
     broadcast_state_threadsafe()
 
-    resp = {
+    return web.json_response({
         "ok": True,
         "provider": provider,
         "use_groq": config.USE_GROQ,
         "groq_model": config.GROQ_MODEL,
         "active_model": active_label,
         "has_groq_key": bool(os.environ.get("GROQ_API_KEY")),
-    }
-    if switch_warning:
-        resp["warning"] = switch_warning
-    return web.json_response(resp)
+    })
 
 
 @require_auth
