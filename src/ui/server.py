@@ -667,16 +667,183 @@ async def _api_telemetry(request: web.Request) -> web.Response:
     return web.json_response({"telemetry": telemetry.snapshot(), "net": _cached_net()})
 
 
+def _tail_file(path: str, n: int = 150) -> List[str]:
+    if not os.path.exists(path):
+        return [f"(log file not found: {os.path.basename(path)})"]
+    try:
+        from collections import deque
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = [line.rstrip("\r\n") for line in deque(f, maxlen=n)]
+            return lines or [f"({os.path.basename(path)} is currently empty)"]
+    except Exception as e:
+        return [f"(error reading {os.path.basename(path)}: {e})"]
+
+
+async def _get_journal_logs(n: int = 150) -> List[str]:
+    import shutil
+    if not shutil.which("journalctl"):
+        return ["(systemd journalctl is not available on this platform)"]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "journalctl", "-u", "karma.service", "-n", str(n), "--no-pager",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=4.0)
+        if stdout:
+            out_lines = stdout.decode("utf-8", errors="replace").splitlines()
+            return out_lines or ["(journalctl returned empty output)"]
+        if stderr:
+            return [f"(journalctl note: {stderr.decode('utf-8', errors='replace').strip()})"]
+        return ["(journalctl returned no entries)"]
+    except asyncio.TimeoutError:
+        return ["(journalctl query timed out after 4s)"]
+    except Exception as e:
+        return [f"(journalctl error: {e})"]
+
+
+def _get_quick_diag() -> List[str]:
+    import shutil
+    lines = [
+        "=== KARMA SYSTEM DIAGNOSTICS ===",
+        f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Python: {sys.version.split()[0]} ({sys.executable})",
+        f"Platform: {sys.platform}",
+    ]
+    try:
+        du = shutil.disk_usage(config.BASE_DIR)
+        lines.append(f"Storage: {du.free / (1024**3):.1f} GB free / {du.total / (1024**3):.1f} GB total")
+    except Exception:
+        pass
+
+    # CPU temperature (Raspberry Pi thermal zone)
+    for t_zone in ("/sys/class/thermal/thermal_zone0/temp",):
+        if os.path.exists(t_zone):
+            try:
+                with open(t_zone, "r") as f:
+                    lines.append(f"SoC Temperature: {float(f.read().strip()) / 1000.0:.1f} °C")
+            except Exception:
+                pass
+
+    # Systemd service status
+    if shutil.which("systemctl"):
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ["systemctl", "is-active", "karma.service"],
+                stderr=subprocess.DEVNULL, timeout=2.0
+            ).decode().strip()
+            lines.append(f"Service (karma.service): {out}")
+        except Exception:
+            lines.append("Service (karma.service): inactive / stopped")
+
+    # Active engine & TTS
+    engine = _runtime.get("engine")
+    engine_name = "None"
+    if engine is not None:
+        engine_name = getattr(engine, "active_provider", engine.__class__.__name__)
+    lines.append(f"Active Cognition Engine: {engine_name}")
+
+    tts = _runtime.get("tts")
+    tts_status = "Initialized" if tts is not None else "Not loaded / Fallback"
+    lines.append(f"TTS Engine: {tts_status}")
+
+    # Check files on disk
+    for fname in ("karma.log", "start_robot.log", "data/config_overrides.json", "data/persona.json", ".env"):
+        fpath = os.path.join(config.BASE_DIR, fname)
+        if os.path.exists(fpath):
+            try:
+                sz = os.path.getsize(fpath)
+                lines.append(f"File [{fname}]: {sz / 1024.0:.1f} KB")
+            except Exception:
+                lines.append(f"File [{fname}]: present")
+        else:
+            lines.append(f"File [{fname}]: not created yet")
+
+    return lines
+
+
 @require_auth
 async def _api_logs(request: web.Request) -> web.Response:
-    kind = request.query.get("kind") or None
+    source = request.query.get("source", "events")
     try:
-        limit = min(500, max(1, int(request.query.get("limit", "150"))))
+        limit = min(1000, max(1, int(request.query.get("limit", "150"))))
     except ValueError:
         limit = 150
-    if kind and kind not in ("thought", "reply", "heard", "kiosk", "system", "error"):
-        return web.json_response({"error": "bad kind"}, status=400)
-    return web.json_response({"events": events.recent(kind=kind, limit=limit)})
+
+    if source == "karma":
+        klog = os.path.join(config.BASE_DIR, "karma.log")
+        lines = _tail_file(klog, limit)
+        return web.json_response({
+            "source": "karma",
+            "lines": lines,
+            "file": "karma.log",
+            "count": len(lines)
+        })
+
+    elif source == "startup":
+        slog = os.path.join(config.BASE_DIR, "start_robot.log")
+        lines = _tail_file(slog, limit)
+        return web.json_response({
+            "source": "startup",
+            "lines": lines,
+            "file": "start_robot.log",
+            "count": len(lines)
+        })
+
+    elif source == "journal":
+        lines = await _get_journal_logs(limit)
+        return web.json_response({
+            "source": "journal",
+            "lines": lines,
+            "count": len(lines)
+        })
+
+    elif source == "diag":
+        loop = asyncio.get_event_loop()
+        lines = await loop.run_in_executor(None, _get_quick_diag)
+        return web.json_response({
+            "source": "diag",
+            "lines": lines,
+            "count": len(lines)
+        })
+
+    else:
+        # Structured in-memory events bus (default / backward-compatible)
+        kind = request.query.get("kind") or None
+        if kind and kind not in ("thought", "reply", "heard", "kiosk", "system", "error"):
+            return web.json_response({"error": "bad kind"}, status=400)
+        return web.json_response({
+            "source": "events",
+            "events": events.recent(kind=kind, limit=limit)
+        })
+
+
+@require_auth
+async def _api_logs_download(request: web.Request) -> web.Response:
+    source = request.query.get("source", "karma")
+    filename_map = {
+        "karma": "karma.log",
+        "startup": "start_robot.log"
+    }
+    fname = filename_map.get(source)
+    if not fname:
+        return web.json_response({"error": "invalid source for direct download"}, status=400)
+
+    fpath = os.path.join(config.BASE_DIR, fname)
+    if not os.path.exists(fpath):
+        return web.Response(text=f"(file {fname} does not exist yet on disk)", status=404)
+
+    try:
+        with open(fpath, "rb") as f:
+            data = f.read()
+        return web.Response(
+            body=data,
+            content_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    except Exception as e:
+        return web.json_response({"error": f"read error: {e}"}, status=500)
 
 
 @require_auth
@@ -1282,6 +1449,7 @@ def _build_dash_app() -> web.Application:
     app.router.add_get("/api/state", _api_state)
     app.router.add_get("/api/telemetry", _api_telemetry)
     app.router.add_get("/api/logs", _api_logs)
+    app.router.add_get("/api/logs/download", _api_logs_download)
     app.router.add_get("/api/thoughts", _api_thoughts)
     app.router.add_get("/api/camera.jpg", _api_camera_jpg)
     app.router.add_get("/api/camera.mjpeg", _api_camera_mjpeg)

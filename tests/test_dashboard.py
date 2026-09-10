@@ -85,11 +85,23 @@ async def test_logs_and_thoughts(authed):
         assert r.status == 200
         got = (await r.json())["events"]
         assert got and all(e["kind"] == "thought" for e in got)
-    async with session.get(base + "/api/logs?kind=bogus") as r:
-        assert r.status == 400
-    async with session.get(base + "/api/thoughts?limit=5") as r:
+    async with session.get(base + "/api/logs?source=karma&limit=10") as r:
         assert r.status == 200
-        assert any("test thought here" in e["text"] for e in (await r.json())["thoughts"])
+        d = await r.json()
+        assert d["source"] == "karma"
+        assert "lines" in d
+    async with session.get(base + "/api/logs?source=journal&limit=10") as r:
+        assert r.status == 200
+        d = await r.json()
+        assert d["source"] == "journal"
+        assert "lines" in d
+    async with session.get(base + "/api/logs?source=diag") as r:
+        assert r.status == 200
+        d = await r.json()
+        assert d["source"] == "diag"
+        assert len(d["lines"]) > 0
+    async with session.get(base + "/api/logs/download?source=invalid") as r:
+        assert r.status == 400
     events.clear()
 
 

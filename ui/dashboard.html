@@ -277,14 +277,48 @@ img.cam{width:100%;display:block;background:#000}
       <div class="hw-row"><div class="hw-label">LAST TRANSMISSION</div><div class="hw-text" id="last-speech">–</div></div>
     </div>
     <div data-pane="logs" class="hidden">
-      <div class="pane-head"><div><div class="pane-eyebrow">02 / EVENT BUS</div><h2>Logs</h2></div></div>
+      <div class="pane-head"><div><div class="pane-eyebrow">02 / SYSTEM &amp; EVENT LOGS</div><h2>Logs &amp; Telemetry Stream</h2></div></div>
       <section class="card">
-        <div class="row">
-          <select id="log-kind"><option value="">all</option><option>thought</option><option>reply</option><option>heard</option><option>kiosk</option><option>system</option><option>error</option></select>
-          <button class="hw-btn ghost" id="log-refresh">REFRESH</button>
-          <label class="hint"><input type="checkbox" id="log-follow" checked> follow</label>
+        <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;">
+          <label class="hint" style="display:inline-flex;align-items:center;gap:4px;font-weight:600;"><i class="fa-solid fa-layer-group"></i> SOURCE</label>
+          <select id="log-source" style="min-width:210px;">
+            <option value="karma" selected>Karma Log (karma.log — stdout/stderr)</option>
+            <option value="events">Event Bus (Structured: heard/reply/thought)</option>
+            <option value="journal">Systemd Service (journalctl -u karma)</option>
+            <option value="startup">Kiosk Boot (start_robot.log)</option>
+            <option value="diag">Diagnostics Snapshot (system/cpu/ram)</option>
+          </select>
+
+          <span id="log-kind-wrap" class="hidden" style="display:inline-flex;align-items:center;gap:4px;">
+            <label class="hint">KIND</label>
+            <select id="log-kind">
+              <option value="">all kinds</option>
+              <option>thought</option>
+              <option>reply</option>
+              <option>heard</option>
+              <option>kiosk</option>
+              <option>system</option>
+              <option>error</option>
+            </select>
+          </span>
+
+          <label class="hint">LINES</label>
+          <select id="log-limit" style="width:85px;">
+            <option value="50">50</option>
+            <option value="150" selected>150</option>
+            <option value="300">300</option>
+            <option value="600">600</option>
+          </select>
+
+          <input type="text" id="log-filter" placeholder="Search / filter logs…" style="min-width:140px;flex:1;max-width:240px;" />
+
+          <button class="hw-btn ghost" id="log-refresh"><i class="fa-solid fa-arrows-rotate"></i> REFRESH</button>
+          <button class="hw-btn ghost" id="log-download" title="Export current log view"><i class="fa-solid fa-download"></i> EXPORT</button>
+          <label class="hint" style="display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="log-follow" checked> follow</label>
+          <label class="hint" style="display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="log-auto-refresh"> auto (3s)</label>
         </div>
-        <pre class="log" id="log-view"></pre>
+        <div id="log-status-bar" class="hint" style="margin:8px 0 4px;font-size:11px;opacity:0.85;">Loading logs…</div>
+        <pre class="log" id="log-view" style="max-height:550px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;line-height:1.4;"></pre>
       </section>
     </div>
     <div data-pane="camera" class="hidden">
@@ -684,30 +718,140 @@ function initInject() {
 
 
 // ---- logs ----
+let _logPollTimer = null;
+let _rawLogLines = [];
+
+function highlightLine(line) {
+  const e = esc(line);
+  if (/error|exception|traceback|fail|fatal|cannot|denied/i.test(line)) {
+    return `<span class="error">${e}</span>`;
+  }
+  if (/warn/i.test(line)) {
+    return `<span style="color:#f59e0b;">${e}</span>`;
+  }
+  if (/\[reply\]|\[heard\]|\[thought\]/i.test(line)) {
+    return `<span style="color:#00e5ff;">${e}</span>`;
+  }
+  if (/^\[.*?\]/.test(line)) {
+    return `<span style="color:#a855f7;">${e}</span>`;
+  }
+  return e;
+}
+
 function logLine(e) {
   return `<span class="t">${fmtTime(e.ts)}</span> <span class="${esc(e.kind)}">[${esc(e.kind)}]</span> ${esc(e.text)}`;
 }
+
 function appendLog(e, bottom) {
   const v = $('log-view');
-  v.innerHTML += logLine(e) + '\n';
-  if (bottom) v.scrollTop = v.scrollHeight;
+  if ($('log-source').value === 'events') {
+    v.innerHTML += logLine(e) + '\n';
+    if (bottom && $('log-follow').checked) v.scrollTop = v.scrollHeight;
+  }
 }
+
+function renderLogLines() {
+  const v = $('log-view');
+  const q = ($('log-filter').value || '').toLowerCase().trim();
+  let lines = _rawLogLines;
+  if (q) {
+    lines = lines.filter(l => l.toLowerCase().includes(q));
+  }
+  if (lines.length === 0) {
+    v.innerHTML = `<span class="hint">(no log lines match${q ? ' filter "' + esc(q) + '"' : ''})</span>\n`;
+  } else {
+    v.innerHTML = lines.map(highlightLine).join('\n') + '\n';
+  }
+  if ($('log-follow').checked) {
+    v.scrollTop = v.scrollHeight;
+  }
+}
+
 async function loadLogs() {
+  const source = $('log-source').value;
+  const limit = $('log-limit').value || '150';
+  const kindWrap = $('log-kind-wrap');
+  if (kindWrap) {
+    if (source === 'events') {
+      kindWrap.classList.remove('hidden');
+    } else {
+      kindWrap.classList.add('hidden');
+    }
+  }
+
+  const statusBar = $('log-status-bar');
   if (DEMO) {
-    const kind = $('log-kind').value;
-    const rows = DEMO_LOGS.filter(e => !kind || e.kind === kind);
-    $('log-view').innerHTML = rows.map(logLine).join('\n') + '\n';
+    if (source === 'events') {
+      const kind = $('log-kind').value;
+      const rows = DEMO_LOGS.filter(e => !kind || e.kind === kind);
+      _rawLogLines = rows.map(e => `[${fmtTime(e.ts)}] [${e.kind}] ${e.text}`);
+    } else {
+      _rawLogLines = [
+        `[demo] Log Source: ${source}`,
+        `[demo] 2026-09-10 03:45:00 [main] Karma online (mock demo mode)`,
+        `[demo] 2026-09-10 03:45:01 [SwitchableEngine] local llama_cpp ready`,
+        `[demo] 2026-09-10 03:45:02 [speech] Kokoro TTS initialized`
+      ];
+    }
+    if (statusBar) statusBar.textContent = `Demo stream · ${source} · ${_rawLogLines.length} lines`;
+    renderLogLines();
     return;
   }
-  const kind = $('log-kind').value;
+
   try {
-    const d = await (await api('/api/logs?limit=150' + (kind ? '&kind=' + kind : ''))).json();
-    $('log-view').innerHTML = d.events.slice().reverse().map(logLine).join('\n') + '\n';
-    $('log-view').scrollTop = $('log-view').scrollHeight;
-  } catch (e) {}
+    let url = `/api/logs?source=${encodeURIComponent(source)}&limit=${encodeURIComponent(limit)}`;
+    if (source === 'events') {
+      const kind = $('log-kind').value;
+      if (kind) url += `&kind=${encodeURIComponent(kind)}`;
+    }
+    const res = await api(url);
+    if (!res.ok) {
+      if (statusBar) statusBar.textContent = `Error ${res.status} loading logs`;
+      return;
+    }
+    const d = await res.json();
+    if (source === 'events') {
+      const evs = d.events ? d.events.slice().reverse() : [];
+      _rawLogLines = evs.map(e => `[${fmtTime(e.ts)}] [${e.kind}] ${e.text}`);
+      if (statusBar) statusBar.textContent = `Event Bus · ${evs.length} events loaded`;
+    } else {
+      _rawLogLines = d.lines || [];
+      const note = d.file ? ` (${d.file})` : '';
+      if (statusBar) statusBar.textContent = `Source: ${source}${note} · ${_rawLogLines.length} lines loaded`;
+    }
+    renderLogLines();
+  } catch (err) {
+    if (statusBar) statusBar.textContent = `Failed to fetch logs: ${err.message}`;
+  }
 }
+
 $('log-refresh').onclick = loadLogs;
+$('log-source').onchange = loadLogs;
+$('log-limit').onchange = loadLogs;
 $('log-kind').onchange = loadLogs;
+$('log-filter').oninput = renderLogLines;
+
+$('log-download').onclick = () => {
+  const text = _rawLogLines.join('\n');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `karma_${$('log-source').value}_${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+$('log-auto-refresh').onchange = (e) => {
+  if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
+  if (e.target.checked) {
+    _logPollTimer = setInterval(() => {
+      const pane = document.querySelector('[data-pane="logs"]');
+      if (pane && !pane.classList.contains('hidden')) {
+        loadLogs();
+      }
+    }, 3000);
+  }
+};
 
 // ---- camera ----
 let camOn = false;
