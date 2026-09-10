@@ -94,18 +94,40 @@ if success:
 else:
     print("    ❌ Test tone failed to play on all backends.")
 
-# 6. Test Real TTS Synthesis and Playback
+# 6. Test Real TTS Synthesis and Playback (with verbose error surfacing)
 print("\n[6] Testing Bilingual TTS Engine (Speaking test phrase)...")
 phrase = "Karma audio test: sound is working at 100 percent!"
 print(f"    Synthesizing: '{phrase}'")
+import contextlib
+import io as _io
+
+print(f"    en_pipeline present: {getattr(tts, 'en_pipeline', None) is not None}")
+print(f"    interrupt_event set: {bool(getattr(tts, 'interrupt_event', None) and tts.interrupt_event.is_set())}")
+try:
+    print(f"    ALSA candidates: {tts._find_best_alsa_devices()}")
+except Exception as _e:
+    print(f"    ALSA candidates query failed: {_e}")
+try:
+    print(f"    Pulse sink: {tts._find_best_pulse_sink()}")
+except Exception as _e:
+    print(f"    Pulse sink query failed: {_e}")
+
 t0 = time.time()
-tts_success = tts.speak(phrase)
+_stderr_buf = _io.StringIO()
+with contextlib.redirect_stderr(_stderr_buf):
+    tts_success = tts.speak(phrase)
 elapsed = time.time() - t0
+_err_text = _stderr_buf.getvalue().strip()
+if _err_text:
+    for _line in _err_text.splitlines():
+        print(f"    TTS ERROR: {_line}")
 
 if tts_success:
     print(f"    ✅ TTS speech synthesis & playback SUCCEEDED in {elapsed:.2f}s!")
 else:
     print("    ❌ TTS speech playback failed.")
+    if not _err_text:
+        print("    (no stderr from TTS engine — silent early-return; synthesis likely None/empty or interrupted)")
 
 print("\n" + "=" * 65)
 if success or tts_success:
