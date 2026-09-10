@@ -412,10 +412,13 @@
         let frame = 0;
         speakInterval = setInterval(() => {
           frame++;
-          // small smile opens and closes as it talks
-          const open = 8 + Math.round(Math.abs(Math.sin(frame * 0.9)) * 22);
-          mouthPath.setAttribute('d', `M -28 0 Q 0 ${open} 28 0`);
-        }, 90);
+          // Dynamic talking mouth: clearly articulates with natural vertical & horizontal flex
+          const ph = frame * 0.45;
+          const openY = 14 + Math.round(Math.abs(Math.sin(ph)) * 34);
+          const topY = -Math.round(Math.abs(Math.sin(ph * 1.2)) * 12);
+          const w = 28 + Math.round(Math.cos(ph * 0.7) * 5);
+          mouthPath.setAttribute('d', `M -${w} ${topY} Q 0 ${openY} ${w} ${topY}`);
+        }, 60);
       }
     } else {
       if (subtitleBar) subtitleBar.style.display = 'none';

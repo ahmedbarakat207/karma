@@ -315,8 +315,15 @@ def speak_and_animate(text: str, tts=None) -> None:
                 print(f"[interaction] TTS speak error: {e}", file=sys.stderr)
 
         if not audio_played:
-            # Fallback: animate mouth on the screen for the estimated speech duration
-            est_duration = max(1.5, min(8.0, len(spoken.split()) * 0.35))
+            # Fallback: keep mouth animating on the screen for the estimated speech duration
+            internal_state.set_playing_audio(True)
+            try:
+                from src.ui.server import broadcast_state_threadsafe
+                broadcast_state_threadsafe()
+            except Exception:
+                pass
+
+            est_duration = max(2.5, min(8.0, len(spoken.split()) * 0.45))
             t0 = time.time()
             while time.time() - t0 < est_duration:
                 time.sleep(0.05)
