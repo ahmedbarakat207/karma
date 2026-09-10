@@ -345,6 +345,67 @@ class TTSEngine:
                 config.log_debug(f"[speech] synthesis error: {e}")
                 return None
 
+    def _find_best_alsa_devices(self) -> List[str]:
+        """Find non-HDMI ALSA playback devices on Linux/Raspberry Pi.
+
+        Routing audio to HDMI (vc4-hdmi) on Raspberry Pi causes the HDMI clock
+        to re-synchronize, which blanks the 7-inch LCD display (turns off and on again)
+        and sends audio to a display that has no speakers.
+        """
+        configured = (getattr(config, "AUDIO_OUTPUT_DEVICE", "") or os.environ.get("AUDIO_OUTPUT_DEVICE", "")).strip()
+        if configured:
+            return [configured]
+
+        if not sys.platform.startswith("linux"):
+            return []
+
+        import shutil
+        if not shutil.which("aplay"):
+            return []
+
+        try:
+            import subprocess
+            proc = subprocess.run(["aplay", "-l"], capture_output=True, text=True, timeout=2)
+            if proc.returncode != 0 or not proc.stdout:
+                return []
+
+            cards = []
+            for line in proc.stdout.splitlines():
+                m = re.match(r"^card\s+(\d+):\s+([\w\-]+)\s+\[([^\]]+)\]", line)
+                if m:
+                    card_id, card_name, card_desc = m.group(1), m.group(2), m.group(3)
+                    cards.append((card_id, card_name, card_desc))
+
+            candidates = []
+            # Priority 1: USB audio devices (headphones, dongles, speakers)
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if any(k in text for k in ("usb", "uac", "dac", "speaker", "codec")):
+                    dev = f"plughw:CARD={cname},DEV=0"
+                    if dev not in candidates:
+                        candidates.append(dev)
+
+            # Priority 2: 3.5mm analog headphone jack (bcm2835 Headphones)
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if any(k in text for k in ("headphone", "analog")) and "hdmi" not in text:
+                    dev = f"plughw:CARD={cname},DEV=0"
+                    if dev not in candidates:
+                        candidates.append(dev)
+
+            # Priority 3: Any non-HDMI card
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if "hdmi" not in text:
+                    dev = f"plughw:CARD={cname},DEV=0"
+                    if dev not in candidates:
+                        candidates.append(dev)
+
+            return candidates
+        except Exception as e:
+            config.log_debug(f"[speech] device discovery error: {e}")
+            return []
+
     def _play_audio(self, audio: Optional[np.ndarray]) -> bool:
         if audio is None or len(audio) == 0:
             return False
@@ -362,7 +423,7 @@ class TTSEngine:
                 pass
 
             # On Linux / Raspberry Pi, prefer `aplay` to avoid PortAudio ALSA contention
-            # with the active microphone InputStream in run_audio.
+            # and prevent HDMI clock re-sync which blanks the 7-inch display.
             if sys.platform.startswith("linux"):
                 import shutil
                 if shutil.which("aplay"):
@@ -381,11 +442,22 @@ class TTSEngine:
                             wf.setframerate(config.TTS_SAMPLE_RATE)
                             wf.writeframes(int16_arr.tobytes())
 
-                        proc = subprocess.run(["aplay", "-q", tmp_wav], capture_output=True, timeout=30)
-                        if proc.returncode == 0:
-                            played = True
-                        else:
-                            config.log_debug(f"[speech] aplay returned {proc.returncode}: {proc.stderr.decode('utf-8', errors='ignore')}")
+                        devices_to_try = self._find_best_alsa_devices()
+                        if not devices_to_try:
+                            if getattr(config, "ALLOW_HDMI_AUDIO", False):
+                                devices_to_try = ["default"]
+                            else:
+                                config.log_debug("[speech] no non-HDMI audio device found; skipping HDMI to prevent screen blanking")
+
+                        for dev in devices_to_try:
+                            cmd = ["aplay", "-q", "-D", dev, tmp_wav] if dev != "default" else ["aplay", "-q", tmp_wav]
+                            proc = subprocess.run(cmd, capture_output=True, timeout=30)
+                            if proc.returncode == 0:
+                                played = True
+                                config.log_debug(f"[speech] played audio via {dev}")
+                                break
+                            else:
+                                config.log_debug(f"[speech] aplay on {dev} returned {proc.returncode}: {proc.stderr.decode('utf-8', errors='ignore')}")
                     except Exception as ap_err:
                         config.log_debug(f"[speech] aplay error: {ap_err}")
                     finally:
@@ -395,13 +467,13 @@ class TTSEngine:
                             except Exception:
                                 pass
 
-            if not played:
+            # Non-Linux fallback (e.g. macOS development)
+            if not played and not sys.platform.startswith("linux"):
                 try:
                     sd.play(audio_arr, config.TTS_SAMPLE_RATE)
                     sd.wait()
                     played = True
                 except Exception as e:
-                    # ALSA sample rate fallback: try 44100 Hz if 24000 Hz is rejected by hardware
                     try:
                         import scipy.signal
                         resampled = scipy.signal.resample_poly(audio_arr, 441, 240)

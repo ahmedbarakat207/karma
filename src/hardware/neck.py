@@ -31,7 +31,8 @@ class NeckActuator:
     def _connect(self) -> None:
         try:
             import pigpio
-            self._pi = pigpio.pi()
+            with config.SilenceStderrFD():
+                self._pi = pigpio.pi()
             if not self._pi.connected:
                 self._pi = None
                 self._mock = True

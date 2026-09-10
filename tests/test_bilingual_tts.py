@@ -121,3 +121,38 @@ def test_num2words_fallback():
     assert fn(3, to="ordinal") == "third"
     assert fn(21, to="ordinal") in ("twenty-first", "twenty first")
     assert "three point" in fn(3.14)
+
+
+def test_alsa_device_selection(monkeypatch):
+    tts = TTSEngine()
+
+    mock_aplay_output = """
+card 0: vc4hdmi0 [vc4-hdmi-0], device 0: MAI PCM vc4-hdmi-hifi-0 []
+  Subdevices: 1/1
+card 1: vc4hdmi1 [vc4-hdmi-1], device 0: MAI PCM vc4-hdmi-hifi-1 []
+  Subdevices: 1/1
+card 2: Headphones [bcm2835 Headphones], device 0: bcm2835 Headphones [bcm2835 Headphones]
+  Subdevices: 1/1
+card 3: UACDemo [USB Audio Device], device 0: USB Audio [USB Audio]
+  Subdevices: 1/1
+"""
+    class MockProc:
+        returncode = 0
+        stdout = mock_aplay_output
+
+    with patch("sys.platform", "linux"), \
+         patch("shutil.which", return_value="/usr/bin/aplay"), \
+         patch("subprocess.run", return_value=MockProc):
+
+        # USB audio is highest priority
+        devs = tts._find_best_alsa_devices()
+        assert len(devs) >= 2
+        assert devs[0] == "plughw:CARD=UACDemo,DEV=0"
+        assert devs[1] == "plughw:CARD=Headphones,DEV=0"
+        # Must never include HDMI
+        assert not any("hdmi" in d.lower() for d in devs)
+
+        # Configured override wins
+        monkeypatch.setattr("src.config.AUDIO_OUTPUT_DEVICE", "plughw:custom,0")
+        assert tts._find_best_alsa_devices() == ["plughw:custom,0"]
+

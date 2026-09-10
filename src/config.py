@@ -238,7 +238,8 @@ TTS_LANG_CODE = "a"
 TTS_VOICE = os.environ.get("TTS_VOICE", "af_bella")
 TTS_SAMPLE_RATE = 24000
 SPEAK_THOUGHTS = False
-TTS_STREAMING = True
+AUDIO_OUTPUT_DEVICE = os.environ.get("AUDIO_OUTPUT_DEVICE", "")
+ALLOW_HDMI_AUDIO = _env_bool("ALLOW_HDMI_AUDIO", False)
 PROSODY_SENTENCE_BOUNDARIES = r'[.!?،؟]+'
 
 # Nabra (Arabic Neural TTS)

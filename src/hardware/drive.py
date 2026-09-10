@@ -43,7 +43,8 @@ class _Bridge:
     def _connect(self) -> None:
         try:
             import pigpio
-            pi = pigpio.pi()
+            with config.SilenceStderrFD():
+                pi = pigpio.pi()
             if not pi.connected:
                 self._mock = True
                 config.log_debug("[drive] pigpiod not running, mock mode")
