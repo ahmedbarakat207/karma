@@ -39,10 +39,25 @@ for _ctrl in "Master" "Headphone" "Headphones" "PCM" "Speaker" "Playback"; do
 done
 amixer cset numid=3 1 2>/dev/null || true
 amixer -c Headphones cset numid=3 1 2>/dev/null || true
-pactl set-sink-mute @DEFAULT_SINK@ 0 2>/dev/null || true
-pactl set-sink-volume @DEFAULT_SINK@ 100% 2>/dev/null || true
+
+# Suspend any HDMI sinks in PulseAudio so no sound server ever touches HDMI
+if command -v pactl &>/dev/null; then
+    while read -r _idx _name _rest; do
+        if echo "$_name" | grep -qi "hdmi"; then
+            pactl suspend-sink "$_name" 1 2>/dev/null || true
+            pactl set-sink-mute "$_name" 1 2>/dev/null || true
+        elif echo "$_name" | grep -qiE "usb|uac|dac|speaker|headphone|analog|bcm2835"; then
+            pactl suspend-sink "$_name" 0 2>/dev/null || true
+            pactl set-default-sink "$_name" 2>/dev/null || true
+            pactl set-sink-mute "$_name" 0 2>/dev/null || true
+            pactl set-sink-volume "$_name" 100% 2>/dev/null || true
+        fi
+    done < <(pactl list sinks short 2>/dev/null || true)
+fi
+
 wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
 wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
+
 
 
 # ── Python binary ────────────────────────────────────────────────────────────

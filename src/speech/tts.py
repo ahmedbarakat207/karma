@@ -155,8 +155,20 @@ def set_system_volume_max() -> None:
     # 2. PulseAudio controls (if PulseAudio daemon is running)
     if shutil.which("pactl"):
         try:
-            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], capture_output=True, timeout=1)
-            subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"], capture_output=True, timeout=1)
+            res = subprocess.run(["pactl", "list", "sinks", "short"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        sname = parts[1]
+                        if "hdmi" in sname.lower():
+                            subprocess.run(["pactl", "suspend-sink", sname, "1"], capture_output=True, timeout=1)
+                            subprocess.run(["pactl", "set-sink-mute", sname, "1"], capture_output=True, timeout=1)
+                        elif any(k in sname.lower() for k in ("usb", "uac", "dac", "speaker", "headphone", "analog", "bcm2835")):
+                            subprocess.run(["pactl", "suspend-sink", sname, "0"], capture_output=True, timeout=1)
+                            subprocess.run(["pactl", "set-default-sink", sname], capture_output=True, timeout=1)
+                            subprocess.run(["pactl", "set-sink-mute", sname, "0"], capture_output=True, timeout=1)
+                            subprocess.run(["pactl", "set-sink-volume", sname, "100%"], capture_output=True, timeout=1)
         except Exception:
             pass
 
@@ -167,6 +179,7 @@ def set_system_volume_max() -> None:
             subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "1.0"], capture_output=True, timeout=1)
         except Exception:
             pass
+
 
 
 
@@ -447,14 +460,100 @@ class TTSEngine:
             for cid, cname, cdesc in cards:
                 text = (cname + " " + cdesc).lower()
                 if "hdmi" not in text:
+    def _find_best_pulse_sink(self) -> Optional[str]:
+        """Find non-HDMI PulseAudio/PipeWire sink."""
+        if not sys.platform.startswith("linux"):
+            return None
+        import shutil
+        import subprocess
+        if not shutil.which("pactl"):
+            return None
+        try:
+            res = subprocess.run(["pactl", "list", "sinks", "short"], capture_output=True, text=True, timeout=2)
+            if res.returncode != 0 or not res.stdout:
+                return None
+            sinks = []
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2:
+                    sinks.append(parts[1])
+            # 1. USB Audio
+            for s in sinks:
+                if any(k in s.lower() for k in ("usb", "uac", "dac", "speaker", "codec")):
+                    return s
+            # 2. 3.5mm analog headphones
+            for s in sinks:
+                if any(k in s.lower() for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in s.lower():
+                    return s
+            # 3. Any other non-HDMI sink
+            for s in sinks:
+                if "hdmi" not in s.lower():
+                    return s
+            return None
+        except Exception:
+            return None
+
+    def _find_best_alsa_devices(self) -> List[str]:
+        """Find non-HDMI ALSA playback devices on Linux/Raspberry Pi.
+
+        Routing audio to HDMI (vc4-hdmi) on Raspberry Pi causes the HDMI clock
+        to re-synchronize, which blanks the 7-inch LCD display (turns off and on again)
+        and sends audio to a display that has no speakers.
+        """
+        configured = (getattr(config, "AUDIO_OUTPUT_DEVICE", "") or os.environ.get("AUDIO_OUTPUT_DEVICE", "")).strip()
+        if configured:
+            return [configured]
+
+        if not sys.platform.startswith("linux"):
+            return []
+
+        import shutil
+        if not shutil.which("aplay"):
+            return []
+
+        try:
+            import subprocess
+            proc = subprocess.run(["aplay", "-l"], capture_output=True, text=True, timeout=2)
+            if proc.returncode != 0 or not proc.stdout:
+                return []
+
+            cards = []
+            for line in proc.stdout.splitlines():
+                m = re.match(r"^card\s+(\d+):\s+([\w\-]+)\s+\[([^\]]+)\]", line)
+                if m:
+                    card_id, card_name, card_desc = m.group(1), m.group(2), m.group(3)
+                    cards.append((card_id, card_name, card_desc))
+
+            candidates = []
+
+            # Priority 1: USB audio devices (headphones, dongles, speakers, DACs)
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if any(k in text for k in ("usb", "uac", "dac", "speaker", "codec")):
                     for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
                         if dev not in candidates:
                             candidates.append(dev)
 
-            # Priority 4: PulseAudio ALSA plugin if available
-            if shutil.which("pulseaudio") or shutil.which("pipewire") or shutil.which("pactl"):
-                if "pulse" not in candidates:
-                    candidates.append("pulse")
+            # Priority 2: 3.5mm analog headphone jack (bcm2835 Headphones)
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if any(k in text for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in text:
+                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
+                        if dev not in candidates:
+                            candidates.append(dev)
+
+            # Priority 3: Any non-HDMI card
+            for cid, cname, cdesc in cards:
+                text = (cname + " " + cdesc).lower()
+                if "hdmi" not in text:
+                    for dev in (f"plughw:CARD={cname},DEV=0", f"plughw:{cid},0", f"sysdefault:CARD={cname}", f"sysdefault:{cid}", f"hw:{cid},0"):
+                        if dev not in candidates:
+                            candidates.append(dev)
+
+            # Priority 4: PulseAudio ALSA plugin ONLY if an active non-HDMI sink exists
+            pulse_sink = self._find_best_pulse_sink()
+            if pulse_sink and "pulse" not in candidates:
+                candidates.append("pulse")
 
             return candidates
         except Exception as e:
@@ -513,15 +612,16 @@ class TTSEngine:
                     wf.setframerate(stereo_rate)
                     wf.writeframes(int16_stereo.tobytes())
 
-                # Method 1: PulseAudio native paplay (handles USB DAC and 3.5mm without ALSA hardware locks)
-                if not played and shutil.which("paplay"):
+                # Method 1: PulseAudio native paplay explicitly targeted to verified NON-HDMI sink
+                pulse_sink = self._find_best_pulse_sink()
+                if not played and pulse_sink and shutil.which("paplay"):
                     try:
-                        p_res = subprocess.run(["paplay", tmp_wav], capture_output=True, text=True, timeout=30)
+                        p_res = subprocess.run(["paplay", "--device", pulse_sink, tmp_wav], capture_output=True, text=True, timeout=30)
                         if p_res.returncode == 0:
                             played = True
-                            backend_used = "paplay (PulseAudio/PipeWire)"
+                            backend_used = f"paplay ({pulse_sink})"
                         else:
-                            errors.append(f"paplay: {p_res.stderr.strip()[:80]}")
+                            errors.append(f"paplay {pulse_sink}: {p_res.stderr.strip()[:80]}")
                     except Exception as pe:
                         errors.append(f"paplay: {pe}")
 
@@ -545,7 +645,7 @@ class TTSEngine:
                         except Exception as e:
                             errors.append(f"aplay {dev}: {e}")
 
-                # Method 3: sounddevice with explicit non-HDMI output selection
+                # Method 3: sounddevice strictly targeted to non-HDMI output index
                 if not played:
                     try:
                         import sounddevice as sd
@@ -566,6 +666,7 @@ class TTSEngine:
                                     if any(k in n for k in ("headphone", "analog", "bcm2835")) and "hdmi" not in n:
                                         sd_dev = idx
                                         break
+                        # On Linux, ONLY play if an explicit non-HDMI device index was found!
                         if sd_dev is not None or not sys.platform.startswith("linux"):
                             play_data = resampled if 'resampled' in locals() else audio_arr
                             rate = 44100 if 'resampled' in locals() else config.TTS_SAMPLE_RATE
@@ -575,6 +676,7 @@ class TTSEngine:
                             backend_used = f"sounddevice (device #{sd_dev})"
                     except Exception as sde:
                         errors.append(f"sounddevice: {sde}")
+
 
                 # Method 4: ffplay / mpv fallback
                 if not played:
