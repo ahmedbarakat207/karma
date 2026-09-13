@@ -211,21 +211,20 @@ class TTSEngine:
                  speaking_event: Optional[threading.Event] = None,
                  interrupt_event: Optional[threading.Event] = None):
         self.voice = voice
+        self.lang_code = lang_code
         self.speaking_event = speaking_event
         self.interrupt_event = interrupt_event
         self._synth_lock = threading.Lock()
         self.onnx_session = None
+        self.onnx_kokoro = None
         self._voices_cache: Dict[str, np.ndarray] = {}
 
-        # English pipeline (Kokoro-82M)
-        _ensure_num2words()
-        try:
-            from kokoro import KPipeline
-            self.en_pipeline = KPipeline(lang_code=lang_code)
-        except Exception as e:
-            config.log_debug(f"[speech] Kokoro English pipeline init error: {e}")
-            self.en_pipeline = None
-        self.pipeline = self.en_pipeline  # for backward compatibility
+        # English pipeline (Kokoro-82M PyTorch) — lazy: only built if ONNX
+        # fast path is unavailable or fails. Building KPipeline pulls torch
+        # weights and runs a slow warmup, so never do it eagerly here.
+        self.en_pipeline = None
+        self._en_init_attempted = False
+        self.pipeline = None  # for backward compatibility; set on lazy init
 
         # Arabic pipeline (Nabra-82M) - initialized lazily on first Arabic request
         self.ar_pipeline = None
@@ -236,28 +235,116 @@ class TTSEngine:
         model_path = getattr(config, "KOKORO_MODEL_PATH", "")
         voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
 
+        # Auto-fetch the quantized ONNX voice files from their correct
+        # upstream locations when USE_KOKORO_ONNX is on but files are absent.
+        # (setup.sh previously pointed at hexgrad/Kokoro-82M filenames that
+        # don't exist there, so Pi installs silently fell back to slow torch.)
+        if getattr(config, "USE_KOKORO_ONNX", False):
+            try:
+                model_path, voices_path = self._ensure_onnx_files(model_path, voices_path)
+            except Exception as e:
+                config.log_debug(f"[speech] ONNX auto-download note: {e}")
+
         if getattr(config, "USE_KOKORO_ONNX", False) and model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
             try:
                 import onnxruntime as ort
+                from kokoro_onnx import Kokoro
                 opts = ort.SessionOptions()
-                opts.intra_op_num_threads = getattr(config, "N_THREADS", 4)
+                opts.intra_op_num_threads = getattr(config, "TTS_THREADS", getattr(config, "N_THREADS", 4))
                 opts.inter_op_num_threads = 1
-                self.onnx_session = ort.InferenceSession(model_path, sess_options=opts, providers=["CPUExecutionProvider"])
-                self._load_voice_tensor(voices_path, self.voice)
-                config.log_debug(f"[speech] initialized Quantized Kokoro-82M ONNX model from {model_path}!")
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                session = ort.InferenceSession(model_path, sess_options=opts, providers=["CPUExecutionProvider"])
+                self.onnx_session = session
+                try:
+                    self.onnx_kokoro = Kokoro.from_session(session, voices_path)
+                except Exception:
+                    # Older kokoro-onnx without from_session: construct directly
+                    # (builds a second session; still far faster than torch).
+                    self.onnx_kokoro = Kokoro(model_path, voices_path)
+                print(f"[speech] ONNX Kokoro ready ({os.path.basename(model_path)}, voice={self.voice})")
             except Exception as e:
+                print(f"[speech] ONNX init note: {e}", file=sys.stderr)
                 config.log_debug(f"[speech] ONNX init note: {e}")
                 self.onnx_session = None
+                self.onnx_kokoro = None
+        elif getattr(config, "USE_KOKORO_ONNX", False):
+            print(f"[speech] ONNX enabled but files missing ({model_path}, {voices_path}); using PyTorch fallback (slow).", file=sys.stderr)
 
         try:
             threading.Thread(target=set_system_volume_max, daemon=True, name="auto_max_volume").start()
         except Exception:
             pass
 
+        # No blocking warmup here: synthesis of even "warmup" costs 10-40s
+        # of torch/ONNX inference on Pi CPUs and stalls the whole robot
+        # startup (watchdog restarts). First real utterance warms the model.
+
+    def _ensure_onnx_files(self, model_path: str, voices_path: str):
+        """Download missing ONNX model/voices from correct upstreams. Returns (model_path, voices_path)."""
+        import shutil
+        import subprocess
+        import urllib.request
+
+        models_dir = getattr(config, "MODELS_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "models"))
+        models_dir = os.path.abspath(models_dir)
+        os.makedirs(models_dir, exist_ok=True)
+
+        if not model_path:
+            model_path = os.path.join(models_dir, "kokoro_q4.onnx")
+        if not voices_path:
+            voices_path = os.path.join(models_dir, "voices-v1.0.bin")
+
+        if not os.path.exists(model_path):
+            try:
+                from huggingface_hub import hf_hub_download
+                print(f"[speech] downloading Kokoro ONNX model (onnx-community/Kokoro-82M-v1.0-ONNX:onnx/model_q4.onnx)...")
+                dl = hf_hub_download(repo_id="onnx-community/Kokoro-82M-v1.0-ONNX", filename="onnx/model_q4.onnx", local_dir=models_dir)
+                # hf_hub_download places it under models_dir/onnx/; move to expected path
+                if os.path.abspath(dl) != os.path.abspath(model_path):
+                    os.makedirs(os.path.dirname(os.path.abspath(model_path)), exist_ok=True)
+                    shutil.move(dl, model_path)
+                print(f"[speech] ONNX model ready: {model_path}")
+            except Exception as e:
+                config.log_debug(f"[speech] ONNX model download note: {e}")
+
+        if not os.path.exists(voices_path):
+            url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+            try:
+                print(f"[speech] downloading Kokoro voices (~27MB)...")
+                os.makedirs(os.path.dirname(os.path.abspath(voices_path)), exist_ok=True)
+                tmp = voices_path + ".part"
+                with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
+                    shutil.copyfileobj(r, f)
+                os.replace(tmp, voices_path)
+                print(f"[speech] voices ready: {voices_path}")
+            except Exception as e:
+                # curl fallback (better retry/proxy handling on Pi)
+                try:
+                    if shutil.which("curl"):
+                        subprocess.run(["curl", "-L", "--retry", "3", "-o", voices_path, url], check=True, timeout=300)
+                    else:
+                        raise e
+                except Exception as e2:
+                    config.log_debug(f"[speech] voices download note: {e2}")
+        return model_path, voices_path
+
+    def _init_english_torch(self):
+        """Lazy PyTorch KPipeline init (slow). Only used when ONNX is unavailable."""
+        if self.en_pipeline is not None:
+            return self.en_pipeline
+        if self._en_init_attempted:
+            return None
+        self._en_init_attempted = True
+        _ensure_num2words()
         try:
-            self._synthesize("warmup", speed=1.0)
-        except Exception:
-            pass
+            from kokoro import KPipeline
+            self.en_pipeline = KPipeline(lang_code=self.lang_code)
+            self.pipeline = self.en_pipeline
+            return self.en_pipeline
+        except Exception as e:
+            config.log_debug(f"[speech] Kokoro English pipeline init error: {e}")
+            self.en_pipeline = None
+            return None
 
     def _init_nabra(self) -> Optional[Any]:
         """Lazy-initialize Nabra-82M Arabic TTS pipeline."""
@@ -297,7 +384,12 @@ class TTSEngine:
             kpipeline_mod.LANG_CODES.setdefault("ar", "ar")
             pipeline = KPipeline(lang_code="ar", repo_id=repo_id, model=kmodel)
             _orig_g2p = pipeline.g2p
-            pipeline.g2p = lambda t: (clean_phonemes(_orig_g2p(t)[0]), _orig_g2p(t)[1])
+
+            def _nabra_g2p(t):
+                ph, toks = _orig_g2p(t)
+                return clean_phonemes(ph), toks
+
+            pipeline.g2p = _nabra_g2p
 
             self.ar_voice = torch.load(voice_file, map_location="cpu", weights_only=True)
             self.ar_pipeline = pipeline
@@ -348,31 +440,69 @@ class TTSEngine:
         return None
 
     def _synthesize_english(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
-        """Synthesize English text using Kokoro-82M (ONNX or PyTorch)."""
-        if self.en_pipeline is None:
-            config.log_debug("[speech] English pipeline not available.")
-            return None
-        try:
-            if self.onnx_session is not None:
+        """Synthesize English text using Kokoro-82M (ONNX fast path, PyTorch fallback)."""
+        # Fast path: quantized ONNX via kokoro-onnx (no torch, ~3-10x faster on Pi).
+        if self.onnx_kokoro is not None:
+            try:
+                import time
+                t0 = time.time()
+                audio, sr = self.onnx_kokoro.create(text, voice=self.voice, speed=float(speed), lang="en-us")
+                if audio is not None and len(audio) > 0:
+                    arr = np.asarray(audio, dtype=np.float32).flatten()
+                    # kokoro-onnx outputs 24kHz; resample only if engine rate differs
+                    if sr and int(sr) != int(config.TTS_SAMPLE_RATE):
+                        try:
+                            import scipy.signal
+                            arr = scipy.signal.resample_poly(
+                                arr, int(config.TTS_SAMPLE_RATE), int(sr)).astype(np.float32)
+                        except Exception:
+                            pass
+                    config.log_debug(f"[speech] ONNX synth {len(arr)} samples in {time.time()-t0:.1f}s")
+                    return _normalize_audio(arr)
+            except Exception as e:
+                print(f"[speech] ONNX synthesis note: {e}", file=sys.stderr)
+                config.log_debug(f"[speech] ONNX synthesis note: {e}")
+                # fall through to PyTorch
+
+        # Legacy manual ONNX session path (kept if onnx_kokoro missing but
+        # raw session exists). Uses model.vocab (kokoro>=0.9 moved it off KPipeline).
+        if self.onnx_kokoro is None and self.onnx_session is not None:
+            try:
+                pipe = self._init_english_torch()
+                model = getattr(pipe, "model", None) if pipe is not None else None
+                vocab = getattr(model, "vocab", None) if model is not None else None
                 voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
                 voice_arr = self._load_voice_tensor(voices_path, self.voice)
-                if voice_arr is not None:
-                    ps, _ = self.en_pipeline.g2p(text)
+                if pipe is not None and vocab and voice_arr is not None:
+                    ps, _ = pipe.g2p(text)
                     if ps:
-                        input_ids = np.array([[0] + [self.en_pipeline.vocab[c] for c in ps if c in self.en_pipeline.vocab] + [0]], dtype=np.int64)
-                        tokens_len = len(input_ids[0])
-                        style = np.ascontiguousarray(voice_arr[min(tokens_len, len(voice_arr) - 1)], dtype=np.float32)
-                        speed_arr = np.array([float(speed)], dtype=np.float32)
-                        waveform = self.onnx_session.run(None, {
-                            "input_ids": input_ids,
-                            "style": style,
-                            "speed": speed_arr
-                        })[0]
-                        if waveform is not None:
-                            return _normalize_audio(waveform.flatten().astype(np.float32))
+                        ids = [vocab[c] for c in ps if c in vocab]
+                        if ids:
+                            import numpy as _np
+                            input_ids = _np.array([[0] + ids + [0]], dtype=_np.int64)
+                            tokens_len = len(input_ids[0])
+                            style = _np.ascontiguousarray(voice_arr[min(tokens_len, len(voice_arr) - 1)], dtype=_np.float32)
+                            if style.ndim == 1:
+                                style = style[_np.newaxis, :]
+                            names = {i.name for i in self.onnx_session.get_inputs()}
+                            feed = {}
+                            feed["input_ids" if "input_ids" in names else "tokens"] = input_ids
+                            feed["style"] = style.astype(_np.float32)
+                            feed["speed"] = _np.array([float(speed)], dtype=_np.float32)
+                            waveform = self.onnx_session.run(None, feed)[0]
+                            if waveform is not None:
+                                return _normalize_audio(_np.asarray(waveform).flatten().astype(_np.float32))
+            except Exception as e:
+                config.log_debug(f"[speech] manual ONNX note: {e}")
 
+        # Slow path: PyTorch KPipeline (lazy init so startup never blocks).
+        try:
+            pipe = self._init_english_torch()
+            if pipe is None:
+                config.log_debug("[speech] English pipeline not available.")
+                return None
             chunks: List[np.ndarray] = []
-            for _, _, audio in self.en_pipeline(text, voice=self.voice, speed=speed):
+            for _, _, audio in pipe(text, voice=self.voice, speed=speed):
                 if audio is not None:
                     if hasattr(audio, "detach"):
                         arr = audio.detach().cpu().numpy().flatten().astype(np.float32)
@@ -384,6 +514,7 @@ class TTSEngine:
                 full = np.concatenate(chunks).astype(np.float32)
                 return _normalize_audio(full)
         except Exception as e:
+            print(f"[speech] English synthesis error: {e}", file=sys.stderr)
             config.log_debug(f"[speech] English synthesis error: {e}")
         return None
 
@@ -394,18 +525,28 @@ class TTSEngine:
 
         with self._synth_lock:
             try:
-                use_arabic = is_arabic(spoken) and getattr(config, "NABRA_ENABLED", True)
-                if use_arabic:
-                    audio = self._synthesize_arabic(spoken, speed=speed)
-                    if audio is not None:
-                        return audio
-                    # Fallback to English pipeline if Arabic synthesis failed
-                    return self._synthesize_english(spoken, speed=speed)
-                else:
-                    return self._synthesize_english(spoken, speed=speed)
-            except Exception as e:
-                config.log_debug(f"[speech] synthesis error: {e}")
-                return None
+                # Serialize against LLM inference: overlapping onnxruntime and
+                # llama.cpp thread pools browns out marginal Pi PSUs (SIGSEGV).
+                # Playback stays concurrent — only synthesis takes the gate.
+                from src.cognition.engine import heavy_compute
+                gate = heavy_compute()
+            except Exception:
+                import contextlib
+                gate = contextlib.nullcontext()
+            with gate:
+                try:
+                    use_arabic = is_arabic(spoken) and getattr(config, "NABRA_ENABLED", True)
+                    if use_arabic:
+                        audio = self._synthesize_arabic(spoken, speed=speed)
+                        if audio is not None:
+                            return audio
+                        # Fallback to English pipeline if Arabic synthesis failed
+                        return self._synthesize_english(spoken, speed=speed)
+                    else:
+                        return self._synthesize_english(spoken, speed=speed)
+                except Exception as e:
+                    config.log_debug(f"[speech] synthesis error: {e}")
+                    return None
 
     def _find_best_pulse_sink(self) -> Optional[str]:
         """Find non-HDMI PulseAudio/PipeWire sink."""
@@ -530,18 +671,36 @@ class TTSEngine:
                 self._volume_maxed = True
                 set_system_volume_max()
 
-            # Resample to 44.1kHz stereo 16-bit PCM for universal ALSA & sound card hardware compatibility
+            # Native 24kHz mono first: aplay/paplay go through the ALSA plug
+            # layer which resamples in C far faster than scipy in Python on
+            # Pi CPUs. Only pay for the scipy 44.1kHz stereo resample if the
+            # native file fails on every hardware backend.
             int16_mono = np.clip(audio_arr * 32767.0, -32768, 32767).astype(np.int16)
-            try:
-                import scipy.signal
-                resampled = scipy.signal.resample_poly(audio_arr, 147, 80).astype(np.float32)
-                int16_resampled = np.clip(resampled * 32767.0, -32768, 32767).astype(np.int16)
-                int16_stereo = np.column_stack((int16_resampled, int16_resampled)).flatten()
-                stereo_rate = 44100
-            except Exception:
-                int16_resampled = int16_mono
-                int16_stereo = np.column_stack((int16_mono, int16_mono)).flatten()
-                stereo_rate = config.TTS_SAMPLE_RATE
+            resampled = None
+
+            def _write_wav(path: str, pcm: np.ndarray, channels: int, rate: int) -> None:
+                import wave as _wave
+                with _wave.open(path, "wb") as wf:
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(2)
+                    wf.setframerate(rate)
+                    if channels == 2:
+                        wf.writeframes(np.column_stack((pcm, pcm)).flatten().tobytes())
+                    else:
+                        wf.writeframes(pcm.tobytes())
+
+            def _ensure_resampled() -> tuple:
+                nonlocal resampled
+                if resampled is not None:
+                    return resampled
+                try:
+                    import scipy.signal
+                    rs = scipy.signal.resample_poly(audio_arr, 147, 80).astype(np.float32)
+                    rs16 = np.clip(rs * 32767.0, -32768, 32767).astype(np.int16)
+                    resampled = (rs, rs16)
+                except Exception:
+                    resampled = (audio_arr, int16_mono)
+                return resampled
 
             import tempfile
             import wave
@@ -553,11 +712,7 @@ class TTSEngine:
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                     tmp_wav = tf.name
 
-                with wave.open(tmp_wav, "wb") as wf:
-                    wf.setnchannels(2)
-                    wf.setsampwidth(2)
-                    wf.setframerate(stereo_rate)
-                    wf.writeframes(int16_stereo.tobytes())
+                _write_wav(tmp_wav, int16_mono, 1, int(config.TTS_SAMPLE_RATE))
 
                 # Method 1: PulseAudio native paplay explicitly targeted to verified NON-HDMI sink
                 pulse_sink = self._find_best_pulse_sink()
@@ -573,6 +728,7 @@ class TTSEngine:
                         errors.append(f"paplay: {pe}")
 
                 # Method 2: ALSA aplay on prioritized non-HDMI hardware devices
+                # (native 24kHz mono — plug layer resamples if needed).
                 if not played and shutil.which("aplay"):
                     devices_to_try = self._find_best_alsa_devices()
                     if not devices_to_try and getattr(config, "ALLOW_HDMI_AUDIO", False):
@@ -591,6 +747,11 @@ class TTSEngine:
                                 errors.append(f"aplay {dev}: {err_text[:80]}")
                         except Exception as e:
                             errors.append(f"aplay {dev}: {e}")
+
+                # Only now pay for 44.1kHz stereo (some DACs reject 24k mono).
+                if not played:
+                    _, int16_resampled = _ensure_resampled()
+                    _write_wav(tmp_wav, int16_resampled, 2, 44100)
 
                 # Method 3: sounddevice strictly targeted to non-HDMI output index
                 if not played:
@@ -615,8 +776,9 @@ class TTSEngine:
                                         break
                         # On Linux, ONLY play if an explicit non-HDMI device index was found!
                         if sd_dev is not None or not sys.platform.startswith("linux"):
-                            play_data = resampled if 'resampled' in locals() else audio_arr
-                            rate = 44100 if 'resampled' in locals() else config.TTS_SAMPLE_RATE
+                            rs_float, _ = _ensure_resampled()
+                            play_data = rs_float
+                            rate = 44100
                             sd.play(play_data, rate, device=sd_dev)
                             sd.wait()
                             played = True

@@ -32,6 +32,7 @@ with SilenceStderrFD():
 
 def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_event):
     config.log_debug("[main] Cognition loop started.")
+    last_quiet = 0.0
     while not stop_event.is_set():
         try:
             state = memory.consciousness
@@ -40,8 +41,12 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
             elif memory.is_user_speaking() or memory.unhandled_speech(0):
                 run_interaction_response(memory, engine, tts, store=store, embedder=embedder)
             else:
-                time.sleep(2.0)            # Pi 4: 2 s poll saves ~75 % idle CPU wakeups
-                if random.random() < 0.017:  # ≈ 1 quiet thought/min (1/60 s ÷ 2 s poll)
+                # Fast poll (wakeable) so a new utterance starts LLM work in
+                # ~0.2s instead of up to 2.0s. Quiet thoughts stay ~1/min via
+                # time gate rather than per-poll probability.
+                stop_event.wait(0.2)
+                if time.time() - last_quiet >= 60.0 and random.random() < 0.02:
+                    last_quiet = time.time()
                     think_quietly(memory, engine, store, embedder)
         except Exception as e:
             config.log_debug(f"[main] cognition loop error: {e}")
@@ -50,6 +55,12 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
 
 def main():
     config.apply_cli_args()
+
+    try:
+        import faulthandler
+        faulthandler.enable()  # dump Python tracebacks on segfaults (exit 139s) into karma.log
+    except Exception:
+        pass
 
     from src.ui.server import apply_saved_overrides, load_persona_override
     applied = apply_saved_overrides()
@@ -75,13 +86,25 @@ def main():
             if os.path.isdir(ui_dir):
                 import shutil
                 import subprocess
+                # Reap stale face UIs from previous generations: every main.py
+                # restart used to orphan its Electron, stacking fullscreen
+                # windows that each burn ~30% CPU and starve the LLM.
+                # (Bracket in pattern avoids matching our own command line.)
+                try:
+                    subprocess.run(
+                        ["pkill", "-f", "app-path=/home/karma[/]karma/ui"],
+                        capture_output=True, timeout=5,
+                    )
+                    time.sleep(1.0)
+                except Exception as e:
+                    config.log_debug(f"[main] stale UI reap note: {e}")
                 electron_bin = shutil.which("electron")
                 local_node_bin = os.path.join(ui_dir, "node_modules", ".bin", "electron")
                 cmd = None
                 if os.path.exists(local_node_bin):
-                    cmd = [local_node_bin, ".", "--no-sandbox"]
+                    cmd = [local_node_bin, ".", "--no-sandbox", "--kiosk"]
                 elif electron_bin:
-                    cmd = [electron_bin, ".", "--no-sandbox"]
+                    cmd = [electron_bin, ".", "--no-sandbox", "--kiosk"]
                 elif shutil.which("chromium-browser"):
                     index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
                     cmd = ["chromium-browser", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
@@ -89,12 +112,15 @@ def main():
                     index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
                     cmd = ["chromium", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
                 elif shutil.which("npx"):
-                    cmd = ["npx", "electron", ".", "--no-sandbox"]
+                    cmd = ["npx", "electron", ".", "--no-sandbox", "--kiosk"]
 
                 if cmd:
+                    env = dict(os.environ)
+                    env["KARMA_KIOSK"] = "1"
                     electron_proc = subprocess.Popen(
                         cmd,
                         cwd=ui_dir,
+                        env=env,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )

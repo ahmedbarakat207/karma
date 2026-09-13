@@ -102,6 +102,8 @@ import contextlib
 import io as _io
 
 print(f"    en_pipeline present: {getattr(tts, 'en_pipeline', None) is not None}")
+print(f"    onnx_kokoro present: {getattr(tts, 'onnx_kokoro', None) is not None}")
+print(f"    onnx_session present: {getattr(tts, 'onnx_session', None) is not None}")
 print(f"    interrupt_event set: {bool(getattr(tts, 'interrupt_event', None) and tts.interrupt_event.is_set())}")
 if hasattr(tts, "_find_best_alsa_devices"):
     try:

@@ -81,7 +81,18 @@ except Exception:
         except Exception:
             pass
 
-N_THREADS = int(os.environ.get("N_THREADS", str(min(4, os.cpu_count() or 4))))
+# LLM inference threads. Measured on Pi 4 (4x A72, always contended by the
+# Electron face + audio threads): 2 threads decode ~2x faster than 4
+# (5.4 vs 2.4 tok/s) — extra threads just spin on OpenMP barriers and
+# trash the tiny model's cache locality. Override with N_THREADS if your
+# box is idle.
+N_THREADS = int(os.environ.get("N_THREADS", "2"))
+# TTS ONNX synthesis is single-shot batch work that scales with cores;
+# keep it independent of N_THREADS so LLM tuning never slows the voice.
+# Default 2 (not 4): LLM uses 2 threads, so 2+2 fits the Pi 4's 4 cores.
+# 4 TTS threads + 2 LLM threads oversubscribe and thrash the cache when
+# streaming overlaps inference with synthesis.
+TTS_THREADS = int(os.environ.get("TTS_THREADS", str(min(2, os.cpu_count() or 2))))
 
 _DEFAULT_YOLO_DEVICE = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
 _DEFAULT_GPU_LAYERS = -1 if _DEFAULT_YOLO_DEVICE == "mps" else 0

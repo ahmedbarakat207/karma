@@ -9,6 +9,19 @@ from typing import Any, Dict, Generator, List, Optional, Union
 
 from src import config
 
+# Global heavy-compute gate: LLM inference and TTS synthesis must never run
+# concurrently. On Pi 4 both libraries (llama.cpp OpenMP + onnxruntime) spawn
+# full thread pools; overlapping them oversubscribes the 4 cores ~3x, and the
+# resulting current spikes brown out marginal PSUs (under-voltage -> SIGSEGV).
+# TTS *playback* (paplay/aplay subprocess) stays concurrent — only synthesis
+# and inference serialize. Must be re-entrant for nested engine calls.
+_HEAVY_COMPUTE_LOCK = threading.RLock()
+
+
+def heavy_compute():
+    """Context manager acquiring the heavy-compute gate."""
+    return _HEAVY_COMPUTE_LOCK
+
 _OPEN_TAGS = {"<think>": "</think>", "<thought>": "</thought>"}
 _MAX_TAG_LEN = max(len(t) for t in list(_OPEN_TAGS.keys()) + list(_OPEN_TAGS.values()))
 
@@ -199,25 +212,27 @@ class LocalEngine:
              temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
         if self.llm is None:
             return ""
-        prompt = self._format_prompt(system_prompt, user_prompt, history=history)
+        # Collect via the streaming path so telemetry records an honest
+        # TTFT + decode-only tok/s (the old non-streaming call lumped slow
+        # prompt processing into "TPS"). Sampling params identical.
+        # Serialized against TTS synthesis via the heavy-compute gate.
+        parts: List[str] = []
         t0 = time.time()
-        with config.SilenceStderrFD():
-            out = self.llm(
-                prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=getattr(config, "DEFAULT_TOP_P", 0.90),
-                repeat_penalty=getattr(config, "DEFAULT_REPEAT_PENALTY", 1.05),
-                frequency_penalty=getattr(config, "DEFAULT_FREQUENCY_PENALTY", 0.0),
-                presence_penalty=getattr(config, "DEFAULT_PRESENCE_PENALTY", 0.0),
-                stop=self.stop_tokens
-            )
-        text = out["choices"][0]["text"].strip()
+        first = 0.0
+        with heavy_compute():
+            for tok in self.stream_chat(system_prompt, user_prompt, max_tokens=max_tokens,
+                                        temperature=temperature, history=history):
+                if not first:
+                    first = time.time()
+                parts.append(tok)
+        text = "".join(parts).strip()
         try:
             from src.ui import telemetry as _telemetry
-            usage = out.get("usage", {}) or {}
-            _telemetry.record_llm(time.time() - t0, time.time() - t0,
-                                  int(usage.get("completion_tokens") or max(1, len(text) // 4)))
+            # stream_chat already recorded TTFT/decode; ensure non-stream
+            # callers without a running loop still get a sane entry.
+            if not first:
+                _telemetry.record_llm(time.time() - t0, time.time() - t0,
+                                      max(1, len(text) // 4))
         except Exception:
             pass
         return clean_companion_reply(_strip_thinking(text).strip())
@@ -271,7 +286,13 @@ class GroqEngine:
 
         try:
             from groq import Groq
-            self.client = Groq(api_key=self.api_key) if self.api_key else Groq()
+            # Fail fast (10s): without a timeout a dead network stalls every
+            # utterance, then SwitchableEngine pays a second full local
+            # inference as fallback — the "too long and too awful" path.
+            try:
+                self.client = Groq(api_key=self.api_key, timeout=10.0) if self.api_key else Groq(timeout=10.0)
+            except TypeError:
+                self.client = Groq(api_key=self.api_key) if self.api_key else Groq()
             config.log_debug(f"[llm] Groq engine initialized with model: {self.model}")
 
         except Exception as e:
@@ -279,7 +300,8 @@ class GroqEngine:
                 from openai import OpenAI
                 self.client = OpenAI(
                     base_url="https://api.groq.com/openai/v1",
-                    api_key=self.api_key or os.environ.get("GROQ_API_KEY", "EMPTY")
+                    api_key=self.api_key or os.environ.get("GROQ_API_KEY", "EMPTY"),
+                    timeout=10.0,
                 )
                 config.log_debug(f"[llm] Groq OpenAI-compatible client initialized with model: {self.model}")
             except Exception as e2:
@@ -303,12 +325,21 @@ class GroqEngine:
         try:
             budget = max(max_tokens, 1024)
             t0 = time.time()
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
-                max_completion_tokens=budget,
-                temperature=temperature,
-            )
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
+                    max_completion_tokens=budget,
+                    temperature=temperature,
+                    timeout=10.0,
+                )
+            except TypeError:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
+                    max_completion_tokens=budget,
+                    temperature=temperature,
+                )
             text = response.choices[0].message.content or ""
             try:
                 from src.ui import telemetry as _telemetry
@@ -321,12 +352,21 @@ class GroqEngine:
         except Exception as e:
             config.log_debug(f"[groq] chat error: {e}")
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
-                    max_tokens=budget,
-                    temperature=temperature,
-                )
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
+                        max_tokens=budget,
+                        temperature=temperature,
+                        timeout=10.0,
+                    )
+                except TypeError:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
+                        max_tokens=budget,
+                        temperature=temperature,
+                    )
                 text = response.choices[0].message.content or ""
                 return clean_companion_reply(_strip_thinking(text).strip())
             except Exception as e2:
@@ -347,13 +387,23 @@ class GroqEngine:
 
         def raw_tokens():
             try:
-                stream = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=groq_msgs,
-                    max_completion_tokens=budget,
-                    temperature=temperature,
-                    stream=True
-                )
+                try:
+                    stream = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=groq_msgs,
+                        max_completion_tokens=budget,
+                        temperature=temperature,
+                        stream=True,
+                        timeout=10.0,
+                    )
+                except TypeError:
+                    stream = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=groq_msgs,
+                        max_completion_tokens=budget,
+                        temperature=temperature,
+                        stream=True,
+                    )
                 for chunk in stream:
                     if chunk.choices and len(chunk.choices) > 0:
                         delta = getattr(chunk.choices[0], "delta", None)
@@ -366,16 +416,29 @@ class GroqEngine:
             except Exception as e:
                 config.log_debug(f"[groq] stream error: {e}")
                 try:
-                    stream = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        max_tokens=budget,
-                        temperature=temperature,
-                        stream=True
-                    )
+                    try:
+                        stream = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            max_tokens=budget,
+                            temperature=temperature,
+                            stream=True,
+                            timeout=10.0,
+                        )
+                    except TypeError:
+                        stream = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            max_tokens=budget,
+                            temperature=temperature,
+                            stream=True,
+                        )
                     for chunk in stream:
                         if chunk.choices and len(chunk.choices) > 0:
                             delta = getattr(chunk.choices[0], "delta", None)

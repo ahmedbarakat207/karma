@@ -205,7 +205,11 @@ class DocumentRAG:
                         if re.search(r'\b' + re.escape(w) + r'\b', text_lower) or (not w.isascii() and w in text_lower)
                     )
                     if overlap > 0:
-                        kw_dist = max(0.2, 0.95 - (0.15 * overlap))
+                        # Multi-term exact matches are high-precision: rank them
+                        # above vague dense neighbours (dense L2 noise on
+                        # unnormalized MiniLM vectors sits ~0.43+). A single
+                        # shared term only refines dense hits (see fusion).
+                        kw_dist = max(0.15, 0.50 - (0.12 * overlap))
                         keyword_hits.append({
                             "text": r[0],
                             "ts": r[1],

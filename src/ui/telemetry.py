@@ -28,7 +28,10 @@ _llm = {"calls": 0, "last_tps": 0.0, "last_ttft_ms": 0.0, "avg_tps": 0.0, "last_
 
 
 def record_llm(ttft_s: float, duration_s: float, tokens: int) -> None:
-    tps = (tokens / duration_s) if duration_s > 0 and tokens > 0 else 0.0
+    # Report decode-only tok/s (total minus time-to-first-token) so slow
+    # prompt processing on Pi CPUs doesn't masquerade as generation speed.
+    decode_s = max(duration_s - (ttft_s or 0.0), 0.05)
+    tps = (tokens / decode_s) if decode_s > 0 and tokens > 0 else 0.0
     n = _llm["calls"]
     _llm["calls"] = n + 1
     _llm["last_tps"] = round(tps, 1)

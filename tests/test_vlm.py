@@ -97,30 +97,36 @@ def test_verifier_maybe_verify_disabled():
 
 
 def test_verifier_submit_and_callback_offline():
-    v = VLMVerifier()
-    v._ensure_model = lambda: True  # skip download
-    seen = {}
+    import src.config as config
+    old = config.VLM_ENABLED
+    config.VLM_ENABLED = True  # hermetic: .env ships VLM_ENABLED=0 on Pi
+    try:
+        v = VLMVerifier()
+        v._ensure_model = lambda: True  # skip download
+        seen = {}
 
-    def fake_describe(jpeg_bytes, yolo_labels, known_names):
-        assert jpeg_bytes[:2] == b"\xff\xd8"  # real JPEG snapshot
-        assert yolo_labels == ["chair"]
-        assert known_names == ["Sara"]
-        return {"scene": "A chair by the desk.", "people": [],
-                "objects": ["chair"], "corrections": {"chair": "armchair"}}
+        def fake_describe(jpeg_bytes, yolo_labels, known_names):
+            assert jpeg_bytes[:2] == b"\xff\xd8"  # real JPEG snapshot
+            assert yolo_labels == ["chair"]
+            assert known_names == ["Sara"]
+            return {"scene": "A chair by the desk.", "people": [],
+                    "objects": ["chair"], "corrections": {"chair": "armchair"}}
 
-    v.describe = fake_describe
-    done = threading.Event()
+        v.describe = fake_describe
+        done = threading.Event()
 
-    def on_result(result, job):
-        seen.update(result)
-        done.set()
+        def on_result(result, job):
+            seen.update(result)
+            done.set()
 
-    assert v.maybe_verify(_fake_frame(), {"chair"}, {"Sara"},
-                          now=time.time(), on_result=on_result) is True
-    assert done.wait(timeout=10)
-    assert seen["scene"] == "A chair by the desk."
-    assert v.corrections.lookup("chair") == "armchair"
-    assert v.busy is False
+        assert v.maybe_verify(_fake_frame(), {"chair"}, {"Sara"},
+                              now=time.time(), on_result=on_result) is True
+        assert done.wait(timeout=10)
+        assert seen["scene"] == "A chair by the desk."
+        assert v.corrections.lookup("chair") == "armchair"
+        assert v.busy is False
+    finally:
+        config.VLM_ENABLED = old
 
 
 def test_store_vlm_result_writes_memory():

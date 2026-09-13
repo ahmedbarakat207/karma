@@ -273,45 +273,42 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
             audio_q.put(None)
 
     def drain_worker():
+        # NOTE: never open sd.OutputStream on the default device here. On Pi
+        # that routes to HDMI (blanks the 7" LCD) and 24kHz mono fails on
+        # many DACs with paInvalidSampleRate. tts._play_audio already handles
+        # non-HDMI routing, 44.1kHz stereo resampling and paplay/aplay
+        # fallbacks, so stream every chunk through it.
         try:
-            with sd.OutputStream(samplerate=config.TTS_SAMPLE_RATE, channels=1, dtype="float32") as stream:
-                while True:
-                    if interrupt_event and interrupt_event.is_set():
-                        while not audio_q.empty():
-                            try:
-                                audio_q.get_nowait()
-                            except Exception:
-                                break
-                        break
-
-                    try:
-                        audio = audio_q.get(timeout=0.05)
-                    except queue.Empty:
-                        continue
-
-                    if audio is None or (interrupt_event and interrupt_event.is_set()):
-                        break
-
-                    try:
-                        internal_state.set_playing_audio(True)
-                        stream.write(np.ascontiguousarray(audio, dtype=np.float32))
-                    except Exception as e:
-                        config.log_debug(f"[prosody] playback error: {e}")
-                    finally:
-                        if audio_q.empty():
-                            internal_state.set_playing_audio(False)
-        except Exception as e:
-            config.log_debug(f"[prosody] stream fallback: {e}")
             while True:
                 if interrupt_event and interrupt_event.is_set():
+                    while not audio_q.empty():
+                        try:
+                            audio_q.get_nowait()
+                        except Exception:
+                            break
                     break
+
                 try:
                     audio = audio_q.get(timeout=0.05)
                 except queue.Empty:
                     continue
-                if audio is None:
+
+                if audio is None or (interrupt_event and interrupt_event.is_set()):
                     break
-                tts._play_audio(audio)
+
+                try:
+                    internal_state.set_playing_audio(True)
+                    try:
+                        tts._play_audio(audio)
+                    except AttributeError:
+                        # Minimal TTS stub in tests: fall back to raw sounddevice
+                        with sd.OutputStream(samplerate=config.TTS_SAMPLE_RATE, channels=1, dtype="float32") as stream:
+                            stream.write(np.ascontiguousarray(audio, dtype=np.float32))
+                except Exception as e:
+                    config.log_debug(f"[prosody] playback error: {e}")
+                finally:
+                    if audio_q.empty():
+                        internal_state.set_playing_audio(False)
         finally:
             internal_state.set_playing_audio(False)
 
@@ -343,6 +340,14 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                     break
                 for spoken in code_filter.filter_chunk(chunk):
                     if spoken.strip():
+                        # Show subtitles / drive mouth on the face as soon as
+                        # the first sentence streams in — don't wait for TTS.
+                        try:
+                            internal_state.set_karma_speech(spoken.strip())
+                            from src.ui.server import broadcast_state_threadsafe
+                            broadcast_state_threadsafe()
+                        except Exception:
+                            pass
                         synth_q.put((spoken.strip(), speed))
 
     except Exception as e:
@@ -359,8 +364,11 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                 internal_state.set_active_code(code, lang=code_filter.lang)
 
         synth_q.put(None)
-        synth_t.join(timeout=3.0)
-        drain_t.join(timeout=4.0)
+        # Synthesis of one sentence costs ~5-15s on Pi CPUs; the old 3s/4s
+        # timeouts always fired first, stranding audio and hanging the
+        # process on exit. Wait generously instead.
+        synth_t.join(timeout=180.0)
+        drain_t.join(timeout=190.0)
         if speaking_event:
             speaking_event.clear()
         internal_state.current_emotion = None

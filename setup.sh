@@ -244,6 +244,17 @@ fi
 
 set_config_param "gpu_mem" "128"
 
+# 7" 800x480 capacitive touch LCD: force the exact native mode so the
+# panel always gets a valid signal (otherwise X falls back to a bogus
+# mode and the screen stays black).
+set_config_param "hdmi_group" "2"
+set_config_param "hdmi_mode" "87"
+set_config_param "hdmi_cvt" "800 480 60 6 0 0 0"
+set_config_param "hdmi_drive" "1"
+set_config_param "disable_overscan" "1"
+set_config_param "framebuffer_width" "800"
+set_config_param "framebuffer_height" "480"
+
 CMDLINE_TXT="/boot/firmware/cmdline.txt"
 if [ ! -f "$CMDLINE_TXT" ]; then
     CMDLINE_TXT="/boot/cmdline.txt"
@@ -368,14 +379,13 @@ models = [
     {
         "name": "Kokoro TTS Q4 ONNX (Voice)",
         "file": "kokoro_q4.onnx",
-        "repo": "hexgrad/Kokoro-82M",
-        "hf_file": "kokoro-v0_19.onnx"
+        "repo": "onnx-community/Kokoro-82M-v1.0-ONNX",
+        "hf_file": "onnx/model_q4.onnx"
     },
     {
         "name": "Kokoro Voices Registry",
         "file": "voices-v1.0.bin",
-        "repo": "hexgrad/Kokoro-82M",
-        "hf_file": "voices/v1.0.bin"
+        "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
     },
     {
         "name": "Nabra Arabic TTS Weights",
@@ -394,6 +404,11 @@ models = [
         "file": os.path.join("nabra", "config.json"),
         "repo": "oddadmix/Nabra-82M-v0.1",
         "hf_file": "config.json"
+    },
+    {
+        "name": "MiniLM Embeddings (Memory/RAG)",
+        "file": "all-MiniLM-L6-v2",
+        "snapshot_repo": "sentence-transformers/all-MiniLM-L6-v2"
     }
 ]
 
@@ -402,14 +417,36 @@ for m in models:
     dest_parent = os.path.dirname(dest)
     os.makedirs(dest_parent, exist_ok=True)
     if os.path.exists(dest):
-        size_mb = os.path.getsize(dest) / (1024 * 1024)
-        print(f"✓ Found {m['name']}: {dest} ({size_mb:.1f} MB)")
+        if os.path.isdir(dest):
+            total = sum(
+                os.path.getsize(os.path.join(r, f))
+                for r, _, fs in os.walk(dest) for f in fs
+            )
+            print(f"✓ Found {m['name']}: {dest} ({total / (1024 * 1024):.1f} MB)")
+        else:
+            size_mb = os.path.getsize(dest) / (1024 * 1024)
+            print(f"✓ Found {m['name']}: {dest} ({size_mb:.1f} MB)")
     else:
-        print(f"⬇ Downloading {m['name']} from {m['repo']}...")
         try:
-            downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=dest_parent)
-            if os.path.basename(downloaded) != os.path.basename(dest):
-                os.rename(downloaded, dest)
+            if m.get("snapshot_repo"):
+                print(f"⬇ Downloading {m['name']} from {m['snapshot_repo']}...")
+                from huggingface_hub import snapshot_download
+                snapshot_download(repo_id=m["snapshot_repo"], local_dir=dest)
+            elif m.get("url"):
+                print(f"⬇ Downloading {m['name']} from {m['url']}...")
+                import shutil
+                import urllib.request
+                tmp = dest + ".part"
+                with urllib.request.urlopen(m["url"], timeout=300) as r, open(tmp, "wb") as f:
+                    shutil.copyfileobj(r, f)
+                os.replace(tmp, dest)
+            else:
+                print(f"⬇ Downloading {m['name']} from {m['repo']}...")
+                downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=dest_parent)
+                if os.path.basename(downloaded) != os.path.basename(dest):
+                    # hf hub nests onnx/ subdir; flatten to models/ root
+                    import shutil as _sh
+                    _sh.move(downloaded, dest)
             print(f"✓ Successfully downloaded {m['file']}")
         except Exception as e:
             print(f"⚠️ Notice downloading {m['file']}: {e}")

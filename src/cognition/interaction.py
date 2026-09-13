@@ -518,8 +518,60 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
 
         clean_spoken: Optional[str] = None
         try:
-            # Fast generation: 75 max_tokens is optimal for 1-2 punchy conversational sentences
-            raw = engine.chat(sys_prompt, user_prompt, max_tokens=75, history=history)
+            # Fast generation: 75 max_tokens is optimal for 1-2 punchy conversational sentences.
+            # Stream LLM tokens straight into prosody_stream so the FIRST
+            # sentence starts synthesizing/playing while the rest is still
+            # generating — first audio in ~TTFT + 1 sentence synth instead of
+            # full-LLM + full-TTS sequentially (was 30-100s on Pi 4 CPU).
+            t_llm0 = time.time()
+            raw = ""
+            use_stream = tts is not None and hasattr(engine, "stream_chat")
+            if use_stream:
+                try:
+                    import queue as _queue
+                    collected: List[str] = []
+                    tok_q: _queue.Queue = _queue.Queue()
+
+                    def _feed():
+                        try:
+                            for tok in engine.stream_chat(
+                                sys_prompt, user_prompt, max_tokens=75, history=history
+                            ):
+                                collected.append(tok)
+                                tok_q.put(tok)
+                        except Exception as fe:
+                            config.log_debug(f"[interaction] stream feed note: {fe}")
+                        finally:
+                            tok_q.put(None)
+
+                    def _prosody_iter():
+                        while True:
+                            t = tok_q.get()
+                            if t is None:
+                                return
+                            yield t
+
+                    # Prosody synthesizes/plays sentence-by-sentence in the
+                    # background while we wait only for LLM tokens here — the
+                    # reply (and dashboard HTTP) returns as soon as the LLM
+                    # finishes, without waiting for the full audio tail.
+                    # (Same return-early behavior as speak_and_animate before.)
+                    _pros_t = threading.Thread(
+                        target=lambda: prosody_stream(_prosody_iter(), tts),
+                        daemon=True, name="interaction_prosody",
+                    )
+                    _pros_t.start()
+                    _feed()
+                    raw = "".join(collected).strip()
+                    config.log_debug(
+                        f"[interaction] streamed LLM in {time.time()-t_llm0:.1f}s"
+                    )
+                except Exception as se:
+                    config.log_debug(f"[interaction] stream note, falling back: {se}")
+                    raw = ""
+                    use_stream = False
+            if not raw:
+                raw = engine.chat(sys_prompt, user_prompt, max_tokens=75, history=history)
             reply_text = _extract_plain_text(raw)
 
             if reply_text and len(reply_text) > 1:
@@ -529,12 +581,23 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
                     internal_state.set_active_code(code, lang=lang)
                 print(f"[reply] ({internal_state.mood}) {clean_spoken}")
                 internal_state.set_karma_speech(clean_spoken)
+                try:
+                    from src.ui.server import broadcast_state_threadsafe
+                    broadcast_state_threadsafe()
+                except Exception:
+                    pass
                 _events.post("reply", clean_spoken, {"mood": internal_state.mood})
                 memory.add(kind="reply", text=clean_spoken, counts_as_activity=True)
                 memory.add_conversation(speech_text, clean_spoken)
 
-                # Speak audio out loud AND animate mouth on the robot's physical display
-                speak_and_animate(clean_spoken, tts)
+                if use_stream:
+                    # Audio is streaming in the background via prosody_stream;
+                    # subtitles/mouth state set above. Nothing more to do.
+                    pass
+                else:
+                    # Non-streaming fallback (no TTS engine or no stream_chat):
+                    # speak audio out loud AND animate mouth on the display.
+                    speak_and_animate(clean_spoken, tts)
 
             if not clean_spoken:
                 print("[interaction warning] LLM returned empty response", file=sys.stderr)

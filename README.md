@@ -142,7 +142,7 @@ MG90S on GPIO 18 (pigpio, mock when no daemon). 90° face-to-face, 135° kiosk a
 
 Everything is an env var (or `.env` file) read by `src/config.py`. The service profile in `setup.sh` runs lean (`N_THREADS=2`, `N_BATCH=256`, CTX 4096).
 
-**LLM**: `MODEL_PATH` · `CTX_SIZE` (4096) · `N_BATCH` (512) · `N_THREADS` (min(4,cpu)) · `N_GPU_LAYERS` (auto: Metal on Mac, 0 on Pi) · `DEFAULT_TEMPERATURE` (0.7) · `DEFAULT_TOP_P` (0.9) · `DEFAULT_REPEAT_PENALTY` (1.05) · `DEFAULT_FREQUENCY_PENALTY` / `DEFAULT_PRESENCE_PENALTY` (0.0) · `KV_CACHE_TYPE` (q8_0) · `FLASH_ATTN` (true) · `SPECULATIVE_DECODING` (none) + `SPECULATIVE_NGRAM_SIZE` (2) / `SPECULATIVE_NUM_PRED_TOKENS` (8).
+**LLM**: `MODEL_PATH` · `CTX_SIZE` (4096) · `N_BATCH` (512) · `N_THREADS` (2 — measured fastest on contended Pi 4; 4 threads halves decode speed) · `TTS_THREADS` (min(4,cpu), TTS-only) · `N_GPU_LAYERS` (auto: Metal on Mac, 0 on Pi) · `DEFAULT_TEMPERATURE` (0.7) · `DEFAULT_TOP_P` (0.9) · `DEFAULT_REPEAT_PENALTY` (1.05) · `DEFAULT_FREQUENCY_PENALTY` / `DEFAULT_PRESENCE_PENALTY` (0.0) · `KV_CACHE_TYPE` (q8_0) · `FLASH_ATTN` (true) · `SPECULATIVE_DECODING` (none — prompt_lookup is ~4x slower on ARM CPU, engine guards it off there) + `SPECULATIVE_NGRAM_SIZE` (2) / `SPECULATIVE_NUM_PRED_TOKENS` (8).
 
 **Vision**: `YOLO_MODEL` · `HAND_LANDMARKER_MODEL` · `YOLO_DEVICE` (auto mps/cpu) · `YOLO_IMGSZ` (320) · `ENABLE_YOLO` (true) · `CAMERA_INDEX` (0). Fixed: confidence 0.50, 3 s object dedup.
 

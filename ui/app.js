@@ -448,15 +448,28 @@
     targetGazeY = Math.max(0.1, Math.min(0.9, y));
   }
 
-  function updateGazeLoop() {
+  // Gaze loop capped at ~30fps with change detection: the old uncapped
+  // 60fps loop rewrote SVG transforms every frame, pinning a whole Pi
+  // core in software rendering and stealing time from LLM inference.
+  let lastGazeWrite = 0;
+  let lastOX = null;
+  let lastOY = null;
+  function updateGazeLoop(ts) {
     currentGazeX += (targetGazeX - currentGazeX) * 0.12;
     currentGazeY += (targetGazeY - currentGazeY) * 0.12;
 
-    const offsetX = (currentGazeX - 0.5) * 30;
-    const offsetY = (currentGazeY - 0.5) * 16;
-
-    eyeLeftContainer.setAttribute('transform', `translate(${280 + offsetX}, ${150 + offsetY})`);
-    eyeRightContainer.setAttribute('transform', `translate(${520 + offsetX}, ${150 + offsetY})`);
+    const now = (typeof ts === 'number') ? ts : 0;
+    if (now - lastGazeWrite >= 33) {
+      lastGazeWrite = now;
+      const offsetX = Math.round((currentGazeX - 0.5) * 300) / 10;
+      const offsetY = Math.round((currentGazeY - 0.5) * 160) / 10;
+      if (offsetX !== lastOX || offsetY !== lastOY) {
+        lastOX = offsetX;
+        lastOY = offsetY;
+        eyeLeftContainer.setAttribute('transform', `translate(${280 + offsetX}, ${150 + offsetY})`);
+        eyeRightContainer.setAttribute('transform', `translate(${520 + offsetX}, ${150 + offsetY})`);
+      }
+    }
 
     requestAnimationFrame(updateGazeLoop);
   }
