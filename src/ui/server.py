@@ -49,6 +49,20 @@ def _get_current_state_payload() -> Dict[str, Any]:
     norm_gaze_x = (internal_state.gaze_x + 1.0) / 2.0
     norm_gaze_y = (internal_state.gaze_y + 1.0) / 2.0
 
+    # Freshness-filter speech like the OpenCV renderer (7s): the Electron
+    # face shows the subtitle whenever text is present, so stale replies
+    # must arrive as "" or the screen would never clear.
+    now = time.time()
+    try:
+        _k_age = now - float(getattr(internal_state, "last_karma_speech_time", 0.0) or 0.0)
+    except Exception:
+        _k_age = 999.0
+    _fresh_speech = (internal_state.last_karma_speech or "") if _k_age <= 7.0 else ""
+    try:
+        _speech_ts = float(getattr(internal_state, "last_karma_speech_time", 0.0) or 0.0)
+    except Exception:
+        _speech_ts = 0.0
+
     is_groq = bool(getattr(config, "USE_GROQ", False))
     provider = "groq" if is_groq else "local"
     local_path = getattr(config, "MODEL_PATH", "models/model.gguf")
@@ -62,7 +76,9 @@ def _get_current_state_payload() -> Dict[str, Any]:
         "energy": round(internal_state.energy, 2),
         "curiosity": round(internal_state.curiosity, 2),
         "speaking": internal_state.is_playing_audio,
-        "speech": internal_state.last_karma_speech or "",
+        "speech": _fresh_speech,
+        "speech_ts": _speech_ts,
+        "thinking": bool(getattr(internal_state, "is_thinking", False)),
         "gaze_x": round(norm_gaze_x, 2),
         "gaze_y": round(norm_gaze_y, 2),
         "code": code_text,
@@ -523,6 +539,12 @@ EDITABLE_CONFIG: Dict[str, tuple] = {
     "VAD_SILENCE_TIMEOUT": (float, 0.1, 2.0),
     "USE_GROQ": (bool, None, None),
     "GROQ_MODEL": (str, 1, 120),
+    "STT_USE_GROQ": (bool, None, None),
+    "GROQ_STT_MODEL": (str, 1, 120),
+    "GROQ_TIMEOUT": (float, 2.0, 20.0),
+    "TTS_USE_GROQ": (bool, None, None),
+    "GROQ_TTS_VOICE_EN": (str, 1, 40),
+    "GROQ_TTS_VOICE_AR": (str, 1, 40),
 }
 
 CONFIG_OVERRIDES_FILE = os.path.join(config.BASE_DIR, "data", "config_overrides.json")
@@ -1070,6 +1092,14 @@ async def _api_inject(request: web.Request) -> web.Response:
 
         # Mirror what audio/pipeline.py does when it transcribes real speech.
         _istate.set_user_speech(text)
+        # Immediate ack: flip THINKING on + broadcast NOW so the face
+        # shows feedback within ~50ms instead of after full LLM+TTS.
+        _t_inject0 = time.time()
+        try:
+            _istate.set_thinking(True)
+            broadcast_state_threadsafe()
+        except Exception:
+            pass
         with _inject_memory_lock:
             mem = _inject_memory
         if mem is None:
@@ -1104,12 +1134,20 @@ async def _api_inject(request: web.Request) -> web.Response:
         embedder = _runtime.get("embedder")
 
         loop = asyncio.get_event_loop()
-        reply = await loop.run_in_executor(
-            None,
-            run_interaction_response,
-            mem, engine, tts, store, embedder, text
-        )
+        try:
+            reply = await loop.run_in_executor(
+                None,
+                run_interaction_response,
+                mem, engine, tts, store, embedder, text
+            )
+        finally:
+            try:
+                _istate.set_thinking(False)
+                broadcast_state_threadsafe()
+            except Exception:
+                pass
 
+        print(f"[dash/inject] done in {time.time()-_t_inject0:.1f}s reply={'yes' if reply else 'EMPTY'}")
         if reply:
             return web.json_response({
                 "ok": True,
@@ -1132,6 +1170,12 @@ async def _api_inject(request: web.Request) -> web.Response:
         print(f"[dash/inject] {err_msg}", file=sys.stderr)
         from src.ui import events as _ev
         _ev.post("error", err_msg)
+        try:
+            from src.state import internal_state as _istate2
+            _istate2.set_thinking(False)
+            broadcast_state_threadsafe()
+        except Exception:
+            pass
         return web.json_response({"ok": False, "error": err_msg}, status=500)
 
 
@@ -1185,12 +1229,11 @@ async def _api_config_put(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "updated": updated})
 
 
+# llama-3.1-8b-instant / llama-3.3-70b / mixtral were decommissioned by Groq
+# (404) — verified 2026-09-13. Only gpt-oss models are live.
 AVAILABLE_GROQ_MODELS: List[str] = [
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
 ]
 
 
@@ -1236,6 +1279,38 @@ async def _api_model_post(request: web.Request) -> web.Response:
     new_key = body.get("api_key")
     if new_key is not None and isinstance(new_key, str) and new_key.strip():
         os.environ["GROQ_API_KEY"] = new_key.strip()
+        # Persist to .env so restarts keep working (was memory-only before,
+        # so every reboot silently fell back to slow local + double latency).
+        # Never persist obvious test keys (pytest posts gsk_test_* at the
+        # real .env path and would brick the robot's real key).
+        try:
+            if new_key.strip().startswith("gsk_test_"):
+                raise ValueError("skip test key")
+            env_path = os.path.join(config.BASE_DIR, ".env")
+            lines: list = []
+            try:
+                with open(env_path, encoding="utf-8") as f:
+                    lines = f.readlines()
+            except Exception:
+                lines = []
+            seen = False
+            for i, ln in enumerate(lines):
+                s = ln.strip()
+                if s.startswith("GROQ_API_KEY=") or s.startswith("export GROQ_API_KEY="):
+                    lines[i] = f"GROQ_API_KEY={new_key.strip()}\n"
+                    seen = True
+            if not seen:
+                if lines and not lines[-1].endswith("\n"):
+                    lines[-1] = lines[-1] + "\n"
+                lines.append(f"GROQ_API_KEY={new_key.strip()}\n")
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+            try:
+                os.chmod(env_path, 0o600)
+            except Exception:
+                pass
+        except Exception as e:
+            config.log_debug(f"[dash] could not persist GROQ_API_KEY: {e}")
 
     target_groq_model = config.GROQ_MODEL
     raw_model = body.get("groq_model")
@@ -1314,7 +1389,7 @@ async def _dash_live(request: web.Request) -> web.WebSocketResponse:
     try:
         await ws.send_str(json.dumps(_get_current_state_payload()))
         while True:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.4)
             await ws.send_str(json.dumps(_get_current_state_payload()))
             fresh = [e for e in events.recent(limit=50) if e["ts"] > last_event_ts]
             if fresh:

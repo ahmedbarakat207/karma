@@ -1,0 +1,6 @@
+{"ts": 1789003175.8149216, "kind": "speech", "text": "Hi", "salience": 0.0}
+{"ts": 1789003252.3340733, "kind": "reply", "text": "Good morning! what's up?", "salience": 0.0}
+{"ts": 1789003387.77983, "kind": "thought", "text": "[04:21:59] (reply) Hey there! How's it going?", "salience": 0.1}
+{"ts": 1789003437.7798197, "kind": "thought", "text": "reply Hey there! How's it going?", "salience": 0.1}
+{"ts": 1789003569.9022374, "kind": "thought", "text": "[04:23:07] (thought) reply Hey there! How's it going?", "salience": 0.1}
+{"ts": 1789003666.8440826, "kind": "thought", "text": "[04:27:09] (thought) Hey there! How's it going?", "salience": 0.1}

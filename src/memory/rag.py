@@ -151,7 +151,8 @@ class DocumentRAG:
                         results[f] = 0
         return results
 
-    def retrieve(self, query: str, k: int = 3, threshold: float = 1.15) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 3, threshold: float = 1.15,
+                   query_vec: Optional[List[float]] = None) -> List[Dict[str, Any]]:
         if not query.strip():
             return []
 
@@ -163,8 +164,9 @@ class DocumentRAG:
         if len(words_only) <= 2 and words_only[0] in {'hi', 'hello', 'hey', 'yo', 'sup', 'اهلا', 'أهلا', 'هاي', 'سلام'}:
             return []
 
-        # 1. Dense vector semantic search
-        emb = self.embedder.encode(query).tolist()
+        # 1. Dense vector semantic search (reuse caller's embedding when given —
+        # saves ~0.4s per turn on Pi 4 by encoding once for memory + RAG).
+        emb = query_vec if query_vec is not None else self.embedder.encode(query).tolist()
         vector_hits = self.store.query(emb, k=k * 2, kind="document")
 
         # 2. Sparse keyword matching for cross-lingual terms & exact tokens
@@ -239,8 +241,9 @@ class DocumentRAG:
         ranked.sort(key=lambda x: x["distance"])
         return ranked[:k]
 
-    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.15) -> str:
-        hits = self.retrieve(query, k=k, threshold=threshold)
+    def get_rag_context(self, query: str, k: int = 3, threshold: float = 1.15,
+                          query_vec: Optional[List[float]] = None) -> str:
+        hits = self.retrieve(query, k=k, threshold=threshold, query_vec=query_vec)
         if not hits:
             return ""
         parts = []
@@ -273,11 +276,13 @@ class DocumentRAG:
         return self.store.delete_by_kind("document")
 
 
-def retrieve_document_context(query: str, store=None, embedder=None, k: int = 2, threshold: float = 1.15) -> str:
+def retrieve_document_context(query: str, store=None, embedder=None, k: int = 2, threshold: float = 1.15,
+                              query_vec: Optional[List[float]] = None) -> str:
     if not store or not embedder or not query.strip():
         return ""
     try:
-        return DocumentRAG(store=store, embedder=embedder).get_rag_context(query, k=k, threshold=threshold)
+        return DocumentRAG(store=store, embedder=embedder).get_rag_context(
+            query, k=k, threshold=threshold, query_vec=query_vec)
     except Exception as e:
         config.log_debug(f"[rag] retrieval error: {e}")
         return ""

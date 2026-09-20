@@ -67,7 +67,77 @@ def is_valid_transcript(text: Optional[str]) -> bool:
     return True
 
 
-def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
+def _groq_stt_available() -> bool:
+    if not getattr(config, "STT_USE_GROQ", True):
+        return False
+    return bool(os.environ.get("GROQ_API_KEY", "").strip())
+
+
+# Reused STT client: avoids a fresh TLS handshake per utterance (~2s saved
+# on the first call after idle; steady-state then ~0.6s).
+_groq_stt_client = None
+
+
+def _get_groq_stt_client():
+    global _groq_stt_client
+    if _groq_stt_client is not None:
+        return _groq_stt_client
+    try:
+        from groq import Groq
+        timeout = float(getattr(config, "GROQ_STT_TIMEOUT", 8.0))
+        try:
+            _groq_stt_client = Groq(api_key=os.environ["GROQ_API_KEY"].strip(), timeout=timeout)
+        except TypeError:
+            _groq_stt_client = Groq(api_key=os.environ["GROQ_API_KEY"].strip())
+        return _groq_stt_client
+    except Exception as e:
+        config.log_debug(f"[audio] Groq STT client note: {e}")
+        return None
+
+
+def transcribe_via_groq(audio_np: np.ndarray) -> Optional[str]:
+    """Cloud STT via Groq (whisper-large-v3-turbo). ~0.6s warm, zero local CPU.
+
+    This is the primary path when a key is set — it is the 'lighter STT':
+    no faster-whisper load, no Pi CPU burn. Returns None on any failure so
+    the caller falls back to local tiny.
+    """
+    if len(audio_np) == 0 or not _groq_stt_available():
+        return None
+    try:
+        wav = audio_to_wav_bytes(
+            np.ascontiguousarray(audio_np.astype(np.float32))
+            if audio_np.dtype != np.float32 else audio_np
+        )
+        model = getattr(config, "GROQ_STT_MODEL", "whisper-large-v3-turbo")
+        timeout = float(getattr(config, "GROQ_STT_TIMEOUT", 8.0))
+        client = _get_groq_stt_client()
+        if client is None:
+            return None
+        lang = (getattr(config, "WHISPER_LANGUAGE", "") or "").strip() or None
+        kwargs: dict = {
+            "file": ("speech.wav", wav),
+            "model": model,
+            "response_format": "text",
+            "temperature": 0.0,
+        }
+        if lang:
+            kwargs["language"] = lang
+        try:
+            res = client.audio.transcriptions.create(**kwargs, timeout=timeout)
+        except TypeError:
+            res = client.audio.transcriptions.create(**kwargs)
+        text = res if isinstance(res, str) else (getattr(res, "text", "") or "")
+        text = (text or "").strip()
+        if is_valid_transcript(text):
+            config.log_debug(f"[audio] Groq STT: '{text[:60]}'")
+            return text
+    except Exception as e:
+        config.log_debug(f"[audio] Groq STT note: {e}")
+    return None
+
+
+def transcribe_local(audio_np: np.ndarray, local_whisper) -> Optional[str]:
     if not local_whisper or len(audio_np) == 0:
         return None
     try:
@@ -77,6 +147,10 @@ def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
             audio_np = np.ascontiguousarray(audio_np)
 
         target_lang = getattr(config, "WHISPER_LANGUAGE", "") or None
+        # tiny.en only knows English — force en instead of auto-detect.
+        model_hint = str(getattr(config, "WHISPER_MODEL_SIZE", "tiny"))
+        if model_hint.endswith(".en") and not target_lang:
+            target_lang = "en"
         segments, _ = local_whisper.transcribe(
             audio_np,
             language=target_lang,
@@ -101,6 +175,16 @@ def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
     return None
 
 
+def transcribe_audio(audio_np: np.ndarray, local_whisper) -> Optional[str]:
+    if len(audio_np) == 0:
+        return None
+    # Cloud first (fast + light), local tiny fallback (offline).
+    text = transcribe_via_groq(audio_np)
+    if text:
+        return text
+    return transcribe_local(audio_np, local_whisper)
+
+
 class AudioPipeline:
 
     def __init__(self, memory, stop_event, speaking_event=None, interrupt_event=None):
@@ -110,27 +194,65 @@ class AudioPipeline:
         self.interrupt_event = interrupt_event
         self.local_whisper = None
 
+        # Local fallback STT (offline). Cloud Groq is primary when keyed,
+        # so local is best-effort only — never let it crash the audio loop.
+        # Lighter default tiny.en (~75MB, English-only, no lang-detect) is
+        # ~2x faster than multilingual tiny on Pi 4 CPU.
         try:
             from faster_whisper import WhisperModel
-            whisper_path = getattr(config, "WHISPER_MODEL_PATH", "")
-            if not os.path.exists(whisper_path):
-                whisper_path = getattr(config, "WHISPER_MODEL_SIZE", "tiny")
-            threads = getattr(config, "N_THREADS", 4)
-            config.log_debug(f"[audio] loading local faster-whisper from {whisper_path} with {threads} threads...")
-            self.local_whisper = WhisperModel(
-                whisper_path,
-                device="cpu",
-                compute_type="int8",
-                cpu_threads=threads,
-                num_workers=1,
-            )
-            try:
-                dummy = np.zeros(16000, dtype=np.float32)
-                target_lang = getattr(config, "WHISPER_LANGUAGE", "") or None
-                self.local_whisper.transcribe(dummy, language=target_lang, beam_size=1, without_timestamps=True)
-            except Exception:
-                pass
-            config.log_debug("[audio] local faster-whisper ready and warmed up!")
+            candidates: list = []
+            disk_path = getattr(config, "WHISPER_MODEL_PATH", "")
+            if disk_path and os.path.exists(disk_path):
+                candidates.append(disk_path)
+            # Preferred size from env (.env sets tiny.en), then safe fallbacks.
+            for name in (
+                getattr(config, "WHISPER_MODEL_SIZE", "tiny.en"),
+                getattr(config, "WHISPER_MODEL_SIZE_LIGHT", "tiny.en"),
+                "tiny.en",
+                "tiny",
+            ):
+                if name and name not in candidates:
+                    candidates.append(name)
+            threads = getattr(config, "N_THREADS", 2)
+            last_err = None
+            for cand in candidates:
+                try:
+                    config.log_debug(f"[audio] loading local faster-whisper '{cand}' with {threads} threads...")
+                    try:
+                        self.local_whisper = WhisperModel(
+                            cand,
+                            device="cpu",
+                            compute_type="int8",
+                            cpu_threads=threads,
+                            num_workers=1,
+                        )
+                    except Exception:
+                        # Some ARM ctranslate2 builds reject int8 — retry default.
+                        self.local_whisper = WhisperModel(
+                            cand,
+                            device="cpu",
+                            cpu_threads=threads,
+                            num_workers=1,
+                        )
+                    try:
+                        dummy = np.zeros(16000, dtype=np.float32)
+                        wlang = getattr(config, "WHISPER_LANGUAGE", "") or None
+                        if str(cand).endswith(".en") and not wlang:
+                            wlang = "en"
+                        self.local_whisper.transcribe(dummy, language=wlang, beam_size=1, without_timestamps=True)
+                    except Exception:
+                        pass
+                    config.log_debug(f"[audio] local faster-whisper ready ({cand})!")
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    self.local_whisper = None
+                    continue
+            if self.local_whisper is None and last_err is not None:
+                config.log_debug(f"[audio] local whisper init error: {last_err}")
+                if _groq_stt_available():
+                    config.log_debug("[audio] continuing with Groq cloud STT only.")
         except Exception as e:
             config.log_debug(f"[audio] local whisper init error: {e}")
 
@@ -265,6 +387,15 @@ class AudioPipeline:
                                         internal_state.set_user_speech(text)
                                         self.memory.add(kind="speech", text=text, counts_as_activity=True)
                                         _events.post("heard", text)
+                                        # Early ack so the face shows THINKING
+                                        # within ~50ms (cognition picks it up
+                                        # ≤0.2s later; LLM+TTS then take secs).
+                                        try:
+                                            internal_state.set_thinking(True)
+                                            from src.ui.server import broadcast_state_threadsafe as _bcast
+                                            _bcast()
+                                        except Exception:
+                                            pass
                                 pre_buffer = np.zeros(0, dtype=np.float32)
         except Exception as e:
             config.log_debug(f"[audio] stream error: {e}")

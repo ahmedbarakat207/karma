@@ -9,7 +9,7 @@ Runs on Apple Silicon (MPS) or a Raspberry Pi 4.
 ## Hardware
 
 - **Compute**: Raspberry Pi 4 (4GB / 8GB) or Apple Silicon Mac
-- **Display**: 7" 800x480 capacitive touch LCD
+- **Display**: 7" 1024x600 capacitive touch LCD (1024x600 native; 800x480 panels auto-fit via UI zoom — nothing clipped)
 - **Neck**: TowerPro MG90S micro servo on GPIO 18 (PWM)
 - **Camera**: Raspberry Pi Camera v2 or USB webcam
 - **Audio**: USB microphone + speaker / 3.5mm DAC
@@ -75,8 +75,8 @@ After 20 minutes idle, Karma announces it's resting, archives the raw session lo
 
 ### Voices (bilingual TTS)
 
-- **English**: Kokoro-82M (`af_bella` default, any bundled voice selectable), with a quantized ONNX option.
-- **Arabic**: Nabra-82M, auto-selected whenever the reply contains Arabic script. Downloaded on first Arabic reply.
+- **English**: Piper `en_US-lessac-medium` VITS (~1–2 s/sentence on Pi 4, faster than realtime), Kokoro-82M (`af_bella`) available via `TTS_ENGINE=kokoro`.
+- **Arabic**: Piper `ar_JO-kareem-medium`, Nabra-82M fallback (auto-selected whenever the reply contains Arabic script).
 - **Streaming prosody**: the reply is synthesized sentence-by-sentence while the LLM is still generating, and each chunk's speed follows the reply's emotion (excited ~1.15x, tired whisper ~0.85x, warm ~0.95x).
 - **Code is never spoken**: fenced code blocks are filtered to the on-screen code panel while only the explanation is voiced. Arabic punctuation (`،؟`) is treated as sentence boundaries.
 
@@ -91,7 +91,7 @@ After 20 minutes idle, Karma announces it's resting, archives the raw session lo
 Two interchangeable front-ends:
 
 - **OpenCV window** (default off, `--no-electron`): procedural face with 8 mood palettes, gaze tracking that follows you (plus idle wander), blinking, talking mouth waveforms, energy/curiosity HUD bars, 7-second subtitle pills, and a side code panel with syntax tint.
-- **Electron app** (default): 800x480 kiosk UI over WebSocket (`127.0.0.1:8765`) showing the animated SVG face, battery/telemetry, a CAD floor map with room beacons, project/achievement grids, a document reader, and tilt buttons. Reconnects automatically; also runs under plain Chromium kiosk if Electron is absent.
+- **Electron app** (default): 1024x600 kiosk UI over WebSocket (`127.0.0.1:8765`) showing the animated SVG face, battery/telemetry, a CAD floor map with room beacons, project/achievement grids, a document reader, and tilt buttons. Auto-zooms to fit smaller (800x480) or larger monitors with nothing clipped (`UI_ZOOM` overrides). Reconnects automatically; also runs under plain Chromium kiosk if Electron is absent.
 
 ### Touchscreen kiosk
 
@@ -148,11 +148,11 @@ Everything is an env var (or `.env` file) read by `src/config.py`. The service p
 
 **Hearing**: `WHISPER_MODEL_PATH` · `WHISPER_MODEL_SIZE` (tiny) · `WHISPER_LANGUAGE` (auto) · `SILERO_VAD_MODEL_PATH` · `VAD_SPEECH_CONFIDENCE` (0.35) · `VAD_SILENCE_TIMEOUT` (0.35) · `VAD_POST_SPEECH_GRACE_MS` (200) · `MIN_SPEECH_DURATION` (0.20).
 
-**Voices**: `TTS_VOICE` (af_bella) · `USE_KOKORO_ONNX` (false) · `KOKORO_MODEL_PATH` / `KOKORO_VOICES_PATH` · `NABRA_ENABLED` (true) · `NABRA_MODEL_DIR` / `NABRA_REPO_ID` / `NABRA_VOICE`.
+**Voices**: `TTS_ENGINE` (piper) · `PIPER_VOICE_EN` (en_US-lessac-medium) · `PIPER_VOICE_AR` (ar_JO-kareem-medium) · `TTS_VOICE` (af_bella, kokoro mode) · `USE_KOKORO_ONNX` (false) · `KOKORO_MODEL_PATH` / `KOKORO_VOICES_PATH` · `NABRA_ENABLED` (true) · `NABRA_MODEL_DIR` / `NABRA_REPO_ID` / `NABRA_VOICE`.
 
 **Memory**: `EMBED_MODEL_PATH` (models/all-MiniLM-L6-v2). Fixed: `memory.db`, `memory_archive/`, prune at 60 d / 1500 rows, think every 5 s, 180 s recent window, 8 s vision window, 20 min idle sleep.
 
-**Display/UI**: `UI_WS_HOST` / `UI_WS_PORT` (127.0.0.1:8765, Electron, localhost-only) · `UI_DASH_HOST` / `UI_DASH_PORT` (0.0.0.0:8080, LAN dashboard) · `KARMA_UI_PASSWORD` (dashboard password, auto-generated to `data/.dashboard_pass` if unset) · `USE_ELECTRON` (true). CLI-only: `--debug`, `--camera`, `--windowed`, `--fullscreen`, `--no-electron`, `--groq`.
+**Display/UI**: `UI_WS_HOST` / `UI_WS_PORT` (127.0.0.1:8765, Electron, localhost-only) · `UI_DASH_HOST` / `UI_DASH_PORT` (0.0.0.0:8080, LAN dashboard) · `KARMA_UI_PASSWORD` (dashboard password, auto-generated to `data/.dashboard_pass` if unset) · `USE_ELECTRON` (true) · `UI_WIDTH` (1024) / `UI_HEIGHT` (600) design canvas · `UI_ZOOM` (0 = auto-fit to panel, e.g. 0.78 on 800x480 so nothing is cut off, up to 1.25 on large monitors). CLI-only: `--debug`, `--camera`, `--windowed`, `--fullscreen`, `--no-electron`, `--groq`.
 
 ---
 
@@ -207,6 +207,7 @@ The on-device TELEMETRY tab shows the same real data (it used to be hardcoded) p
 | `whisper-tiny.en/` | Speech recognition | ~72 MB |
 | `silero_vad.jit` | Voice activity detection | ~2 MB |
 | `kokoro_q4.onnx` + `voices-v1.0.bin` | English TTS (quantized option) | ~291 + 27 MB |
+| `piper/en_.../en_US-lessac-medium.onnx` + `piper/ar_.../ar_JO-kareem-medium.onnx` | Piper EN/AR TTS voices (default engine) | ~61 MB each |
 | `all-MiniLM-L6-v2/` | Memory/RAG embeddings | ~87 MB |
 | `nabra/` | Arabic TTS (auto-downloaded on first Arabic reply) | — |
 

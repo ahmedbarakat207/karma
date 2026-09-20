@@ -108,6 +108,34 @@ class KioskManager:
     def is_active(self) -> bool:
         return self.active_view != "face"
 
+    def _top_nav_layout(self, screen_w: int):
+        """Proportional top-bar geometry shared by render + touch.
+
+        Old code used fixed right-anchored pixel offsets (width-640 …)
+        authored for 1024px. On an 800px panel the title overlapped DOCS
+        and tabs were clipped; on wider monitors space was wasted.
+        This lays 4 equal tabs into whatever is left after the title +
+        EXIT, so visuals and touch targets always agree at any
+        resolution (800x480 → 1920x1080). Returns (tabs, exit_x1).
+        tabs = [(key, x1, x2), ...] in left-to-right order.
+        """
+        exit_w = 80
+        title_w = 110 if screen_w < 900 else 180
+        margin_l = 16
+        gap = 6
+        nav_start = title_w + margin_l + 8
+        nav_end = screen_w - 15 - exit_w - gap
+        avail = max(4 * 90, nav_end - nav_start)
+        tab_w = avail // 4
+        order = ["docs", "map", "apps", "achievements"]
+        tabs = []
+        x = nav_start
+        for key in order:
+            tabs.append((key, int(x), int(x + tab_w - gap)))
+            x += tab_w
+        exit_x1 = screen_w - 15 - exit_w
+        return tabs, exit_x1
+
     def handle_touch(self, x: int, y: int, screen_w: int, screen_h: int) -> bool:
         if self.active_view == "face":
             if x >= (screen_w - 140) and y <= 55:
@@ -116,16 +144,20 @@ class KioskManager:
             return False
 
         if y <= 50:
-            if x >= (screen_w - 95):
+            tabs, exit_x1 = self._top_nav_layout(screen_w)
+            if x >= exit_x1:
                 self.close()
-            elif (screen_w - 240) <= x < (screen_w - 100):
-                self.active_view = "achievements"
-            elif (screen_w - 385) <= x < (screen_w - 245):
-                self.active_view = "apps"
-            elif (screen_w - 515) <= x < (screen_w - 390):
-                self.active_view = "map"
-            elif (screen_w - 640) <= x < (screen_w - 520):
-                self.active_view = "docs"
+                return True
+            for key, x1, x2 in tabs:
+                if x1 <= x <= x2:
+                    self.active_view = key
+                    return True
+            # Gap between tabs: fall through to nearest tab rather than
+            # dropping the tap (fat-finger friendly on 7" touch).
+            if x >= tabs[0][1]:
+                nearest = min(tabs, key=lambda t: abs((t[1] + t[2]) // 2 - x))
+                self.active_view = nearest[0]
+                return True
             return True
 
         if self.active_view == "map":
@@ -138,17 +170,21 @@ class KioskManager:
                         return True
 
         elif self.active_view == "docs":
-            if x <= 240 and y >= 70:
+            # Side panel scales with width (render uses panel_w below).
+            panel_w = 200 if screen_w < 900 else 230
+            if x <= panel_w + 15 and y >= 70:
                 idx = (y - 70) // 44
                 if 0 <= idx < len(self.indexed_docs):
                     self.select_document(self.indexed_docs[idx]["source"])
                     return True
             elif y >= (screen_h - 55):
-                if 420 <= x <= 530:
+                # Match render: PREV/NEXT are right-anchored (rx2 = w-15).
+                rx2 = screen_w - 15
+                if (rx2 - 220) <= x <= (rx2 - 120):
                     self.doc_page_idx = max(0, self.doc_page_idx - 1)
                     return True
-                elif 550 <= x <= 660:
-                    self.doc_page_idx = min(len(self.doc_chunks) - 1, self.doc_page_idx + 1)
+                elif (rx2 - 105) <= x <= (rx2 - 10):
+                    self.doc_page_idx = min(max(0, len(self.doc_chunks) - 1), self.doc_page_idx + 1)
                     return True
 
         elif self.active_view == "apps":
@@ -180,7 +216,7 @@ class KioskManager:
         cv2.putText(frame, ":: MENU", (bx1 + 18, by1 + 24),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 2, cv2.LINE_AA)
 
-    def render_kiosk(self, width: int = 800, height: int = 480) -> np.ndarray:
+    def render_kiosk(self, width: int = 1024, height: int = 600) -> np.ndarray:
         canvas = np.zeros((height, width, 3), dtype=np.uint8)
         canvas[:] = (18, 22, 28)
 
@@ -200,26 +236,26 @@ class KioskManager:
     def _render_top_navbar(self, canvas: np.ndarray, width: int) -> None:
         cv2.rectangle(canvas, (0, 0), (width, 52), (28, 34, 44), -1)
         cv2.line(canvas, (0, 52), (width, 52), (50, 65, 85), 1)
-        cv2.putText(canvas, "KARMA // KIOSK", (16, 34),
+        # Short title on narrow panels so it never overlaps the tabs
+        # (the old fixed "KARMA // KIOSK" ran into DOCS on 800px).
+        title = "KARMA" if width < 900 else "KARMA // KIOSK"
+        cv2.putText(canvas, title, (16, 34),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 220, 255), 2, cv2.LINE_AA)
 
-        tabs = [
-            ("DOCS",   "docs",         width - 640, width - 525),
-            ("MAP",    "map",          width - 515, width - 395),
-            ("APPS",   "apps",         width - 385, width - 250),
-            ("AWARDS", "achievements", width - 240, width - 105),
-        ]
+        tabs, exit_x1 = self._top_nav_layout(width)
+        labels = {"docs": "DOCS", "map": "MAP", "apps": "APPS", "achievements": "AWARDS"}
 
-        for label, key, x1, x2 in tabs:
+        for key, x1, x2 in tabs:
+            label = labels[key]
             sel = (self.active_view == key)
             cv2.rectangle(canvas, (x1, 10), (x2, 44), (0, 180, 230) if sel else (38, 46, 58), -1)
             cv2.rectangle(canvas, (x1, 10), (x2, 44), (0, 220, 255) if sel else (60, 75, 95), 1)
             tsize = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 2)[0]
-            tx = x1 + (x2 - x1 - tsize[0]) // 2
+            tx = x1 + max(0, (x2 - x1 - tsize[0]) // 2)
             color = (15, 20, 25) if sel else (200, 215, 230)
             cv2.putText(canvas, label, (tx, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2, cv2.LINE_AA)
 
-        bx1 = width - 95
+        bx1 = exit_x1
         cv2.rectangle(canvas, (bx1, 10), (width - 15, 44), (45, 30, 35), -1)
         cv2.rectangle(canvas, (bx1, 10), (width - 15, 44), (80, 100, 255), 1)
         cv2.putText(canvas, "EXIT", (bx1 + 22, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (120, 150, 255), 2, cv2.LINE_AA)
@@ -260,7 +296,7 @@ class KioskManager:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, (15, 20, 25) if sel else (210, 225, 240), 1, cv2.LINE_AA)
 
     def _render_docs_view(self, canvas: np.ndarray, width: int, height: int) -> None:
-        panel_w = 230
+        panel_w = 200 if width < 900 else 230
         cv2.rectangle(canvas, (15, 62), (panel_w, height - 15), (24, 30, 38), -1)
         cv2.rectangle(canvas, (15, 62), (panel_w, height - 15), (45, 55, 70), 1)
         cv2.putText(canvas, "INDEXED DOCUMENTS", (26, 86),

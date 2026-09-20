@@ -281,18 +281,24 @@ class GroqEngine:
     def __init__(self, model_name: Optional[str] = None, api_key: Optional[str] = None):
         raw = model_name or getattr(config, "GROQ_MODEL", "openai/gpt-oss-20b")
         self.model = f"openai/{raw}" if raw in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else raw
-        self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        self.api_key = (api_key or os.environ.get("GROQ_API_KEY", "")).strip()
         self.client = None
+        self.timeout = float(getattr(config, "GROQ_TIMEOUT", 8.0))
+
+        if not self.api_key:
+            # Fail fast: no network attempt without a key. SwitchableEngine
+            # falls back to local immediately instead of paying a timeout.
+            config.log_debug("[groq] no GROQ_API_KEY — engine will return empty (fast fallback to local)")
+            return
 
         try:
             from groq import Groq
-            # Fail fast (10s): without a timeout a dead network stalls every
-            # utterance, then SwitchableEngine pays a second full local
-            # inference as fallback — the "too long and too awful" path.
+            # Single short timeout: a dead network must not stall every
+            # utterance, then pay a second full local inference as fallback.
             try:
-                self.client = Groq(api_key=self.api_key, timeout=10.0) if self.api_key else Groq(timeout=10.0)
+                self.client = Groq(api_key=self.api_key, timeout=self.timeout)
             except TypeError:
-                self.client = Groq(api_key=self.api_key) if self.api_key else Groq()
+                self.client = Groq(api_key=self.api_key)
             config.log_debug(f"[llm] Groq engine initialized with model: {self.model}")
 
         except Exception as e:
@@ -300,8 +306,8 @@ class GroqEngine:
                 from openai import OpenAI
                 self.client = OpenAI(
                     base_url="https://api.groq.com/openai/v1",
-                    api_key=self.api_key or os.environ.get("GROQ_API_KEY", "EMPTY"),
-                    timeout=10.0,
+                    api_key=self.api_key,
+                    timeout=self.timeout,
                 )
                 config.log_debug(f"[llm] Groq OpenAI-compatible client initialized with model: {self.model}")
             except Exception as e2:
@@ -317,29 +323,75 @@ class GroqEngine:
         msgs.append({"role": "user", "content": user_prompt})
         return msgs
 
-    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
+    def _has_key(self) -> bool:
+        # Re-read env each call so dashboard key updates apply without restart.
+        if self.api_key and self.api_key.strip():
+            return True
+        env_key = os.environ.get("GROQ_API_KEY", "").strip()
+        if env_key:
+            self.api_key = env_key
+            return True
+        return False
+
+    def _create_kwargs(self, budget: int, temperature: float, stream: bool = False) -> Dict[str, Any]:
+        # Prefer max_completion_tokens (new Groq API); fall back to max_tokens
+        # only on TypeError (old SDK), never with a second network call.
+        base: Dict[str, Any] = {
+            "model": self.model,
+            "temperature": temperature,
+        }
+        # gpt-oss reasoning models think out loud before answering — default
+        # effort burns hundreds of hidden tokens (≈ seconds) while the robot
+        # screen stays blank. "low" keeps answers instant; quality is fine
+        # for 1-2 sentence companion replies.
+        if "gpt-oss" in str(self.model):
+            base["reasoning_effort"] = "low"
+        if stream:
+            base["stream"] = True
+        return base
+
+    def _budget(self, max_tokens: int) -> int:
+        # gpt-oss reasoning models burn ~50 hidden reasoning tokens before
+        # the answer — a tiny budget (e.g. 20-75) starves the answer and
+        # returns empty. Groq bills caps, not targets (0.06s either way),
+        # so give reasoning models headroom; others use the caller's budget.
+        want = max(1, int(max_tokens))
+        if "gpt-oss" in str(self.model):
+            return max(want, 1024)
+        return want
+
+    def chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
              temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> str:
-        if not self.client:
+        if not self.client or not self._has_key():
             config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
             return ""
+        budget = self._budget(max_tokens)
+        t0 = time.time()
+        msgs = self._build_groq_messages(system_prompt, user_prompt, history=history)
         try:
-            budget = max(max_tokens, 1024)
-            t0 = time.time()
             try:
                 response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
+                    **self._create_kwargs(budget, temperature),
+                    messages=msgs,
                     max_completion_tokens=budget,
-                    temperature=temperature,
-                    timeout=10.0,
+                    timeout=self.timeout,
                 )
             except TypeError:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
-                    max_completion_tokens=budget,
-                    temperature=temperature,
-                )
+                # Old SDK without max_completion_tokens/timeout kwargs.
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=msgs,
+                        max_tokens=budget,
+                        temperature=temperature,
+                    )
+                except TypeError:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=msgs,
+                        max_tokens=budget,
+                        temperature=temperature,
+                    )
             text = response.choices[0].message.content or ""
             try:
                 from src.ui import telemetry as _telemetry
@@ -350,36 +402,18 @@ class GroqEngine:
                 pass
             return clean_companion_reply(_strip_thinking(text).strip())
         except Exception as e:
+            # Single attempt only — no second network call. Caller
+            # (SwitchableEngine) falls back to local immediately.
             config.log_debug(f"[groq] chat error: {e}")
-            try:
-                try:
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
-                        max_tokens=budget,
-                        temperature=temperature,
-                        timeout=10.0,
-                    )
-                except TypeError:
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=self._build_groq_messages(system_prompt, user_prompt, history=history),
-                        max_tokens=budget,
-                        temperature=temperature,
-                    )
-                text = response.choices[0].message.content or ""
-                return clean_companion_reply(_strip_thinking(text).strip())
-            except Exception as e2:
-                config.log_debug(f"[groq] fallback error: {e2}")
-                return ""
+            return ""
 
-    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 1024,
+    def stream_chat(self, system_prompt: str, user_prompt: str, max_tokens: int = 160,
                     temperature: float = 0.7, history: Optional[List[Dict[str, str]]] = None) -> Generator[str, None, None]:
-        if not self.client:
+        if not self.client or not self._has_key():
             config.log_debug("[groq] client not initialized (set GROQ_API_KEY)")
             return
 
-        budget = max(max_tokens, 1024)
+        budget = self._budget(max_tokens)
         groq_msgs = self._build_groq_messages(system_prompt, user_prompt, history=history)
         _t0 = time.time()
         _first = [0.0]
@@ -388,19 +422,22 @@ class GroqEngine:
         def raw_tokens():
             try:
                 try:
-                    stream = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=groq_msgs,
-                        max_completion_tokens=budget,
-                        temperature=temperature,
-                        stream=True,
-                        timeout=10.0,
-                    )
+                    _stream_kwargs: Dict[str, Any] = {
+                        "model": self.model,
+                        "messages": groq_msgs,
+                        "max_completion_tokens": budget,
+                        "temperature": temperature,
+                        "stream": True,
+                        "timeout": self.timeout,
+                    }
+                    if "gpt-oss" in str(self.model):
+                        _stream_kwargs["reasoning_effort"] = "low"
+                    stream = self.client.chat.completions.create(**_stream_kwargs)
                 except TypeError:
                     stream = self.client.chat.completions.create(
                         model=self.model,
                         messages=groq_msgs,
-                        max_completion_tokens=budget,
+                        max_tokens=budget,
                         temperature=temperature,
                         stream=True,
                     )
@@ -414,39 +451,9 @@ class GroqEngine:
                             _count[0] += 1
                             yield content
             except Exception as e:
+                # Single attempt only — no second stream (was doubling tail latency).
                 config.log_debug(f"[groq] stream error: {e}")
-                try:
-                    try:
-                        stream = self.client.chat.completions.create(
-                            model=self.model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            max_tokens=budget,
-                            temperature=temperature,
-                            stream=True,
-                            timeout=10.0,
-                        )
-                    except TypeError:
-                        stream = self.client.chat.completions.create(
-                            model=self.model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            max_tokens=budget,
-                            temperature=temperature,
-                            stream=True,
-                        )
-                    for chunk in stream:
-                        if chunk.choices and len(chunk.choices) > 0:
-                            delta = getattr(chunk.choices[0], "delta", None)
-                            content = getattr(delta, "content", None) if delta else None
-                            if content:
-                                yield content
-                except Exception as e2:
-                    config.log_debug(f"[groq] stream fallback error: {e2}")
+                return
 
         for tok in _strip_thinking_from_stream(raw_tokens()):
             yield tok

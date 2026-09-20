@@ -11,6 +11,7 @@ sqlite-vec
 sqlean.py
 kokoro
 num2words
+piper-tts
 face_recognition
 mediapipe
 huggingface_hub

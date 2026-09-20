@@ -124,7 +124,12 @@ def get_display_resolution() -> Tuple[int, int]:
         return w, h
     except Exception:
         pass
-    return getattr(config, "DISPLAY_WIDTH", 800), getattr(config, "DISPLAY_HEIGHT", 480)
+    # Fall back to the configured UI canvas (default 1024x600), NOT a
+    # hardcoded 800x480 — the old fallback mismatched the kiosk layout
+    # and cut content off on the right/bottom.
+    return int(getattr(config, "UI_WIDTH", getattr(config, "DISPLAY_WIDTH", 1024))), int(
+        getattr(config, "UI_HEIGHT", getattr(config, "DISPLAY_HEIGHT", 600))
+    )
 
 
 def run_vision(memory, stop_event, speaking_event=None) -> None:

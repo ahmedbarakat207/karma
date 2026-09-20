@@ -50,6 +50,10 @@ def cognition_loop(memory, engine, stop_event, tts, store, embedder, speaking_ev
                     think_quietly(memory, engine, store, embedder)
         except Exception as e:
             config.log_debug(f"[main] cognition loop error: {e}")
+            try:
+                internal_state.set_thinking(False)
+            except Exception:
+                pass
             time.sleep(0.5)
 
 
@@ -101,18 +105,23 @@ def main():
                 electron_bin = shutil.which("electron")
                 local_node_bin = os.path.join(ui_dir, "node_modules", ".bin", "electron")
                 cmd = None
+                # --force-device-scale-factor=1 + --disable-pinch keep the
+                # CSS zoomFactor (ui/main.js) as the single source of truth
+                # for fitting — otherwise Chromium auto-scale crops the
+                # console on 800x480 panels.
+                _scale_flags = ["--force-device-scale-factor=1", "--disable-pinch"]
                 if os.path.exists(local_node_bin):
-                    cmd = [local_node_bin, ".", "--no-sandbox", "--kiosk"]
+                    cmd = [local_node_bin, ".", "--no-sandbox", "--kiosk"] + _scale_flags
                 elif electron_bin:
-                    cmd = [electron_bin, ".", "--no-sandbox", "--kiosk"]
+                    cmd = [electron_bin, ".", "--no-sandbox", "--kiosk"] + _scale_flags
                 elif shutil.which("chromium-browser"):
                     index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
-                    cmd = ["chromium-browser", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
+                    cmd = ["chromium-browser", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", "--disable-pinch", "--force-device-scale-factor=1", "--window-size=1024,600", f"file://{index_path}"]
                 elif shutil.which("chromium"):
                     index_path = os.path.abspath(os.path.join(ui_dir, "index.html"))
-                    cmd = ["chromium", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", f"file://{index_path}"]
+                    cmd = ["chromium", "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run", "--no-sandbox", "--disable-pinch", "--force-device-scale-factor=1", "--window-size=1024,600", f"file://{index_path}"]
                 elif shutil.which("npx"):
-                    cmd = ["npx", "electron", ".", "--no-sandbox", "--kiosk"]
+                    cmd = ["npx", "electron", ".", "--no-sandbox", "--kiosk"] + _scale_flags
 
                 if cmd:
                     env = dict(os.environ)

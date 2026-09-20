@@ -182,13 +182,20 @@ def _extract_plain_text(raw: str) -> str:
     return clean_companion_reply(_deduplicate_phrase_loops(s))
 
 
-def retrieve_memories(query: str, store, embedder, k: int = 3, threshold: float = 1.15) -> str:
+def retrieve_memories(query: str, store, embedder, k: int = 3, threshold: float = 1.15,
+                      query_vec=None) -> str:
     if not store or not embedder or not query.strip():
         return ""
+    # Skip embedding entirely for greetings/chitchat (saves ~0.5-1s on Pi 4).
+    _nq = query.strip().lower()
+    if _nq in ("hi", "hello", "hey", "yo", "sup", "hi karma", "hey karma", "hello karma"):
+        return ""
     try:
-        results = store.query(embedder.encode(query).tolist(), k=k, kind="memory")
+        # Reuse the shared turn embedding when the caller provides it.
+        vec = query_vec if query_vec is not None else embedder.encode(query).tolist()
+        results = store.query(vec, k=k, kind="memory")
         if not results:
-            results = store.query(embedder.encode(query).tolist(), k=k, kind="episodic_summary")
+            results = store.query(vec, k=k, kind="episodic_summary")
         if not results:
             return ""
         now = time.time()
@@ -342,9 +349,33 @@ def speak_and_animate(text: str, tts=None) -> None:
 def run_interaction_response(memory, engine, tts=None, store=None, embedder=None, direct_text: Optional[str] = None) -> Optional[str]:
 
     with INTERACTION_LOCK:
+        # Thinking on: screen shows feedback while LLM+TTS run (5-30s).
+        # Cleared explicitly on every exit path below + by callers on
+        # unexpected error (cognition loop / inject handler).
+        clean_spoken: Optional[str] = None
+        try:
+            internal_state.set_thinking(True)
+            try:
+                from src.ui.server import broadcast_state_threadsafe as _bcast
+                _bcast()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        def _thinking_off():
+            try:
+                internal_state.set_thinking(False)
+                try:
+                    from src.ui.server import broadcast_state_threadsafe as _bcast2
+                    _bcast2()
+                except Exception:
+                    pass
+            except Exception:
+                pass
         if direct_text is not None:
             speech_text = str(direct_text).strip()
             if not speech_text:
+                _thinking_off()
                 return None
             memory.add(kind="speech", text=speech_text, counts_as_activity=True)
             latest_ts = time.time() + 0.05
@@ -352,12 +383,14 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
         else:
             new_speech = memory.unhandled_speech(0)
             if not new_speech:
+                _thinking_off()
                 return None
 
             latest_ts = max(e["ts"] for e in new_speech)
             speech_text = " ".join(e["text"] for e in new_speech).strip()
             if not speech_text:
                 memory.mark_handled(latest_ts)
+                _thinking_off()
                 return None
 
         config.log_debug(f"[interaction] got speech: '{speech_text}'")
@@ -366,6 +399,7 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
             print("[interaction error] No LLM engine available", file=sys.stderr)
             _events.post("error", "No LLM engine available")
             memory.mark_handled(latest_ts)
+            _thinking_off()
             return None
 
         kiosk_notice = ""
@@ -484,13 +518,31 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
 
         history = memory.get_conversation_turns(n=4)
 
-        mem_ctx = retrieve_memories(speech_text, store, embedder, k=2)
+        # One shared embedding for memory + RAG (was 2x encode ≈ 0.8s on Pi 4).
+        # Greetings/chitchat skip encoding entirely (both retrievers ignore
+        # them anyway) — saves ~0.5-1.5s of MiniLM time on Pi before the LLM
+        # even starts, i.e. faster first pixels on the screen.
+        _nq_greet = re.sub(r'[\W_]+', ' ', speech_text.strip().lower()).strip()
+        _is_greet = _nq_greet in (
+            "hi", "hello", "hey", "yo", "sup", "hi karma", "hey karma",
+            "hello karma", "thanks", "thank you", "bye", "goodbye",
+        )
+        shared_vec = None
+        if not _is_greet and store is not None and embedder is not None and speech_text.strip():
+            try:
+                shared_vec = embedder.encode(speech_text).tolist()
+            except Exception as e:
+                config.log_debug(f"[memory] shared embed note: {e}")
+                shared_vec = None
+
+        mem_ctx = retrieve_memories(speech_text, store, embedder, k=2, query_vec=shared_vec)
         mem_section = f"Relevant past memories:\n{mem_ctx}\n" if mem_ctx else ""
 
         doc_ctx = ""
         try:
             from src.memory.rag import retrieve_document_context
-            doc_ctx = retrieve_document_context(speech_text, store, embedder, k=2)
+            doc_ctx = retrieve_document_context(speech_text, store, embedder, k=2,
+                                                query_vec=shared_vec)
         except Exception:
             pass
         doc_section = f"Knowledge from reference documents:\n{doc_ctx}\n" if doc_ctx else ""
@@ -611,5 +663,6 @@ def run_interaction_response(memory, engine, tts=None, store=None, embedder=None
         finally:
             memory.mark_handled(latest_ts)
 
+        _thinking_off()
         return clean_spoken
 

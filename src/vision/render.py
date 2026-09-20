@@ -10,7 +10,7 @@ from src.vision.hand import HAND_CONNECTIONS
 
 
 class FaceRenderer:
-    def __init__(self, width: int = 1280, height: int = 720):
+    def __init__(self, width: int = 1024, height: int = 600):
         self.width = width
         self.height = height
         self._last_blink = time.time()

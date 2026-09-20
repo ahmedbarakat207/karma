@@ -9,6 +9,10 @@ from src import config
 from src.state import internal_state
 
 _SENTENCE_RE = re.compile(getattr(config, "PROSODY_SENTENCE_BOUNDARIES", r'[.!?]+'))
+# Clause separators for early flushing of long sentences (see below).
+# Arabic comma is already a sentence boundary above; the Arabic
+# semicolon is clause-level.
+_CLAUSE_RE = re.compile(r'[,;:\n—–؛]+')
 
 _SPEED_MAP = {
     ("excited", "excited"): 1.15,
@@ -40,6 +44,28 @@ def _flush_at_boundary(text: str):
         return [], ""
     matches = list(_SENTENCE_RE.finditer(text))
     if not matches:
+        # No sentence terminator yet (LLM still generating a long
+        # sentence): flush early at the last clause boundary once the
+        # buffer is large, so local TTS synthesis of the first clause
+        # overlaps generation of the rest instead of starting only at
+        # the sentence end. Short buffers stay whole — every synth call
+        # pays seconds of fixed ONNX cost, so tiny fragments would be
+        # slower overall, not faster.
+        try:
+            limit = int(getattr(config, "PROSODY_CLAUSE_CHARS", 90))
+        except Exception:
+            limit = 90
+        if len(text) >= limit:
+            for m in reversed(list(_CLAUSE_RE.finditer(text))):
+                head = text[:m.end()].strip()
+                tail = text[m.end():].lstrip()
+                if len(head) >= 30 and tail:
+                    # Don't split inside numbers like "3,000" (head ends
+                    # with the separator, so inspect the char before it).
+                    stripped = head.rstrip(",;:\n—–؛")
+                    if stripped and stripped[-1].isdigit() and tail[:1].isdigit():
+                        continue
+                    return [head], tail
         return [], text
     split_pos = matches[-1].end()
     if split_pos < len(text) and text[split_pos - 1] == '.' and text[split_pos].isdigit():
@@ -319,6 +345,25 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
 
     emotion_logged = False
     speed = 1.0
+    announced_speaking = False
+
+    def _announce_speaking():
+        # Flip the face to SPEAKING at the first streamed sentence so the
+        # mouth animates + status updates immediately — previously this
+        # waited for TTS synth + audio-device probing (1-30s on Pi).
+        nonlocal announced_speaking
+        if announced_speaking:
+            return
+        announced_speaking = True
+        try:
+            internal_state.set_playing_audio(True)
+            try:
+                from src.ui.server import broadcast_state_threadsafe
+                broadcast_state_threadsafe()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     try:
         for token in token_iter:
@@ -344,6 +389,7 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
                         # the first sentence streams in — don't wait for TTS.
                         try:
                             internal_state.set_karma_speech(spoken.strip())
+                            _announce_speaking()
                             from src.ui.server import broadcast_state_threadsafe
                             broadcast_state_threadsafe()
                         except Exception:
@@ -356,6 +402,13 @@ def prosody_stream(token_iter: Generator[str, None, None], tts: Any, verbose: bo
         for rem in parser.flush():
             for spoken in code_filter.filter_chunk(rem):
                 if spoken.strip():
+                    try:
+                        internal_state.set_karma_speech(spoken.strip())
+                        _announce_speaking()
+                        from src.ui.server import broadcast_state_threadsafe as _bcast2
+                        _bcast2()
+                    except Exception:
+                        pass
                     synth_q.put((spoken.strip(), speed))
 
         if code_filter.in_code and code_filter.buf:

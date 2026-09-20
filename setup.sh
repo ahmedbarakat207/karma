@@ -244,16 +244,16 @@ fi
 
 set_config_param "gpu_mem" "128"
 
-# 7" 800x480 capacitive touch LCD: force the exact native mode so the
+# 7" 1024x600 capacitive touch LCD: force the exact native mode so the
 # panel always gets a valid signal (otherwise X falls back to a bogus
-# mode and the screen stays black).
+# mode and the screen stays black / content gets cut off).
 set_config_param "hdmi_group" "2"
 set_config_param "hdmi_mode" "87"
-set_config_param "hdmi_cvt" "800 480 60 6 0 0 0"
+set_config_param "hdmi_cvt" "1024 600 60 6 0 0 0"
 set_config_param "hdmi_drive" "1"
 set_config_param "disable_overscan" "1"
-set_config_param "framebuffer_width" "800"
-set_config_param "framebuffer_height" "480"
+set_config_param "framebuffer_width" "1024"
+set_config_param "framebuffer_height" "600"
 
 CMDLINE_TXT="/boot/firmware/cmdline.txt"
 if [ ! -f "$CMDLINE_TXT" ]; then
@@ -328,6 +328,7 @@ pip install --prefer-binary onnxruntime
 
 pip install --prefer-binary --ignore-requires-python loguru transformers "misaki>=0.9.4" kokoro-onnx num2words
 pip install --prefer-binary --ignore-requires-python --no-deps kokoro
+pip install --prefer-binary piper-tts
 
 pip install --prefer-binary --no-build-isolation ultralytics
 pip install --prefer-binary --no-build-isolation mediapipe
@@ -406,6 +407,34 @@ models = [
         "hf_file": "config.json"
     },
     {
+        "name": "Piper English voice (lessac, medium)",
+        "file": os.path.join("piper", "en/en_US/lessac/medium/en_US-lessac-medium.onnx"),
+        "repo": "rhasspy/piper-voices",
+        "local_dir": "piper",
+        "hf_file": "en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+    },
+    {
+        "name": "Piper English voice config",
+        "file": os.path.join("piper", "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"),
+        "repo": "rhasspy/piper-voices",
+        "local_dir": "piper",
+        "hf_file": "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+    },
+    {
+        "name": "Piper Arabic voice (kareem, medium)",
+        "file": os.path.join("piper", "ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx"),
+        "repo": "rhasspy/piper-voices",
+        "local_dir": "piper",
+        "hf_file": "ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx"
+    },
+    {
+        "name": "Piper Arabic voice config",
+        "file": os.path.join("piper", "ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx.json"),
+        "repo": "rhasspy/piper-voices",
+        "local_dir": "piper",
+        "hf_file": "ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx.json"
+    },
+    {
         "name": "MiniLM Embeddings (Memory/RAG)",
         "file": "all-MiniLM-L6-v2",
         "snapshot_repo": "sentence-transformers/all-MiniLM-L6-v2"
@@ -442,7 +471,9 @@ for m in models:
                 os.replace(tmp, dest)
             else:
                 print(f"⬇ Downloading {m['name']} from {m['repo']}...")
-                downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=dest_parent)
+                dl_dir = os.path.join(MODELS_DIR, m["local_dir"]) if m.get("local_dir") else dest_parent
+                os.makedirs(dl_dir, exist_ok=True)
+                downloaded = hf_hub_download(repo_id=m["repo"], filename=m["hf_file"], local_dir=dl_dir)
                 if os.path.basename(downloaded) != os.path.basename(dest):
                     # hf hub nests onnx/ subdir; flatten to models/ root
                     import shutil as _sh

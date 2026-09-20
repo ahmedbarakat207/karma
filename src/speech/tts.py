@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 import zipfile
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
 import sounddevice as sd
 
@@ -201,6 +201,47 @@ def _normalize_audio(audio: Optional[np.ndarray]) -> Optional[np.ndarray]:
     return np.ascontiguousarray(audio, dtype=np.float32)
 
 
+# Audio-device caches: pactl/aplay subprocess probes cost seconds per
+# call on Pi — never run them more than once a minute. Reset on
+# playback failure by the caller paths (they fall through to the next
+# backend, and the 60s TTL re-probes soon enough for hotplug).
+_PULSE_SINK_CACHE: Optional[str] = None
+_PULSE_SINK_TS: float = 0.0
+_ALSA_DEVS_CACHE: Optional[List[str]] = None
+_ALSA_DEVS_TS: float = 0.0
+
+
+def _groq_tts_block_path() -> str:
+    """Disk location persisting the Groq TTS terms-block backoff deadline."""
+    try:
+        base = getattr(config, "BASE_DIR", None) or os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))
+    except Exception:
+        base = "."
+    return os.path.join(base, "data", ".groq_tts_blocked_until")
+
+
+def _read_groq_tts_blocked_until() -> float:
+    """Return persisted backoff deadline (0.0 = no block)."""
+    try:
+        with open(_groq_tts_block_path(), "r") as f:
+            return float((f.read() or "").strip() or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _write_groq_tts_blocked_until(ts: float) -> None:
+    try:
+        path = _groq_tts_block_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(str(float(ts)))
+        os.replace(tmp, path)
+    except Exception as e:
+        config.log_debug(f"[speech] Groq TTS block persist note: {e}")
+
+
 class TTSEngine:
     """Bilingual Text-to-Speech engine supporting Kokoro-82M (English) and Nabra-82M (Arabic)
 
@@ -217,7 +258,21 @@ class TTSEngine:
         self._synth_lock = threading.Lock()
         self.onnx_session = None
         self.onnx_kokoro = None
+        self._onnx_init_attempted = False
         self._voices_cache: Dict[str, np.ndarray] = {}
+        # Piper (lightweight TTS) voices, lazy-loaded per voice id.
+        self._piper_voices: Dict[str, Any] = {}
+        self._piper_lock = threading.Lock()
+        # Synth cache: repeated greetings skip synthesis entirely (28s saved).
+        self._tts_cache: Dict[tuple, np.ndarray] = {}
+        self._groq_tts_client = None
+        self._groq_tts_warned = False
+        # Terms-block backoff: once Groq returns model_terms_required, skip
+        # cloud attempts for a while (each failed attempt costs ~1.5s of
+        # network roundtrip before falling back to local anyway).
+        # Pre-loaded from disk so a restart doesn't repay the penalty on
+        # its first sentence.
+        self._groq_tts_blocked_until = _read_groq_tts_blocked_until()
 
         # English pipeline (Kokoro-82M PyTorch) — lazy: only built if ONNX
         # fast path is unavailable or fails. Building KPipeline pulls torch
@@ -235,40 +290,19 @@ class TTSEngine:
         model_path = getattr(config, "KOKORO_MODEL_PATH", "")
         voices_path = getattr(config, "KOKORO_VOICES_PATH", "")
 
-        # Auto-fetch the quantized ONNX voice files from their correct
-        # upstream locations when USE_KOKORO_ONNX is on but files are absent.
-        # (setup.sh previously pointed at hexgrad/Kokoro-82M filenames that
-        # don't exist there, so Pi installs silently fell back to slow torch.)
-        if getattr(config, "USE_KOKORO_ONNX", False):
+        if str(getattr(config, "TTS_ENGINE", "kokoro")).lower() == "piper":
+            # Piper is primary: skip the heavy Kokoro session build at
+            # startup entirely (saves seconds + ~300MB RAM). It is still
+            # built lazily via _ensure_onnx() if Piper ever falls back.
+            # Preload the English Piper voice in the background so the
+            # first reply doesn't pay the ~6s model load.
             try:
-                model_path, voices_path = self._ensure_onnx_files(model_path, voices_path)
-            except Exception as e:
-                config.log_debug(f"[speech] ONNX auto-download note: {e}")
-
-        if getattr(config, "USE_KOKORO_ONNX", False) and model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
-            try:
-                import onnxruntime as ort
-                from kokoro_onnx import Kokoro
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = getattr(config, "TTS_THREADS", getattr(config, "N_THREADS", 4))
-                opts.inter_op_num_threads = 1
-                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-                session = ort.InferenceSession(model_path, sess_options=opts, providers=["CPUExecutionProvider"])
-                self.onnx_session = session
-                try:
-                    self.onnx_kokoro = Kokoro.from_session(session, voices_path)
-                except Exception:
-                    # Older kokoro-onnx without from_session: construct directly
-                    # (builds a second session; still far faster than torch).
-                    self.onnx_kokoro = Kokoro(model_path, voices_path)
-                print(f"[speech] ONNX Kokoro ready ({os.path.basename(model_path)}, voice={self.voice})")
-            except Exception as e:
-                print(f"[speech] ONNX init note: {e}", file=sys.stderr)
-                config.log_debug(f"[speech] ONNX init note: {e}")
-                self.onnx_session = None
-                self.onnx_kokoro = None
-        elif getattr(config, "USE_KOKORO_ONNX", False):
-            print(f"[speech] ONNX enabled but files missing ({model_path}, {voices_path}); using PyTorch fallback (slow).", file=sys.stderr)
+                threading.Thread(target=self._preload_piper, daemon=True,
+                                 name="piper_preload").start()
+            except Exception:
+                pass
+        else:
+            self._ensure_onnx(model_path, voices_path)
 
         try:
             threading.Thread(target=set_system_volume_max, daemon=True, name="auto_max_volume").start()
@@ -327,6 +361,53 @@ class TTSEngine:
                 except Exception as e2:
                     config.log_debug(f"[speech] voices download note: {e2}")
         return model_path, voices_path
+
+    def _ensure_onnx(self, model_path: str = "", voices_path: str = "") -> None:
+        """Build the Kokoro ONNX session (idempotent).
+
+        Called eagerly at init in kokoro mode, lazily on first fallback
+        use in piper mode so startup never pays for an unused engine.
+        """
+        if self._onnx_init_attempted:
+            return
+        self._onnx_init_attempted = True
+        model_path = model_path or getattr(config, "KOKORO_MODEL_PATH", "")
+        voices_path = voices_path or getattr(config, "KOKORO_VOICES_PATH", "")
+
+        # Auto-fetch the quantized ONNX voice files from their correct
+        # upstream locations when USE_KOKORO_ONNX is on but files are absent.
+        # (setup.sh previously pointed at hexgrad/Kokoro-82M filenames that
+        # don't exist there, so Pi installs silently fell back to slow torch.)
+        if getattr(config, "USE_KOKORO_ONNX", False):
+            try:
+                model_path, voices_path = self._ensure_onnx_files(model_path, voices_path)
+            except Exception as e:
+                config.log_debug(f"[speech] ONNX auto-download note: {e}")
+
+        if getattr(config, "USE_KOKORO_ONNX", False) and model_path and os.path.exists(model_path) and voices_path and os.path.exists(voices_path):
+            try:
+                import onnxruntime as ort
+                from kokoro_onnx import Kokoro
+                opts = ort.SessionOptions()
+                opts.intra_op_num_threads = getattr(config, "TTS_THREADS", getattr(config, "N_THREADS", 4))
+                opts.inter_op_num_threads = 1
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                session = ort.InferenceSession(model_path, sess_options=opts, providers=["CPUExecutionProvider"])
+                self.onnx_session = session
+                try:
+                    self.onnx_kokoro = Kokoro.from_session(session, voices_path)
+                except Exception:
+                    # Older kokoro-onnx without from_session: construct directly
+                    # (builds a second session; still far faster than torch).
+                    self.onnx_kokoro = Kokoro(model_path, voices_path)
+                print(f"[speech] ONNX Kokoro ready ({os.path.basename(model_path)}, voice={self.voice})")
+            except Exception as e:
+                print(f"[speech] ONNX init note: {e}", file=sys.stderr)
+                config.log_debug(f"[speech] ONNX init note: {e}")
+                self.onnx_session = None
+                self.onnx_kokoro = None
+        elif getattr(config, "USE_KOKORO_ONNX", False):
+            print(f"[speech] ONNX enabled but files missing ({model_path}, {voices_path}); using PyTorch fallback (slow).", file=sys.stderr)
 
     def _init_english_torch(self):
         """Lazy PyTorch KPipeline init (slow). Only used when ONNX is unavailable."""
@@ -415,6 +496,135 @@ class TTSEngine:
             config.log_debug(f"[speech] voice load error: {e}")
         return None
 
+    @staticmethod
+    def _piper_relpath(voice_id: str) -> str:
+        """Map a voice id like en_US-lessac-medium to its repo subpath."""
+        parts = voice_id.split("-")
+        locale = parts[0] if len(parts) > 0 else "en_US"
+        speaker = parts[1] if len(parts) > 1 else "lessac"
+        quality = parts[2] if len(parts) > 2 else "medium"
+        lang = locale.split("_")[0]
+        return f"{lang}/{locale}/{speaker}/{quality}/{voice_id}"
+
+    def _ensure_piper_files(self, voice_id: str) -> Tuple[str, str]:
+        """Local (.onnx, .onnx.json) paths, downloading from HF if absent."""
+        base = getattr(config, "PIPER_MODEL_DIR",
+                       os.path.join(config.MODELS_DIR, "piper"))
+        rel = self._piper_relpath(voice_id)
+        model_path = os.path.join(base, rel + ".onnx")
+        config_path = os.path.join(base, rel + ".onnx.json")
+        if os.path.exists(model_path) and os.path.exists(config_path):
+            return model_path, config_path
+        try:
+            from huggingface_hub import hf_hub_download
+            repo_id = getattr(config, "PIPER_REPO_ID", "rhasspy/piper-voices")
+            print(f"[speech] downloading Piper voice {voice_id}...")
+            for suffix in (".onnx", ".onnx.json"):
+                hf_hub_download(repo_id=repo_id, filename=rel + suffix,
+                                local_dir=base)
+            print(f"[speech] Piper voice ready: {voice_id}")
+        except Exception as e:
+            config.log_debug(f"[speech] Piper voice download note: {e}")
+        return model_path, config_path
+
+    def _init_piper(self, voice_id: str) -> Optional[Any]:
+        """Lazy-load (and cache) a Piper voice. Thread-safe."""
+        with self._piper_lock:
+            if voice_id in self._piper_voices:
+                return self._piper_voices[voice_id]
+            try:
+                from piper import PiperVoice
+                model_path, config_path = self._ensure_piper_files(voice_id)
+                if not (os.path.exists(model_path) and os.path.exists(config_path)):
+                    return None
+                t0 = time.time()
+                voice = PiperVoice.load(model_path, config_path)
+                self._piper_voices[voice_id] = voice
+                config.log_debug(
+                    f"[speech] Piper voice {voice_id} ready in {time.time()-t0:.1f}s")
+                return voice
+            except Exception as e:
+                config.log_debug(f"[speech] Piper init note ({voice_id}): {e}")
+                return None
+
+    def _preload_piper(self) -> None:
+        """Background warmup so the first replies don't pay load costs
+        while the user is waiting: scipy import (~2-3s cold on Pi) plus
+        the English + Arabic voice loads (~6s each, one-time)."""
+        try:
+            import scipy.signal  # noqa: F401  (warm the resampler import)
+        except Exception:
+            pass
+        try:
+            self._init_piper(getattr(config, "PIPER_VOICE_EN", "en_US-lessac-medium"))
+        except Exception:
+            pass
+        try:
+            self._init_piper(getattr(config, "PIPER_VOICE_AR", "ar_JO-kareem-medium"))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _resample_to_24k(audio: np.ndarray, sr: int) -> np.ndarray:
+        """Resample Piper output (16/22.05kHz) to the 24kHz pipeline rate."""
+        target = int(config.TTS_SAMPLE_RATE)
+        arr = np.asarray(audio, dtype=np.float32).flatten()
+        if int(sr) == target or len(arr) == 0:
+            return arr
+        try:
+            import math
+            import scipy.signal
+            g = math.gcd(int(sr), target)
+            return scipy.signal.resample_poly(
+                arr, target // g, int(sr) // g).astype(np.float32)
+        except Exception:
+            if int(sr) > 0:
+                # Crude linear-interp fallback (keeps audio usable).
+                x_old = np.linspace(0.0, 1.0, len(arr))
+                x_new = np.linspace(0.0, 1.0, max(1, int(len(arr) * target / int(sr))))
+                return np.interp(x_new, x_old, arr).astype(np.float32)
+            return arr
+
+    def _synthesize_piper(self, spoken: str, speed: float = 1.0) -> Optional[np.ndarray]:
+        """Synthesize with a Piper VITS voice (~10x faster than Kokoro on Pi).
+
+        `spoken` must already be cleaned. Returns 24kHz mono float32.
+        """
+        if not spoken:
+            return None
+        try:
+            voice_id = (getattr(config, "PIPER_VOICE_AR", "ar_JO-kareem-medium")
+                        if is_arabic(spoken)
+                        else getattr(config, "PIPER_VOICE_EN", "en_US-lessac-medium"))
+            voice = self._init_piper(voice_id)
+            if voice is None:
+                return None
+            from piper.config import SynthesisConfig
+            length_scale: Optional[float] = None
+            try:
+                if speed and abs(float(speed) - 1.0) > 1e-3:
+                    length_scale = max(0.5, min(2.0, 1.0 / float(speed)))
+            except Exception:
+                length_scale = None
+            t0 = time.time()
+            parts: List[np.ndarray] = []
+            sr = int(getattr(getattr(voice, "config", None), "sample_rate",
+                             config.TTS_SAMPLE_RATE))
+            for chunk in voice.synthesize(spoken, syn_config=SynthesisConfig(
+                    length_scale=length_scale)):
+                arr = getattr(chunk, "audio_float_array", None)
+                if arr is not None and len(arr) > 0:
+                    parts.append(np.asarray(arr, dtype=np.float32).flatten())
+            if not parts:
+                return None
+            full = self._resample_to_24k(np.concatenate(parts), sr)
+            config.log_debug(
+                f"[speech] Piper synth {len(full)} samples in {time.time()-t0:.1f}s ({voice_id})")
+            return _normalize_audio(full)
+        except Exception as e:
+            config.log_debug(f"[speech] Piper synthesis note: {e}")
+            return None
+
     def _synthesize_arabic(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
         """Synthesize Arabic text using Nabra-82M."""
         pipeline = self._init_nabra()
@@ -441,6 +651,12 @@ class TTSEngine:
 
     def _synthesize_english(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
         """Synthesize English text using Kokoro-82M (ONNX fast path, PyTorch fallback)."""
+        # In piper mode the ONNX session is built lazily (startup skips
+        # it); ensure it exists before the fast path below.
+        try:
+            self._ensure_onnx()
+        except Exception:
+            pass
         # Fast path: quantized ONNX via kokoro-onnx (no torch, ~3-10x faster on Pi).
         if self.onnx_kokoro is not None:
             try:
@@ -518,16 +734,188 @@ class TTSEngine:
             config.log_debug(f"[speech] English synthesis error: {e}")
         return None
 
+    def _groq_tts_available(self) -> bool:
+        if not getattr(config, "TTS_USE_GROQ", True):
+            return False
+        return bool(os.environ.get("GROQ_API_KEY", "").strip())
+
+    def _get_groq_tts_client(self):
+        if self._groq_tts_client is not None:
+            return self._groq_tts_client
+        try:
+            from groq import Groq
+            timeout = float(getattr(config, "GROQ_TTS_TIMEOUT", 15.0))
+            try:
+                self._groq_tts_client = Groq(
+                    api_key=os.environ["GROQ_API_KEY"].strip(), timeout=timeout)
+            except TypeError:
+                self._groq_tts_client = Groq(api_key=os.environ["GROQ_API_KEY"].strip())
+            return self._groq_tts_client
+        except Exception as e:
+            config.log_debug(f"[speech] Groq TTS client note: {e}")
+            return None
+
+    @staticmethod
+    def _chunk_for_groq(text: str, limit: int = 190) -> List[str]:
+        # Orpheus caps input at 200 chars — split at sentence/word bounds.
+        if len(text) <= limit:
+            return [text]
+        parts = re.split(r'(?<=[.!?،؟])\s+', text)
+        chunks: List[str] = []
+        cur = ""
+        for p in parts:
+            if len(p) > limit:
+                # Hard-split long sentence at word bounds.
+                words = p.split()
+                for w in words:
+                    if len(cur) + len(w) + 1 > limit:
+                        if cur:
+                            chunks.append(cur.strip())
+                        cur = w
+                    else:
+                        cur = (cur + " " + w).strip()
+            elif len(cur) + len(p) + 1 > limit:
+                if cur:
+                    chunks.append(cur.strip())
+                cur = p
+            else:
+                cur = (cur + " " + p).strip() if cur else p
+        if cur.strip():
+            chunks.append(cur.strip())
+        return chunks or [text[:limit]]
+
+    @staticmethod
+    def _wav_bytes_to_float24k(data: bytes) -> Optional[np.ndarray]:
+        try:
+            import wave as _wave
+            with _wave.open(io.BytesIO(data), "rb") as wf:
+                nch, sw, sr, nfr = (wf.getnchannels(), wf.getsampwidth(),
+                                    wf.getframerate(), wf.getnframes())
+                raw = wf.readframes(nfr)
+            if sw == 2:
+                arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            elif sw == 1:
+                arr = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+            else:
+                return None
+            if nch > 1:
+                arr = arr.reshape(-1, nch).mean(axis=1).astype(np.float32)
+            target = int(config.TTS_SAMPLE_RATE)
+            if sr != target:
+                try:
+                    import scipy.signal
+                    import math
+                    g = math.gcd(int(sr), target)
+                    arr = scipy.signal.resample_poly(
+                        arr, target // g, int(sr) // g).astype(np.float32)
+                except Exception:
+                    # Integer decimation fallback (48k->24k etc.).
+                    if sr % target == 0:
+                        arr = arr[:: sr // target].astype(np.float32)
+                    elif target % sr == 0:
+                        arr = np.repeat(arr, target // sr).astype(np.float32)
+            return _normalize_audio(np.ascontiguousarray(arr, dtype=np.float32))
+        except Exception as e:
+            config.log_debug(f"[speech] Groq TTS decode note: {e}")
+            return None
+
+    def _synthesize_groq(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
+        """Cloud TTS via Groq Orpheus (~1s vs ~28s local Kokoro on Pi 4)."""
+        if not self._groq_tts_available():
+            return None
+        # Fast-skip while terms-blocked: avoids a doomed 0.1-1.7s network
+        # roundtrip on every sentence. Retried automatically after TTL in
+        # case the org admin accepts terms mid-run.
+        try:
+            if time.time() < float(getattr(self, "_groq_tts_blocked_until", 0.0)):
+                return None
+        except Exception:
+            pass
+        client = self._get_groq_tts_client()
+        if client is None:
+            return None
+        arabic = is_arabic(text)
+        model = (getattr(config, "GROQ_TTS_MODEL_AR", "canopylabs/orpheus-v1-english")
+                 if arabic else getattr(config, "GROQ_TTS_MODEL_EN", "canopylabs/orpheus-v1-english"))
+        voice = (getattr(config, "GROQ_TTS_VOICE_AR", "hannah")
+                 if arabic else getattr(config, "GROQ_TTS_VOICE_EN", "troy"))
+        timeout = float(getattr(config, "GROQ_TTS_TIMEOUT", 15.0))
+        try:
+            import time as _time
+            t0 = _time.time()
+            chunks = self._chunk_for_groq(text)
+            audios: List[np.ndarray] = []
+            for ch in chunks:
+                if self.interrupt_event and self.interrupt_event.is_set():
+                    return None
+                try:
+                    try:
+                        resp = client.audio.speech.create(
+                            model=model, voice=voice, input=ch,
+                            response_format="wav", timeout=timeout)
+                    except TypeError:
+                        resp = client.audio.speech.create(
+                            model=model, voice=voice, input=ch,
+                            response_format="wav")
+                except Exception as e:
+                    msg = str(e)
+                    if "terms" in msg.lower():
+                        if not self._groq_tts_warned:
+                            self._groq_tts_warned = True
+                            print("[speech] Groq TTS needs one-click terms acceptance at "
+                                  "console.groq.com/playground — using local voice until then.",
+                                  file=sys.stderr)
+                        # Back off cloud attempts for 1h (persisted to disk so
+                        # restarts skip immediately); local fallback is
+                        # immediate from here until retry.
+                        try:
+                            import time as _t2
+                            self._groq_tts_blocked_until = _t2.time() + 3600.0
+                            _write_groq_tts_blocked_until(self._groq_tts_blocked_until)
+                        except Exception:
+                            pass
+                    config.log_debug(f"[speech] Groq TTS request note: {e}")
+                    return None
+                try:
+                    data = resp.read() if hasattr(resp, "read") else bytes(resp)  # type: ignore
+                except Exception:
+                    try:
+                        data = resp.content  # type: ignore
+                    except Exception:
+                        return None
+                if not data:
+                    return None
+                arr = self._wav_bytes_to_float24k(bytes(data))
+                if arr is not None and len(arr) > 0:
+                    audios.append(arr)
+            if not audios:
+                return None
+            full = np.concatenate(audios).astype(np.float32) if len(audios) > 1 else audios[0]
+            config.log_debug(f"[speech] Groq TTS {len(full)} samples in {_time.time()-t0:.1f}s")
+            return full
+        except Exception as e:
+            config.log_debug(f"[speech] Groq TTS error: {e}")
+            return None
+
     def _synthesize(self, text: str, speed: float = 1.0) -> Optional[np.ndarray]:
         spoken = clean_for_speech(text)
         if not spoken:
             return None
 
         with self._synth_lock:
+            # Cache hit skips synthesis entirely (greetings etc.).
+            try:
+                ckey = (spoken, round(float(speed), 2))
+                hit = self._tts_cache.get(ckey)
+                if hit is not None and len(hit) > 0:
+                    return hit.copy()
+            except Exception:
+                pass
             try:
                 # Serialize against LLM inference: overlapping onnxruntime and
                 # llama.cpp thread pools browns out marginal Pi PSUs (SIGSEGV).
                 # Playback stays concurrent — only synthesis takes the gate.
+                # (Groq LLM is cloud = no local contention, gate is near-free.)
                 from src.cognition.engine import heavy_compute
                 gate = heavy_compute()
             except Exception:
@@ -535,21 +923,68 @@ class TTSEngine:
                 gate = contextlib.nullcontext()
             with gate:
                 try:
+                    # Cloud first (~1s), local fallback (~28s on Pi 4).
+                    groq_audio = self._synthesize_groq(spoken, speed=speed)
+                    if groq_audio is not None:
+                        try:
+                            if len(self._tts_cache) >= max(4, int(getattr(config, "TTS_CACHE_SIZE", 32))):
+                                self._tts_cache.pop(next(iter(self._tts_cache)))
+                            self._tts_cache[(spoken, round(float(speed), 2))] = groq_audio.copy()
+                        except Exception:
+                            pass
+                        return groq_audio
                     use_arabic = is_arabic(spoken) and getattr(config, "NABRA_ENABLED", True)
-                    if use_arabic:
+                    engine_name = str(getattr(config, "TTS_ENGINE", "kokoro")).strip().lower()
+                    if engine_name == "piper":
+                        # Lightweight VITS first (~1-2s/sentence on Pi 4),
+                        # legacy neural pipelines as automatic fallback.
+                        audio = self._synthesize_piper(spoken, speed=speed)
+                        if audio is None:
+                            if use_arabic:
+                                audio = self._synthesize_arabic(spoken, speed=speed)
+                            if audio is None:
+                                audio = self._synthesize_english(spoken, speed=speed)
+                    elif use_arabic:
                         audio = self._synthesize_arabic(spoken, speed=speed)
                         if audio is not None:
                             return audio
                         # Fallback to English pipeline if Arabic synthesis failed
-                        return self._synthesize_english(spoken, speed=speed)
+                        audio = self._synthesize_english(spoken, speed=speed)
                     else:
-                        return self._synthesize_english(spoken, speed=speed)
+                        audio = self._synthesize_english(spoken, speed=speed)
+                    if audio is not None:
+                        try:
+                            if len(self._tts_cache) >= max(4, int(getattr(config, "TTS_CACHE_SIZE", 32))):
+                                self._tts_cache.pop(next(iter(self._tts_cache)))
+                            self._tts_cache[(spoken, round(float(speed), 2))] = audio.copy()
+                        except Exception:
+                            pass
+                    return audio
                 except Exception as e:
                     config.log_debug(f"[speech] synthesis error: {e}")
                     return None
 
     def _find_best_pulse_sink(self) -> Optional[str]:
-        """Find non-HDMI PulseAudio/PipeWire sink."""
+        """Find non-HDMI PulseAudio/PipeWire sink (cached 60s).
+
+        The old code ran `pactl list` (2s timeout) on EVERY sentence —
+        2-4s of pure overhead before each audio playback and its
+        SPEAKING broadcast to the screen.
+        """
+        global _PULSE_SINK_CACHE, _PULSE_SINK_TS
+        try:
+            if _PULSE_SINK_CACHE is not None and (time.time() - _PULSE_SINK_TS) < 60:
+                return _PULSE_SINK_CACHE
+        except Exception:
+            pass
+        sink = self._find_best_pulse_sink_uncached()
+        try:
+            _PULSE_SINK_CACHE, _PULSE_SINK_TS = sink, time.time()
+        except Exception:
+            pass
+        return sink
+
+    def _find_best_pulse_sink_uncached(self) -> Optional[str]:
         if not sys.platform.startswith("linux"):
             return None
         import shutil
@@ -582,6 +1017,28 @@ class TTSEngine:
             return None
 
     def _find_best_alsa_devices(self) -> List[str]:
+        """Find non-HDMI ALSA playback devices (cached 60s, same rationale
+        as the PulseAudio cache above: `aplay -l` per sentence stalls audio
+        and the screen's SPEAKING state by seconds on every reply)."""
+        # Explicit override always wins and bypasses the cache (it can
+        # change at runtime via dashboard/config without waiting for TTL).
+        configured = (getattr(config, "AUDIO_OUTPUT_DEVICE", "") or os.environ.get("AUDIO_OUTPUT_DEVICE", "")).strip()
+        if configured:
+            return [configured]
+        global _ALSA_DEVS_CACHE, _ALSA_DEVS_TS
+        try:
+            if _ALSA_DEVS_CACHE is not None and (time.time() - _ALSA_DEVS_TS) < 60:
+                return list(_ALSA_DEVS_CACHE)
+        except Exception:
+            pass
+        devs = self._find_best_alsa_devices_uncached()
+        try:
+            _ALSA_DEVS_CACHE, _ALSA_DEVS_TS = list(devs), time.time()
+        except Exception:
+            pass
+        return devs
+
+    def _find_best_alsa_devices_uncached(self) -> List[str]:
         """Find non-HDMI ALSA playback devices on Linux/Raspberry Pi.
 
         Routing audio to HDMI (vc4-hdmi) on Raspberry Pi causes the HDMI clock
@@ -667,9 +1124,17 @@ class TTSEngine:
             except Exception:
                 pass
 
+            # Volume ramp runs in the background: the synchronous
+            # amixer/pactl/wpctl storm costs ~0.6s on Pi and would
+            # otherwise stall the very first audio playback (it also
+            # runs once at engine init).
             if not getattr(self, "_volume_maxed", False):
                 self._volume_maxed = True
-                set_system_volume_max()
+                try:
+                    threading.Thread(target=set_system_volume_max, daemon=True,
+                                     name="max_volume_playback").start()
+                except Exception:
+                    pass
 
             # Native 24kHz mono first: aplay/paplay go through the ALSA plug
             # layer which resamples in C far faster than scipy in Python on

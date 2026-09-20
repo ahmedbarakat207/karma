@@ -87,12 +87,10 @@ except Exception:
 # trash the tiny model's cache locality. Override with N_THREADS if your
 # box is idle.
 N_THREADS = int(os.environ.get("N_THREADS", "2"))
-# TTS ONNX synthesis is single-shot batch work that scales with cores;
-# keep it independent of N_THREADS so LLM tuning never slows the voice.
-# Default 2 (not 4): LLM uses 2 threads, so 2+2 fits the Pi 4's 4 cores.
-# 4 TTS threads + 2 LLM threads oversubscribe and thrash the cache when
-# streaming overlaps inference with synthesis.
-TTS_THREADS = int(os.environ.get("TTS_THREADS", str(min(2, os.cpu_count() or 2))))
+# TTS ONNX synthesis is single-shot batch work that scales with cores.
+# Default 4: LLM/STT are Groq cloud (0 local threads), so TTS can own all
+# Pi 4 cores. Set TTS_THREADS=2 in .env only if forcing offline local LLM.
+TTS_THREADS = int(os.environ.get("TTS_THREADS", str(min(4, os.cpu_count() or 4))))
 
 _DEFAULT_YOLO_DEVICE = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
 _DEFAULT_GPU_LAYERS = -1 if _DEFAULT_YOLO_DEVICE == "mps" else 0
@@ -168,11 +166,31 @@ SHELL_ENABLED = _env_bool("SHELL_ENABLED", True)
 SHELL_IDLE_SECONDS = int(os.environ.get("SHELL_IDLE_SECONDS", "900"))
 SHELL_MAX_SESSIONS = int(os.environ.get("SHELL_MAX_SESSIONS", "3"))
 
+# Default provider is Groq cloud (fast) — local GGUF is fallback only.
+# Set USE_GROQ=0 in .env to force offline mode.
 _has_groq_key = bool(os.environ.get("GROQ_API_KEY", "").strip())
-USE_GROQ = _env_bool("USE_GROQ", _has_groq_key)
+USE_GROQ = _env_bool("USE_GROQ", True)
 _raw_groq = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
 GROQ_MODEL = f"openai/{_raw_groq}" if _raw_groq in ("gpt-oss-20b", "gpt-oss-120b", "gpt-oss-safeguard-20b") else _raw_groq
+# Single-attempt cloud timeout (was 10s x2 attempts = 20s worst case).
+GROQ_TIMEOUT = float(os.environ.get("GROQ_TIMEOUT", "8.0"))
+# Native LCD resolution. The 7" panel on this unit is 1024x600 — the old
+# 800x480 assumptions left console content cut off on the right/bottom.
+# UI_WIDTH/UI_HEIGHT are the *design* resolution (logical canvas). The
+# Electron/CSS layers auto-scale down to smaller panels (e.g. 800x480)
+# and up to larger monitors, so nothing is ever clipped. UI_ZOOM=0 means
+# auto-fit (default); set e.g. UI_ZOOM=0.85 to force a fixed factor.
+UI_WIDTH = int(os.environ.get("UI_WIDTH", "1024"))
+UI_HEIGHT = int(os.environ.get("UI_HEIGHT", "600"))
+try:
+    UI_ZOOM = float(os.environ.get("UI_ZOOM", "0"))
+except Exception:
+    UI_ZOOM = 0.0
+# Legacy aliases — pipeline.py used to look these up and silently fell
+# back to 800x480, mismatching the 1024x600 kiosk layout (cut off).
+DISPLAY_WIDTH = int(os.environ.get("DISPLAY_WIDTH", str(UI_WIDTH)))
+DISPLAY_HEIGHT = int(os.environ.get("DISPLAY_HEIGHT", str(UI_HEIGHT)))
 
 
 def log_debug(*args, **kwargs) -> None:
@@ -219,7 +237,7 @@ def apply_cli_args(argv=None) -> None:
 FACE_RECOGNITION_ENABLED = True
 FACE_REGISTRY_PATH = os.path.join(BASE_DIR, "faces.json")
 FACE_RECOGNITION_TOLERANCE = 0.55
-FACE_RECOGNITION_INTERVAL = 0.5
+FACE_RECOGNITION_INTERVAL = float(os.environ.get("FACE_RECOGNITION_INTERVAL", "2.0"))
 
 # Differential drive (2x 5840-31ZY worm motors + 2x BTS7960 H-bridges).
 # BCM pin numbering. All overridable via env. Mock mode when pigpiod absent.
@@ -248,8 +266,18 @@ OBSTACLE_CENTER_MARGIN = float(os.environ.get("OBSTACLE_CENTER_MARGIN", "0.25"))
 OBSTACLE_COOLDOWN_SECONDS = float(os.environ.get("OBSTACLE_COOLDOWN_SECONDS", "3.0"))
 
 WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", os.path.join(MODELS_DIR, "whisper-tiny"))
-WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny")
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "tiny.en")
+# Lighter default: tiny.en is ~2x faster than multilingual tiny on English
+# (smaller vocab, no language detection). Set WHISPER_MODEL_SIZE=tiny to
+# restore multilingual/Arabic local STT.
+WHISPER_MODEL_SIZE_LIGHT = os.environ.get("WHISPER_MODEL_SIZE_LIGHT", "tiny.en")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "")
+# Cloud STT (Groq whisper-large-v3-turbo) is primary when USE_GROQ + key:
+# ~0.5s vs 2-5s local tiny on Pi 4, and zero local CPU. Set STT_USE_GROQ=0
+# to force local-only.
+STT_USE_GROQ = _env_bool("STT_USE_GROQ", True)
+GROQ_STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+GROQ_STT_TIMEOUT = float(os.environ.get("GROQ_STT_TIMEOUT", "8.0"))
 SILERO_VAD_MODEL_PATH = os.environ.get("SILERO_VAD_MODEL_PATH", os.path.join(MODELS_DIR, "silero_vad.jit"))
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 512
@@ -272,6 +300,38 @@ SPEAK_THOUGHTS = False
 AUDIO_OUTPUT_DEVICE = os.environ.get("AUDIO_OUTPUT_DEVICE", "")
 ALLOW_HDMI_AUDIO = _env_bool("ALLOW_HDMI_AUDIO", False)
 PROSODY_SENTENCE_BOUNDARIES = r'[.!?،؟]+'
+# Clause-level early flush: while the LLM is still generating a long
+# sentence with no terminator yet, prosody may flush at the last
+# clause separator once the buffer reaches this many chars, so local
+# TTS synthesis of the first clause overlaps generation of the rest.
+# Short buffers stay whole (each synth call pays ~5s fixed ONNX cost).
+try:
+    PROSODY_CLAUSE_CHARS = int(os.environ.get("PROSODY_CLAUSE_CHARS", "90"))
+except Exception:
+    PROSODY_CLAUSE_CHARS = 90
+# Cloud TTS (Groq Orpheus, ~1s vs ~28s local Kokoro on Pi 4). Requires a
+# one-click terms acceptance at console.groq.com/playground once per org;
+# until then it fails fast and falls back to local automatically.
+# 200-char limit per request is handled by chunking in tts.py.
+TTS_USE_GROQ = _env_bool("TTS_USE_GROQ", True)
+GROQ_TTS_MODEL_EN = os.environ.get("GROQ_TTS_MODEL_EN", "canopylabs/orpheus-v1-english")
+GROQ_TTS_MODEL_AR = os.environ.get("GROQ_TTS_MODEL_AR", "canopylabs/orpheus-arabic-saudi")
+GROQ_TTS_VOICE_EN = os.environ.get("GROQ_TTS_VOICE_EN", "troy")
+GROQ_TTS_VOICE_AR = os.environ.get("GROQ_TTS_VOICE_AR", "hannah")
+GROQ_TTS_TIMEOUT = float(os.environ.get("GROQ_TTS_TIMEOUT", "8.0"))
+# In-memory synth cache (repeated greetings etc. skip synthesis entirely).
+TTS_CACHE_SIZE = int(os.environ.get("TTS_CACHE_SIZE", "32"))
+
+# Piper (lightweight neural TTS): VITS voices at 15-65MB each run faster
+# than realtime on Pi 4 (~0.7-2.4s/sentence vs ~10-20s Kokoro-82M).
+# TTS_ENGINE=piper (default) routes both languages to Piper with
+# Kokoro/Nabra as automatic fallback; TTS_ENGINE=kokoro restores the
+# previous Kokoro-first behavior.
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "piper").strip().lower()
+PIPER_MODEL_DIR = os.environ.get("PIPER_MODEL_DIR", os.path.join(MODELS_DIR, "piper"))
+PIPER_REPO_ID = os.environ.get("PIPER_REPO_ID", "rhasspy/piper-voices")
+PIPER_VOICE_EN = os.environ.get("PIPER_VOICE_EN", "en_US-lessac-medium")
+PIPER_VOICE_AR = os.environ.get("PIPER_VOICE_AR", "ar_JO-kareem-medium")
 
 # Nabra (Arabic Neural TTS)
 NABRA_MODEL_DIR = os.environ.get("NABRA_MODEL_DIR", os.path.join(MODELS_DIR, "nabra"))

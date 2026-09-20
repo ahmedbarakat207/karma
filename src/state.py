@@ -13,6 +13,10 @@ class InternalState:
         self.current_emotion: Optional[str] = None
         self.is_playing_audio: bool = False
         self.last_audio_played_time: float = 0.0
+        # Thinking indicator: True while an LLM turn is in flight (inject /
+        # voice). Drives an immediate "THINKING…" on the face so the screen
+        # acknowledges within ~50ms instead of after full LLM+TTS (5-30s).
+        self.is_thinking: bool = False
 
         self.last_user_speech: Optional[str] = None
         self.last_user_speech_time: float = 0.0
@@ -81,6 +85,10 @@ class InternalState:
             self.is_playing_audio = val
             if not val:
                 self.last_audio_played_time = time.time()
+
+    def set_thinking(self, val: bool) -> None:
+        with self._lock:
+            self.is_thinking = bool(val)
 
     def set_camera_frame(self, jpeg: Optional[bytes]) -> None:
         with self._lock:

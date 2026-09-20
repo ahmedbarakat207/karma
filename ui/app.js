@@ -11,6 +11,7 @@
     energy: 0.85,
     curiosity: 0.70,
     speaking: false,
+    thinking: false,
     gazeX: 0.5,
     gazeY: 0.5,
     activeCode: null,
@@ -256,7 +257,10 @@
       if (msg.emotion) setEmotion(msg.emotion);
       if (msg.energy !== undefined) setEnergy(msg.energy);
       if (msg.curiosity !== undefined) setCuriosity(msg.curiosity);
-      if (msg.speaking !== undefined) setSpeaking(msg.speaking, msg.speech);
+      if (msg.speaking !== undefined || msg.speech !== undefined) {
+        setSpeaking(msg.speaking === true, msg.speech || '');
+      }
+      if (msg.thinking !== undefined) setThinking(msg.thinking === true);
       if (msg.gaze_x !== undefined && msg.gaze_y !== undefined) {
         setGaze(msg.gaze_x, msg.gaze_y);
       }
@@ -317,10 +321,10 @@
       ' · load ' + (t.load_1 != null ? t.load_1 : 'n/a'));
     setFill('tm-mem-fill', t.mem_used_pct);
     const calls = llm.calls || 0;
-    setText('tm-nn-big', calls > 0 ? llm.last_tps + ' tok/s' : 'Qwen 2.5 0.5B');
+    setText('tm-nn-big', calls > 0 ? llm.last_tps + ' tok/s' : 'Groq cloud');
     setText('tm-nn-note', calls > 0
       ? ('last ' + llm.last_tps + ' tok/s · TTFT ' + llm.last_ttft_ms + 'ms · ' + llm.last_tokens + ' tok')
-      : 'Qwen 2.5 0.5B Instruct GGUF · 4096 ctx');
+      : 'Groq API default · local GGUF fallback');
     setFill('tm-nn-fill', calls > 0 ? Math.min(100, llm.last_tps * 5) : 0);
     setText('tm-ac-note', calls > 0 ? ('TTFT ' + llm.last_ttft_ms + 'ms · avg ' + llm.avg_tps + ' tok/s') : 'idle');
     setFill('tm-ac-fill', calls > 0 ? Math.min(100, (llm.last_ttft_ms || 0) / 30) : 0);
@@ -395,15 +399,46 @@
   }
 
   let speakInterval = null;
+
+  // Subtitle shows whenever fresh reply text is present — even before
+  // audio starts (TTS synth takes 1-28s on Pi). `speaking` only drives
+  // mouth animation + status. Previously the bar hid until audio played,
+  // so the screen stayed blank for the whole LLM+TTS pipeline.
+  function updateSubtitle() {
+    const txt = (currentState.speechText || '').trim();
+    if (txt) {
+      subtitleText.textContent = txt;
+      subtitleBar.style.display = 'flex';
+    } else if (currentState.thinking) {
+      subtitleText.textContent = 'Thinking…';
+      subtitleBar.style.display = 'flex';
+    } else if (subtitleBar) {
+      subtitleBar.style.display = 'none';
+    }
+  }
+
+  function updateStatusLine() {
+    if (!osStatusText) return;
+    if (currentState.speaking) osStatusText.textContent = 'SPEAKING';
+    else if (currentState.thinking) osStatusText.textContent = 'THINKING';
+    else osStatusText.textContent = currentState.kioskView === 'face' ? 'STANDBY' : 'CONSOLE';
+  }
+
+  function setThinking(isThinking) {
+    currentState.thinking = !!isThinking;
+    updateSubtitle();
+    if (!currentState.speaking) updateStatusLine();
+    if (micStatusLabel && !currentState.speaking) {
+      micStatusLabel.textContent = currentState.thinking ? 'THINKING' : 'READY';
+    }
+  }
+
   function setSpeaking(isSpeaking, speech = '') {
-    currentState.speaking = isSpeaking;
-    currentState.speechText = speech;
+    currentState.speaking = !!isSpeaking;
+    if (typeof speech === 'string') currentState.speechText = speech;
+    updateSubtitle();
 
     if (isSpeaking) {
-      if (speech && speech.trim()) {
-        subtitleText.textContent = speech.trim();
-        subtitleBar.style.display = 'flex';
-      }
       if (osStatusText) osStatusText.textContent = 'SPEAKING';
       if (micStatusLabel) micStatusLabel.textContent = 'TALKING';
       if (dockAudioBars) dockAudioBars.classList.add('speaking-active');
@@ -421,11 +456,9 @@
         }, 60);
       }
     } else {
-      if (subtitleBar) subtitleBar.style.display = 'none';
-      if (osStatusText) {
-        osStatusText.textContent = currentState.kioskView === 'face' ? 'STANDBY' : 'CONSOLE';
-      }
-      if (micStatusLabel) micStatusLabel.textContent = 'READY';
+      updateSubtitle();
+      updateStatusLine();
+      if (micStatusLabel) micStatusLabel.textContent = currentState.thinking ? 'THINKING' : 'READY';
       if (dockAudioBars) dockAudioBars.classList.remove('speaking-active');
 
       if (speakInterval) {
@@ -825,6 +858,30 @@
       }
     }
   });
+
+  // ── Auto-fit: expose a --ui-scale var so CSS can densify chrome on
+  // small panels (800x480) and breathe on large monitors. This stacks
+  // with main.js zoomFactor: gross fitting there, fine-tuning here.
+  // Scale = min(w/1024, h/600) clamped to [0.72, 1.2]; nothing is ever
+  // clipped because tabs/panes scroll as a final safety net.
+  function applyUiScale() {
+    try {
+      const w = window.innerWidth || 1024;
+      const h = window.innerHeight || 600;
+      const s = Math.min(w / 1024, h / 600);
+      const clamped = Math.min(1.2, Math.max(0.72, s));
+      document.documentElement.style.setProperty('--ui-scale', clamped.toFixed(3));
+      // Keep the active console tab fully in view after a resize/zoom.
+      const active = document.querySelector('.nav-tab-btn.active');
+      if (active && typeof active.scrollIntoView === 'function') {
+        try { active.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+      }
+    } catch (_) { /* ignore */ }
+  }
+  window.addEventListener('resize', applyUiScale);
+  window.addEventListener('karma-zoom', applyUiScale);
+  window.addEventListener('orientationchange', () => setTimeout(applyUiScale, 100));
+  applyUiScale();
 
   // Initialization
   setLinkState(false);
